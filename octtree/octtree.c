@@ -78,7 +78,6 @@ OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value, voi
     return (node);
 }
 
-
 /*** function to free a Tree3D ***/
 
 void freeTree3D(Tree3D* tree, int freeDataPointer) {
@@ -90,7 +89,7 @@ void freeTree3D(Tree3D* tree, int freeDataPointer) {
         free(tree->ds_x);
         free(tree->num_x);
     }
-    
+
     int ix, iy, iz;
 
     for (ix = 0; ix < tree->numx; ix++) {
@@ -111,8 +110,6 @@ void freeTree3D(Tree3D* tree, int freeDataPointer) {
 
 }
 
-
-
 /*** function to create a new Tree3D - an x, y, z array of octtree root nodes ***/
 
 Tree3D* newTree3D(int data_code, int numx, int numy, int numz,
@@ -129,7 +126,7 @@ Tree3D* newTree3D(int data_code, int numx, int numy, int numz,
     if (tree == NULL) {
         return (NULL);
     }
-    // alocate node array in x, y and z
+    // allocate node array in x, y and z
     garray = (OctNode ****) malloc((size_t) numx * sizeof (OctNode***));
     if (garray == NULL) {
         free(tree);
@@ -181,8 +178,8 @@ Tree3D* newTree3D(int data_code, int numx, int numy, int numz,
 
 /*** function to create a new Tree3D - an x, y, z array of octtree root nodes
  * creates a Tree3D for a sphere:
- *    width of cells in azimuth ior longitude is approximately constant,
- *    giving fewer azimuth cells with increasing inclination or latitiude (y)
+ *    width of cells in azimuth or longitude is approximately constant,
+ *    giving fewer azimuth cells with increasing inclination or latitude (y)
  ***/
 
 Tree3D* newTree3D_spherical(int data_code, int numx_nominal, int numy, int numz,
@@ -200,20 +197,20 @@ Tree3D* newTree3D_spherical(int data_code, int numx_nominal, int numy, int numz,
     if (tree == NULL) {
         return (NULL);
     }
-    // alocate node array in x, y and z
+    // allocate node array in x, y and z
     garray = (OctNode ****) malloc((size_t) numx_nominal * sizeof (OctNode***));
     if (garray == NULL) {
         free(tree);
         return (NULL);
     }
-    // alocate ds_x array
+    // allocate ds_x array
     tree->ds_x = (double*) malloc((size_t) numy * sizeof (double));
     if (tree->ds_x == NULL) {
         free(garray);
         free(tree);
         return (NULL);
     }
-    // alocate num_x array
+    // allocate num_x array
     tree->num_x = (int*) malloc((size_t) numy * sizeof (int));
     if (tree->num_x == NULL) {
         free(garray);
@@ -277,7 +274,7 @@ Tree3D* newTree3D_spherical(int data_code, int numx_nominal, int numy, int numz,
 
 }
 
-/*** funciton to calculate dx values as a funciton of y value for a Tree3D spherical*/
+/*** function to calculate dx values as a function of y value for a Tree3D spherical*/
 
 double get_dx_spherical(double dx_nominal, double origx, double x_max, double center_y, int *pnum_x) {
 
@@ -290,7 +287,7 @@ double get_dx_spherical(double dx_nominal, double origx, double x_max, double ce
 
 }
 
-/*** function to sudivide a node into child nodes ***/
+/*** function to subdivide a node into child nodes ***/
 
 void subdivide(OctNode* parent, double value, void *pdata) {
 
@@ -301,7 +298,7 @@ void subdivide(OctNode* parent, double value, void *pdata) {
     ds.y = parent->ds.y / 2.0;
     ds.z = parent->ds.z / 2.0;
 
-    // alocate nodes in x, y and z
+    // allocate nodes in x, y and z
 
     for (ix = 0; ix < 2; ix++) {
         center.x = parent->center.x + (double) (2 * ix - 1) * ds.x / 2.0;
@@ -334,7 +331,7 @@ void freeNode(OctNode* node, int freeDataPointer) {
     }
 
     // try to free data
-    if (freeDataPointer)
+    if (freeDataPointer && node->pdata != NULL)
         free(node->pdata);
     free(node);
 
@@ -342,34 +339,77 @@ void freeNode(OctNode* node, int freeDataPointer) {
 
 /*** function to get the leaf node in a Tree3D containing the given x, y, z coordinates ***/
 
-OctNode* getLeafNodeContaining(Tree3D* tree, Vect3D coords) {
+OctNode* getTreeNodeContaining(Tree3D* tree, Vect3D coords) {
 
     int ix, iy, iz;
     OctNode* rootNode;
 
     // get indices of root in tree
     // z
-    iz = (int) ((coords.z - tree->orig.z) / tree->ds.z);
-    if (iz < 0 || iz >= tree->numz)
+    double diz = (coords.z - tree->orig.z) / tree->ds.z;
+    iz = (int) diz;
+    if (iz < 0 || iz > tree->numz) {
         return (NULL);
+    } else if (iz == tree->numz) {
+        if (fabs(diz - (double) tree->numz) < tree->ds.z / 10000.0) {
+            // z is at upper bound of tree limits
+            iz = tree->numz - 1;
+        } else {
+            return (NULL);
+        }
+    }
+
     // y
-    iy = (int) ((coords.y - tree->orig.y) / tree->ds.y);
-    if (iy < 0 || iy >= tree->numy)
+    double diy = (coords.y - tree->orig.y) / tree->ds.y;
+    iy = (int) diy;
+    if (iy < 0 || iy > tree->numy) {
         return (NULL);
+    } else if (iy == tree->numy) {
+        if (fabs(diy - (double) tree->numy) < tree->ds.y / 10000.0) {
+            // y is at upper bound of tree limits
+            iy = tree->numy - 1;
+        } else {
+            return (NULL);
+        }
+    }
+
     // x
+    double dx, num_x;
     if (tree->isSpherical) {
-        double dx = tree->ds_x[iy];
-        int num_x = tree->num_x[iy];
-        ix = (int) ((coords.x - tree->orig.x) / dx);
-        if (ix < 0 || ix >= num_x)
-            return (NULL);
+        dx = tree->ds_x[iy];
+        num_x = tree->num_x[iy];
     } else {
-        ix = (int) ((coords.x - tree->orig.x) / tree->ds.x);
-        if (ix < 0 || ix >= tree->numx)
+        dx = tree->ds.x;
+        num_x = tree->numx;
+    }
+    double dix = (coords.x - tree->orig.x) / dx;
+    if (dix < 0.0) {
+        // x is far lower bound of tree limits
+        return (NULL);
+    }
+    ix = (int) dix;
+    if (ix < 0 || ix > num_x) {
+        return (NULL);
+    } else if (ix == num_x) {
+        if (fabs(dix - (double) num_x) < dx / 10000.0) {
+            // x is at upper bound of tree limits
+            ix = num_x - 1;
+        } else {
             return (NULL);
+        }
     }
 
     rootNode = tree->nodeArray[ix][iy][iz];
+
+    return (rootNode);
+
+}
+
+/*** function to get the leaf node in a Tree3D containing the given x, y, z coordinates ***/
+
+OctNode* getLeafNodeContaining(Tree3D* tree, Vect3D coords) {
+
+    OctNode* rootNode = getTreeNodeContaining(tree, coords);
 
     if (rootNode == NULL)
         return (NULL);
@@ -420,6 +460,7 @@ int nodeContains(OctNode* node, double x, double y, double z) {
 
     dz2 = ds.z / 2.0;
     if (z < node->center.z - dz2 || z > node->center.z + dz2)
+
         return (0);
 
     return (1);
@@ -446,6 +487,7 @@ int extendedNodeContains(OctNode* node, double x, double y, double z, int checkZ
     if (checkZ) {
         dz2 = ds.z;
         if (z < node->center.z - dz2 || z > node->center.z + dz2)
+
             return (0);
     }
 
@@ -480,6 +522,7 @@ ResultTreeNode* addResult(ResultTreeNode* prtree, double value, double volume, O
         prtree->left = addResult(prtree->left, value, volume, pnode);
 
     } else {
+
         prtree->right = addResult(prtree->right, value, volume, pnode);
     }
 
@@ -495,6 +538,7 @@ void freeResultTree(ResultTreeNode* prtree) {
 
     if (prtree->left != NULL)
         freeResultTree(prtree->left);
+
     if (prtree->right != NULL)
         freeResultTree(prtree->right);
     free(prtree);
@@ -520,7 +564,7 @@ ResultTreeNode* getHighestLeafValue(ResultTreeNode* prtree) {
     if (prtree == NULL)
         return (NULL);
 
-    ResultTreeNode* prtree_returned = NULL;
+    ResultTreeNode * prtree_returned = NULL;
 
     if (prtree->right != NULL)
         prtree_returned = getHighestLeafValue(prtree->right);
@@ -540,6 +584,10 @@ ResultTreeNode* getHighestLeafValue(ResultTreeNode* prtree) {
 /*** function to get ResultTree Leaf Node with highest value, node must be larger than specified minimum size */
 
 ResultTreeNode* getHighestLeafValueMinSize(ResultTreeNode* prtree, double sizeMinX, double sizeMinY, double sizeMinZ) {
+
+    if (prtree == NULL) { // no nodes in tree
+        return (NULL);
+    }
 
     ResultTreeNode* prtree_returned = NULL;
 
@@ -640,6 +688,52 @@ ResultTreeNode* getHighestLeafValueAtSpecifiedLevel(ResultTreeNode* prtree, int 
     return (prtree_returned);
 }
 
+/*** function to get ResultTree Leaf Node at level less than or equal to specified level with highest value */
+
+ResultTreeNode* getHighestLeafValueLESpecifiedLevel(ResultTreeNode* prtree, int level) {
+
+    ResultTreeNode* prtree_returned = NULL;
+
+    if (prtree->right != NULL)
+        prtree_returned = getHighestLeafValueLESpecifiedLevel(prtree->right, level);
+
+    if (prtree_returned != NULL) // right leaf descendent
+        return (prtree_returned); // thus highest value leaf
+    else { // no right leaf descendents
+        if ((prtree->level <= level) // is less than or equal to specified level
+                && prtree->pnode->isLeaf) // this is leaf
+            return (prtree); // thus highest value leaf that is <= specified level
+    }
+
+    if (prtree->left != NULL) // look for left leaf descendents
+        prtree_returned = getHighestLeafValueLESpecifiedLevel(prtree->left, level);
+
+    return (prtree_returned);
+}
+
+/*** function to get ResultTree Leaf Node at level greater than or equal to specified level with highest value */
+
+ResultTreeNode* getHighestLeafValueGESpecifiedLevel(ResultTreeNode* prtree, int level) {
+
+    ResultTreeNode* prtree_returned = NULL;
+
+    if (prtree->right != NULL)
+        prtree_returned = getHighestLeafValueGESpecifiedLevel(prtree->right, level);
+
+    if (prtree_returned != NULL) // right leaf descendent
+        return (prtree_returned); // thus highest value leaf
+    else { // no right leaf descendents
+        if ((prtree->level >= level) // is greater than or equal to specified level
+                && prtree->pnode->isLeaf) // this is leaf
+            return (prtree); // thus highest value leaf that is >= specified level
+    }
+
+    if (prtree->left != NULL) // look for left leaf descendents
+        prtree_returned = getHighestLeafValueGESpecifiedLevel(prtree->left, level);
+
+    return (prtree_returned);
+}
+
 /*** function to read a Tree3D ***/
 
 // TODO: modify to support spherical Tree3D!
@@ -677,6 +771,7 @@ Tree3D* readTree3D(FILE *fpio) {
             for (iz = 0; iz < tree->numz; iz++) {
                 istat += readNode(fpio, tree->nodeArray[ix][iy][iz]);
                 if (istat < 0)
+
                     return (NULL);
                 istat_cum += istat;
             }
@@ -722,6 +817,7 @@ int readNode(FILE *fpio, OctNode* node) {
                 if (node->child[ix][iy][iz] != NULL) {
                     istat = readNode(fpio, node->child[ix][iy][iz]);
                     if (istat < 0)
+
                         return (-1);
                     istat_cum += istat;
                 }
@@ -760,6 +856,7 @@ int writeTree3D(FILE *fpio, Tree3D* tree) {
             for (iz = 0; iz < tree->numz; iz++) {
                 istat = writeNode(fpio, tree->nodeArray[ix][iy][iz]);
                 if (istat < 0)
+
                     return (-1);
                 istat_cum += istat;
             }
@@ -797,6 +894,7 @@ int writeNode(FILE *fpio, OctNode* node) {
                 if (node->child[ix][iy][iz] != NULL) {
                     istat = writeNode(fpio, node->child[ix][iy][iz]);
                     if (istat < 0)
+
                         return (-1);
                     istat_cum += istat;
                 }
@@ -808,7 +906,10 @@ int writeNode(FILE *fpio, OctNode* node) {
 
 }
 
-/** function to get scatter sample for all leafs in results tree */
+/** function to get scatter sample for all leafs in results tree
+ *  *poct_tree_scatter_volume is weighted volume of cells in results tree
+ *  *poct_tree_scatter_volume = SUM(cell_volume * cell_prob / oct_node_value_ref)
+ */
 
 int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, int num_scatter,
         double integral, float* fdata, int npoints, int* pfdata_index,
@@ -825,14 +926,21 @@ int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, i
             fdata, npoints, pfdata_index, oct_node_value_ref, poct_tree_scatter_volume, level_min, level_max);
 
     pnode = prtree->pnode;
+    //printf("npoints < num_scatter %d && pnode->isLeaf %d && pnode->level >= level_min %d && pnode->level <= level_max %d (level %d min %d max %d\n",
+    //        npoints < num_scatter, pnode->isLeaf, pnode->level >= level_min, pnode->level <= level_max, pnode->level, level_min, level_max);
     if (npoints < num_scatter && pnode->isLeaf && pnode->level >= level_min && pnode->level <= level_max) {
 
         // AJL 20061023 bug fix - prtree value may not be same as pnode value * volume
         //xnpoints = (double) num_scatter * exp(prtree->value - oct_node_value_ref) / integral;
-        if (value_type == VALUE_IS_LOG_PROB_DENSITY_IN_NODE)
+        if (value_type == VALUE_IS_LOG_PROB_DENSITY_IN_NODE) {
             xnpoints = (double) num_scatter * (exp(pnode->value - oct_node_value_ref) * prtree->volume) / integral;
-        else if (value_type == VALUE_IS_PROBABILITY_IN_NODE)
-            xnpoints = (double) num_scatter * (pnode->value - oct_node_value_ref) / integral;
+        } else if (value_type == VALUE_IS_PROB_DENSITY_IN_NODE) {
+            xnpoints = prtree->volume * (double) num_scatter * (pnode->value / oct_node_value_ref) / integral;
+        } else if (value_type == VALUE_IS_PROBABILITY_IN_NODE) {
+            // 20140220 AJL - bug fix
+            xnpoints = (double) num_scatter * (pnode->value / oct_node_value_ref) / integral;
+            //xnpoints = (double) num_scatter * (pnode->value - oct_node_value_ref) / integral;
+        }
         //printf("xnpoints %g  num_scatter %d  value %lf  integral %g\n", xnpoints, num_scatter, pnode->value, integral);
 
         xval = pnode->center.x;
@@ -845,7 +953,7 @@ int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, i
         isample_taken = 0;
 
         //while (xnpoints > 0.0 /*&& npoints < num_scatter*/) {
-        while (xnpoints > 0.0 && npoints < num_scatter) {   // 20110118 AJL
+        while (xnpoints > 0.0 && npoints < num_scatter) { // 20110118 AJL
 
             if (xnpoints > 1.0 || xnpoints - (double) ((int) xnpoints) > get_rand_double(0.0, 1.0)) {
                 fdata[*pfdata_index + 0] = xval + get_rand_double(-dx, dx);
@@ -863,13 +971,22 @@ int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, i
 
         }
 
-        // update wieghted scatter volume
+        // update weighted scatter volume
         // pnode->value is probability density
         // oct_node_value_ref is maximum probability density
-        if (value_type == VALUE_IS_LOG_PROB_DENSITY_IN_NODE)
+        if (value_type == VALUE_IS_LOG_PROB_DENSITY_IN_NODE) {
             *poct_tree_scatter_volume += prtree->volume * exp(pnode->value - oct_node_value_ref);
-        else if (value_type == VALUE_IS_PROBABILITY_IN_NODE)
-            *poct_tree_scatter_volume += (pnode->value - oct_node_value_ref) > 0.0 ? (pnode->value - oct_node_value_ref) : 0.0;
+        } else if (value_type == VALUE_IS_PROB_DENSITY_IN_NODE) {
+            *poct_tree_scatter_volume += prtree->volume * ((pnode->value / oct_node_value_ref) > 0.0 ? (pnode->value / oct_node_value_ref) : 0.0);
+        } else if (value_type == VALUE_IS_PROBABILITY_IN_NODE) {
+            // 20150910 AJL - TEST
+            *poct_tree_scatter_volume += (pnode->value / oct_node_value_ref) > 0.0 ? (pnode->value / oct_node_value_ref) : 0.0;
+            // 20150215 AJL - bug fix? - need to weight volume by something, TODO: though this (wt by P) is not equivalent to weighting above (wt by PDF)
+            //*poct_tree_scatter_volume += prtree->volume * ((pnode->value / oct_node_value_ref) > 0.0 ? (pnode->value / oct_node_value_ref) : 0.0);
+            // 20140220 AJL - bug fix
+            //printf("poct_tree_scatter_volume %f  volume %f  value%f  oct_node_value_ref%f\n", *poct_tree_scatter_volume, prtree->volume, pnode->value, oct_node_value_ref);
+            //*poct_tree_scatter_volume += (pnode->value - oct_node_value_ref) > 0.0 ? (pnode->value - oct_node_value_ref) : 0.0;
+        }
     }
 
     if (prtree->left != NULL)
@@ -908,10 +1025,15 @@ double integrateResultTreeAtLevels(ResultTreeNode* prtree, int value_type, doubl
         // result tree value is log(value + volume)
         // AJL 20061023 bug fix - prtree value may not be same as pnode value * volume
         //sum += exp(prtree->value - oct_node_value_ref);
-        if (value_type == VALUE_IS_LOG_PROB_DENSITY_IN_NODE)
+        if (value_type == VALUE_IS_LOG_PROB_DENSITY_IN_NODE) {
             sum += exp(pnode->value - oct_node_value_ref) * prtree->volume;
-        else if (value_type == VALUE_IS_PROBABILITY_IN_NODE)
-            sum += (pnode->value - oct_node_value_ref) > 0.0 ? (pnode->value - oct_node_value_ref) : 0.0;
+        } else if (value_type == VALUE_IS_PROB_DENSITY_IN_NODE) {
+            sum += prtree->volume * ((pnode->value / oct_node_value_ref) > 0.0 ? (pnode->value / oct_node_value_ref) : 0.0);
+        } else if (value_type == VALUE_IS_PROBABILITY_IN_NODE) {
+            // 20140220 AJL - bug fix
+            sum += (pnode->value / oct_node_value_ref) > 0.0 ? (pnode->value / oct_node_value_ref) : 0.0;
+            //sum += (pnode->value - oct_node_value_ref) > 0.0 ? (pnode->value - oct_node_value_ref) : 0.0;
+        }
     }
 
     if (prtree->right != NULL)

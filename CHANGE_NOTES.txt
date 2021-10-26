@@ -1,4 +1,3 @@
-TODO:
 
 09OCT2000 NLLoc - added grid memory management, program keeps and re-uses grids in memory while there is space.
 
@@ -294,11 +293,143 @@ Apr2005 NLLoc - LOCDELAY_SURFACE
 15Feb2011 NLLoc - Fixed bug: covariance calculation with LOCSEARCH GRID could fail due to precision problem if x, y, or z coordinated of location were large.
 
 
-07 Mar 2011 New version 5.00 posted to web =================================
+New version 6.00 posted to web =================================
 
 
-Following  not added to 5.00 doc :
+Following  not added to 6.00 doc :
 05Oct2010 NLLoc - Added: LOCMETH OT_STACK
+
+
+
+20110511 NLLoc - Added to doc: in LOCMETH:    (int)   flag indicating if duplicate arrivals used for location (1=reject, 0=use if time diff < sigma / 2)    ;      duplicate arrivals have same station label and phase name
+
+20110601 NLLoc - Take-off angle default/unset values for dip and azimuth set to -1.0 so unset angles can be more easily identified in later processing (e.g. in SeisComp3).
+
+20120521 NLL - Added utilities Vel2Grid3D, interface2fmm, fmm2grid to support creating NLL travel time grids using  ANU-FMM multi-stage 3D fast marching code (http://rses.anu.edu.au/seismology/soft/fmmcode/).
+
+20120724 Time2Angles - Added new utility Time2Angles to convert NLL travel time grids to NLL angles grids.
+
+20120724 NLLoc - Fixed bug: LOCMETH GAU_ANALYTIC: adde a check and reject hypocenter location points where there are no valid travel-times available.
+
+20130108 scat2latlon - Added new utility scat2latlon to convert binary PDF scatter sample files *.scat to ascii files with lines containing lat/lon/depth/0/non-normalized_likelihood for each sample.
+
+20130228 NLLoc - Fixed bug: Hypocenter-Phase outputs in HypoEllipse and Hypo71 format: all phases used for location were not printed, changed so that all phases are printed, regardless of location weight.
+
+20130314 NLLoc - Fixed bug: Changed HypoDesc->probmax from double to long double, to help avoid overrange in probmax value.
+
+20130326 NLLoc - Fixed bug: ArrivalDesc->original_obs_index was not set properly to mirror arrival index in observation file when duplicate arrivals are rejected.
+
+20130327 NLLoc - Fixed bug: Calculated hypocenter to station azimuth in GLOBAL mode was incorrect for some azimuth quadrants.
+
+20130413 NLLoc - Fixed bug: Memory for 3D travel-time grids read into memory (see LOCMETH) was not properly freed.
+
+20130627 NLLoc - Fixed bug: Bugs in station distribution weighting, changed cross-arrival weighing from sum to product (see LOCSTAWT).
+
+20130627 NLLoc - Added support for non-zero and non-unity arrival a-priori weighting (NLL_FORMAT_VER_2).  Before, arrivals with zero a-priori weights were rejected, otherwise a-priori weight = 1.0 was used.  Now, a-priori weights are used in proportion to their values.
+
+20130628 NLLoc - Added observation file name and program version date to SIGNATURE line in NLL hypocenter-phase file.
+
+20131015 Add to doc: On 2013/10/15 15:29, Jana Doubravova wrote:
+	> Dear Anthony Lomax,
+	> I am writing to inform you that we managed to compile and run NLLoc on Windows system.
+	> I don't know how much valuable information is it for you, but I think it might be interesting for
+	> potential NLLoc users on Windows. We did it using NetBeans and Cygwin. It is working for win32
+	> (tested on windows xp) and win64 (tested on windows 7) systems. Attached you can find the .exe
+	> files. It requires Cygwin installed (32bit version) and the cygwin1.dll (part of Cygwin usualy found
+	> in cygwin\bin directory) manually copied to \system32 (for 32bit) or \sysWOW64 (for 64bit)
+	> - there is possibly better way to do it but my "add-to-system-path" attempts failed.
+	> Then NLLoc could be run using standard command line. If the argument
+	> includes path it must be in the linux way (like D:\NLLoc>src\nlloc nll/nll.in).  Paths in .in file must be
+	> in cygwin format (like  /cygdrive/d/...).  I hope this could help someone searching for a good
+	> location software for windows.
+	> Best regards
+	> Jana Doubravova
+	>
+	> Institute of Geophysics ASCR
+	> Bocni II/1401
+	> 141 31 Prague 4
+	> Czech Republic
+
+
+20131024 Added to doc:
+ 	VGGRID: Doc is correct for a 3D grid, but for a 2D grid xNum=2 and xOrig=yOrig=0.0 since a 2D grid represents a 1D model and is invariant with respect to translations in x or y.
+ 	LOCGRID: Doc is correct when using 3D and 2D models and travel time grids, for 2D velocity and travel-time grids LOCGRID should be 3D and positioned absolutely in space, thus xNum >> 2 and xOrig and zOrig are in general != 0.0
+
+
+20140220 OctTree - Fixed bug: calculation of integrals and scatter sample for value_type == VALUE_IS_PROBABILITY_IN_NODE.  (NLLoc does NOT use this mode, it uses value_type == VALUE_IS_LOG_PROB_DENSITY_IN_NODE.)
+
+201401-04 Grid2GMT - Minor bug fixes.
+
+201405 NLDiffLoc - Added L1 norm (LocMethod == METH_L1_NORM).
+
+20140530 NLLoc - Fixed bug: HYPO71 phase format S phases were not correctly read (60sec error) when there was no decimal point in the time field.
+
+20141030 NLLoc - Bug fix: matrix_statistics/matrix_statistics.c: CalcCovarianceSamples*():
+	Implemented new algorithm which subtracts the expectation from each data value before squaring and summing,
+	instead of correcting for expectation after summing and dividing by nSamples.
+	Should prevent precision errors in covariances when expectation is far from coordinates origin.
+
+	Applies to: LOCSEARCH MET and LOCSEARCH OCT
+    The algorithm for calculating the covariance of the PDF scatter sample used in NLLoc
+    was subject to precision errors when the expectation of the scatter sample (e.g. the event location)
+    was far from the origin of the NLL coordinates system relative to the extent of the PDF scatter sample.
+    Several tests indicate that "Far from the origin" is of the order of 1000 times the extent of the PDF scatter sample.
+
+    Errors in covariance will affect the ellipsoid and ellipse, standard-errors (erh, erz, etc.).
+
+    For teleseismic locations (NLL GLOBAL mode) errors with the old algorithm occur primarily in
+    longitude (X), increasing with expectation longitude and occasionally becoming large towards longitude +/-180deg.
+    For local studies in rectangular coordinates where the NLL coordinates origin is far from the network
+    and target sources, the errors may be large.  This may be the case, for example, for a micro-seismic study
+    using a regional, metric-based cartesian grid coordinate system with origin far from the study area.
+    For local studies in rectangular coordinates where the NLL coordinates origin is within or near the network
+    and target sources, the errors should be very small or negligible.
+    
+	The algorithm for calculating the covariance of the PDF scatter sample used in NLLoc v.6.03.00 and later does not
+	have these precision errors and is valid for locations far from the origin of the coordinate system.
+
+20141107 NLLoc - New version of matrix_statistics/matrix_statistics.c: CalcCovarianceSamplesGlobal() which calculates x and y coords using distance and azimuth of each sample from expectation x,y.  Centers x,y and avoids problems near poles.
+
+20150324 NLLoc - Added: LOCMETH L1_NORM
+
+20150602 NLLoc - Added: QML_ConfidenceEllipsoid in NLL Hypocenter-Phase format, and supporting conversion nllEllipsiod2QMLConfidenceEllipsoid() in matrix_statistics.c.
+
+20150602 NLDiffLoc - Fixed bug: station and ray values (SDist SAzim RAz RDip RQual) in *.hyp file did not always correspond to hypocenter for *.hyp file.
+
+20151106 NLDiffLoc - Fixed bug: inconsistency in conversion of degrees to km: now all conversions deg<->km are made on a sphere with average Earth radius 6371 km.  In GLOBAL mode this change can lead to small but not necessarily insignificant changes in station distances, travel-times and hypocenter.
+
+20151106 AJL - Changed km/deg scaling to be based on sphere with radius 6371, average Earth radius, instead of 90deg/10000km.
+
+20160726 NLL - Added: TRANS TRANS_MERC transform mode added.  (Transverse Mercator projection) 
+
+20160805 NLLoc: fixed bug in associating S with P from same station when LOCMETH VpVs used, in some cases location would abort because P travel time grid for S picks not found
+
+20160920 NLLoc - Added SAVE_FMAMP format output to LOCHYPOUT parameters, fmamp hypocenter-phase file
+
+20160927 NLLoc - Added use of spherical oct-tree structure in GLOBAL mode if SAVE_NLLOC_OCTREE not used (does not yet support spherical trees).  Spherical oct-tree structure uses fewer cell in longitude towards the poles to preserve average cell volume.  Number of cells in longitude is proportional to cos(latitude).
+
+20161013 NLLoc - Bug fix: with LOCMETH: When LOCSTAWT is active the station dist weight was counted twice for determining the maximum likelihood origin time. Fixed.
+
+20161027 NLLoc - Added NLL cascading, multi-scale, 3D grid structure.  A NLL cascading grid has a doubling of cell size at specified depths.  This reduces greatly the storage and memory requirement for large, 3D grids.  A NLL grid can be converted from a regular grid to cascading grid with new tool GridCascadingDecimate.  Typically, a 3D velocity model and travel times will be constructed using a regular grid to maintain precision; as a last step, the travel-time grids are converted to cascading grids for storage and location.
+
+20170811 NLLoc - Added SAVE_NLLOC_EXPECTATION format output to LOCHYPOUT parameters, allows saving of expectation hypocenter results instead of maximum likelihood.
+	Added to NLLoc Hypocenter-Phase file:
+		HYPOCENTER line: new field at end of line: HypoDesc->type: "MAXIMUM_LIKELIHOOD" or "EXPECTATION"
+		New MAXIMUM_LIKELIHOOD line, example:
+			MAXIMUM_LIKELIHOOD  MaxLikeLat 31.247162 Long -103.361311 Depth -0.537500 OT 32.906855
+
+20170911 NLLoc - Added: New binary (*.bin and *.bin.hder) format for LOCTOPO_SURFACE topo surface file
+	# (LOCTOPO_SURFACE  <GMT GRD File>  dump_flag)
+	#    (char[]) <GMT GRD File> : GMT ascii or binary grd file (make from *.grd using grdinfo and grd2xyz)
+	#        with topo surface in meters (x - longitude in deg, y - latitude in deg, z - elev in m).
+	#		 Important: For binary grd file, filename must end in .bin with associated .bin.hdr ascii header file
+	#    (int)    dump_flag : if >=1 dump topo lat/lon/elev with decimation=dump_flag to file in NLL binary scatter file format.
+	# Note: To convert topo.grd to GMT ascii grid format, use:
+	#        grdinfo topo.grd > topo.grd.asc
+	#        grd2xyz topo.grd -Z >> topo.grd.asc
+	# Note: To convert topo.grd to GMT binary grid format, use:
+	#        grdinfo topo.grd > topo.grd.bin.hdr
+	#        grd2xyz topo.grd -ZTLd > topo.grd.bin
 
 
 

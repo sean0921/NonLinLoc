@@ -19,11 +19,14 @@
 #define ERAD 6378.135
 #define ERADM 6378135.0
 #define AVG_ERAD 6371.0
-#define FLATTENING 1.0/298.26	// Earth flattening (WGS '72)
+#define FLATTENING (1.0/298.26)	// Earth flattening (WGS '72)
 #define EPS 0.000000000005
 #define KM2MI 0.621371
-#define KM2DEG (90.0/10000.0)
-#define DEG2KM (10000.0/90.0)
+// 20151106 AJL - changed km/deg scaling to be based on sphere with radius 6371, average Earth radius.
+//#define KM2DEG (90.0/10000.0)
+//#define DEG2KM (10000.0/90.0)
+#define KM2DEG (180.0/(PI*AVG_ERAD))
+#define DEG2KM (PI*AVG_ERAD/180.0)
 
 double GCDistance(double lat1, double lon1, double lat2, double lon2);
 

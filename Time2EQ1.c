@@ -272,7 +272,7 @@ int main(int argc, char *argv[]) {
                 if ((istat = OpenGrid3dFile(filename, &fp_time_grid,
                         &fp_time_hdr, &grid0, "time", &srce0, grid0.iSwapBytes))
                         < 0) {
-                    CloseGrid3dFile(&fp_time_grid, &fp_time_hdr);
+                    CloseGrid3dFile(&grid0, &fp_time_grid, &fp_time_hdr);
                     nll_puterr2("ERROR: opening time grid files", filename);
                     continue;
                 }
@@ -284,7 +284,7 @@ int main(int argc, char *argv[]) {
                 (Station + nsta)->z = srce0.z;
 
                 arrival_time = CalcArrivalTime(fp_time_grid, &grid0, Event, Station + nsta);
-                CloseGrid3dFile(&fp_time_grid, &fp_time_hdr);
+                CloseGrid3dFile(&grid0, &fp_time_grid, &fp_time_hdr);
                 sprintf(MsgStr_sta,
                         "Calculating travel time for station / phase: %s  %s  X %.2lf  Y %.2lf  Z %.2lf",
                         (Station + nsta)->label,
@@ -364,7 +364,7 @@ double CalcArrivalTime(FILE* fpgrid, GridDesc* ptgrid, SourceDesc* pevent, Stati
     if (ptgrid->type == GRID_TIME) {
         /* 3D grid */
         arrival_time = pevent->otime +
-                ReadAbsInterpGrid3d(fpgrid, ptgrid, pevent->x, pevent->y, pevent->z);
+                ReadAbsInterpGrid3d(fpgrid, ptgrid, pevent->x, pevent->y, pevent->z, 0);
     } else {
         /* 2D grid (1D model) */
         yval_grid = GetEpiDistSta(psta, pevent->x, pevent->y);
@@ -439,7 +439,7 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid,
 
     ipolarity = radamp < 0.0 ? -1 : 1;
 
-    /*printf("FM: Sta: %s  ray_dip %.1lf  ray_azim %.1lf  radamp %.2le  ipol %d\n", psta->label, ray_dip, ray_azim, radamp, ipolarity);*/
+    printf("FM: Sta: %s  ray_dip %.1lf  ray_azim %.1lf  radamp %.2le  ipol %d\n", psta->label, ray_dip, ray_azim, radamp, ipolarity);
 
     return (ipolarity);
 

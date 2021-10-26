@@ -1,19 +1,19 @@
 /*
- * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
+ * Copyright (C) 1999-2017 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * GNU Lesser Public License for more details.
+
+ * You should have received a copy of the GNU Lesser Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
  */
 
 
@@ -23,12 +23,6 @@
 
  */
 
-/*------------------------------------------------------------/ */
-/* Anthony Lomax           | email: lomax@faille.unice.fr     / */
-/* UMR Geosciences Azur    | web: www-geoazur.unice.fr/~lomax / */
-/* 250 Rue Albert Einstein | tel: 33 (0) 4 93 95 43 25        / */
-/* 06560 Valbonne, FRANCE  | fax: 33 (0) 4 93 65 27 17        / */
-/*------------------------------------------------------------/ */
 
 
 /*
@@ -36,11 +30,15 @@
 
         ver 01    04Nov1997  AJL  Original version
 
-                    Unregistered bug fixes
-                    Jan 2006 Frederik Tilmann
-                     MAX_NUM_INPUT_FILES reduced to 32000 (larger values result in segmentation violation on jumping into subroutine Sum_Locations)
-+
-                   13Feb2006 AJL MAX_NUM_INPUT_FILES reduced to 5000
+                   Unregistered bug fixes Jan 2006 Frederik Tilmann
+                        MAX_NUM_INPUT_FILES reduced to 32000 (larger values result in segmentation violation on jumping into subroutine Sum_Locations)
+                   20060213 AJL MAX_NUM_INPUT_FILES reduced to 5000
+                   20110727 AJL Incorporated changes to MAX_NUM_INPUT_FILES etc. proposed by Frederik Tilmann :
+                       Unregistered bug fixes Frederik Tilmann
+                       2011-07-27
+                        // make fn_hyp_in_list static to avoid stack overflow problem (F Tilmann) - previously //
+                        // Add fclose(fp_hypo) to for loop over all events as otherwise run out of file pointers after about
+                            1000 events
 
 .........1.........2.........3.........4.........5.........6.........7.........8
 
@@ -57,7 +55,15 @@
 /* MAX_NUM_INPUT_FILES values of > 215 give a segemtation violation when jumping into the subroutine
     (gcc (GCC) 3.2 20020903 (Red Hat Linux 8.0 3.2-7) Frederik Tilmann */
 // reduce array sizes to see if this is cause of segmentation error on some systems.
-#define MAX_NUM_INPUT_FILES 5000
+//#define MAX_NUM_INPUT_FILES 50000
+/* MAX_NUM_INPUT_FILES values of > 12254 give a segmentation violation when jumping into the subroutine Sum_Locations
+      (gcc (GCC) 3.2 20020903 (Red Hat Linux 8.0 3.2-7)
+also: (gcc (GCC) 4.4.4 20100630 (Red Hat 4.4.4-10)   Kernel: 2.6.32.26-175.fc12.x86_64
+ // reduce array sizes to see if this is cause of segmentation error on some systems.
+ Frederik Tilmann */
+//#define MAX_NUM_INPUT_FILES 32000
+// 20170210 AJL - reset to 50k
+#define MAX_NUM_INPUT_FILES 50000
 
 
 /* globals */
@@ -94,7 +100,9 @@ int main(int argc, char** argv) {
     if (argc < 5) {
         nll_puterr("ERROR wrong number of command line arguments.");
         disp_usage(PNAME,
-                "<size_gridfile> decim <output_file_root> <add_file_list> [Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax [latMin,latMax,longMin,longMax]]]]]]");
+                "<size_gridfile> <scat_decim> <output_file_root> <add_file_list> [Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax [latMin,latMax,longMin,longMax[,YX]]]]]]]"
+                "\n  if ,YX specfied cut is in hypo y/x (km), lat/lon otherwise"
+                );
         exit(-1);
     }
 
@@ -134,7 +142,9 @@ int SumLocations(int argc, char** argv) {
     float fdata[4], probmax = -VERY_LARGE_FLOAT;
 
     int nFile, numFiles, nLocWritten, nLocAccepted;
-    char fn_hyp_in_list[MAX_NUM_INPUT_FILES][FILENAME_MAX];
+    //char fn_hyp_in_list[MAX_NUM_INPUT_FILES][FILENAME_MAX];
+    // make fn_hyp_in_list static to avoid stack overflow problem (F Tilmann) //
+    static char fn_hyp_in_list[MAX_NUM_INPUT_FILES][FILENAME_MAX];
     char test_str[10];
 
     double xmin, xmax, ymin, ymax, zmin, zmax;
@@ -148,7 +158,11 @@ int SumLocations(int argc, char** argv) {
     int iReject;
 
     double latMin, latMax, longMin, longMax;
+    char strXY[10];
     int icut = 0;
+    int CUT_LATLON = 1;
+    // 20170321 AJL - added cut in YX loc (km)
+    int CUT_YX = 2;
 
     GridDesc Grid, locgrid;
     SourceDesc* Srce = NULL;
@@ -162,7 +176,7 @@ int SumLocations(int argc, char** argv) {
     sscanf(argv[2], "%d", &num_decim);
     if (num_decim < 1)
         fprintf(stdout,
-            "  Decimation < 1, no scatter points will be written to ouptut.\n");
+            "  Scatter Decimation < 1, no scatter points will be written to ouptut.\n");
     else
         fprintf(stdout, "  Decimation: %d\n", num_decim);
 
@@ -195,9 +209,14 @@ int SumLocations(int argc, char** argv) {
     }
     fprintf(stdout, "  Gap Maximum: %d\n", GapMax);
     if (argc > 10) {
-        sscanf(argv[10], "%lf,%lf,%lf,%lf", &latMin, &latMax, &longMin, &longMax);
-        icut = 1;
-        fprintf(stdout, "  Geog Cut Limits: Lat: %f -> %f, Long: %f -> %f\n", latMin, latMax, longMin, longMax);
+        int nscan = sscanf(argv[10], "%lf,%lf,%lf,%lf,%s", &latMin, &latMax, &longMin, &longMax, strXY);
+        if (nscan == 5 && strcmp(strXY, "YX") == 0) {
+            icut = CUT_YX;
+            fprintf(stdout, "  YX Cut Limits: Y: %f -> %f, X: %f -> %f\n", latMin, latMax, longMin, longMax);
+        } else {
+            icut = CUT_LATLON;
+            fprintf(stdout, "  Geog Cut Limits: Lat: %f -> %f, Long: %f -> %f\n", latMin, latMax, longMin, longMax);
+        }
     } else {
         icut = 0;
         fprintf(stdout, "  No Geog Cut\n");
@@ -270,7 +289,7 @@ int SumLocations(int argc, char** argv) {
     nLocAccepted = 0;
     for (nFile = 0; nFile < numFiles; nFile++) {
 
-        fprintf(OUT_LEVEL_1, "Adding location <%s>.\n", fn_hyp_in_list[nFile]);
+        fprintf(OUT_LEVEL_1, "Adding location <%s>                       \r", fn_hyp_in_list[nFile]);
 
         /* open hypocenter file */
         //sprintf(strstr(fn_hyp_in_list[nFile], test_str), "\0");
@@ -333,7 +352,11 @@ int SumLocations(int argc, char** argv) {
                 GapReject++;
                 iReject = 1;
             }
-            if (icut && (Hypo.dlat < latMin || Hypo.dlat > latMax || Hypo.dlong < longMin || Hypo.dlong > longMax)) {
+            if (icut == CUT_LATLON && (Hypo.dlat < latMin || Hypo.dlat > latMax || Hypo.dlong < longMin || Hypo.dlong > longMax)) {
+                CutReject++;
+                iReject = 1;
+            }
+            else if (icut == CUT_YX && (Hypo.y < latMin || Hypo.y > latMax || Hypo.x < longMin || Hypo.x > longMax)) {
                 CutReject++;
                 iReject = 1;
             }
@@ -400,6 +423,9 @@ int SumLocations(int argc, char** argv) {
                     fprintf(fp_hyp_scat_out, "%9.4lf %9.4lf %9.4lf %9.2le\n",
                             fdata[0], fdata[1], fdata[2], fdata[3]);
 
+                    // DEBUG check of scatter data
+                    //printf("x %f  y %f  z %f  value %le\n", fdata[0], fdata[1], fdata[2], fdata[3]);
+
                 }
 
                 num_points_tot += npoints;
@@ -416,11 +442,13 @@ int SumLocations(int argc, char** argv) {
 
 
         }
+        fclose(fp_hypo);
 
     }
+    fprintf(OUT_LEVEL_1, "\n");
 
 
-    /* write header informaion */
+    /* write header information */
     fseek(fp_scat_out, 0, SEEK_SET);
     fwrite(&num_points_written, sizeof (int), 1, fp_scat_out);
     fdata[0] = (float) probmax;

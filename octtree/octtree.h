@@ -66,8 +66,9 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 /* structures */
 /*------------------------------------------------------------/ */
 
-#define VALUE_IS_LOG_PROB_DENSITY_IN_NODE 0
-#define VALUE_IS_PROBABILITY_IN_NODE 1
+#define VALUE_IS_LOG_PROB_DENSITY_IN_NODE 0     // log of pdf (does not take into account volume of cell)
+#define VALUE_IS_PROB_DENSITY_IN_NODE 1     // pdf (does not take into account volume of cell)
+#define VALUE_IS_PROBABILITY_IN_NODE 2     // pdf * cell volume (takes into account volume of cell)
 
 /* octree node */
 
@@ -77,7 +78,7 @@ typedef struct octnode
 	OctNodePtr parent;		/* parent node */
 	Vect3D center;			/* absolute coordinates of center */
 	Vect3D ds;			/* length of sides */
-	int level;                      // level of node in oect-tree heirachy (0 = top, largest)
+	int level;                      // level of node in oect-tree hierarchy (0 = top, largest)
 	double value;			/* node value */
 	OctNodePtr child[2][2][2];	/* child nodes */
 	char isLeaf;			/* leaf flag, 1=leaf */
@@ -110,7 +111,7 @@ typedef struct resultTreeNode {
 	ResultTreeNodePtr left;		/* address of left node */
 	ResultTreeNodePtr right;	/* address of right node */
 	double value;			/* sort value */
-	int level;			/* level of node in oect-tree heirachy (0 = top, largest) */
+	int level;			/* level of node in oect-tree hierarchy (0 = top, largest) */
 	double volume;		/* volume, node volume depends on geometry in physical space, may not be dx*dy*dz */
 	OctNode* pnode;			/* corresponding octree node */
 } ResultTreeNode;
@@ -149,6 +150,7 @@ OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value, voi
 void subdivide(OctNode* parent, double value, void *pdata);
 void freeTree3D(Tree3D* tree, int freeDataPointer);
 void freeNode(OctNode* node, int freeDataPointer);
+OctNode* getTreeNodeContaining(Tree3D* tree, Vect3D coords);
 OctNode* getLeafNodeContaining(Tree3D* tree, Vect3D coords);
 OctNode* getLeafContaining(OctNode* node, double x, double y, double z);
 
@@ -160,6 +162,8 @@ ResultTreeNode* getHighestLeafValueMinSize(ResultTreeNode* prtree, double sizeMi
 ResultTreeNode* getHighestLeafValueLESpecifiedSize(ResultTreeNode* prtree, double sizeX, double sizeY, double sizeZ);
 ResultTreeNode* getHighestLeafValueOfSpecifiedSize(ResultTreeNode* prtree, double sizeX, double sizeY, double sizeZ);
 ResultTreeNode* getHighestLeafValueAtSpecifiedLevel(ResultTreeNode* prtree, int level);
+ResultTreeNode* getHighestLeafValueLESpecifiedLevel(ResultTreeNode* prtree, int level);
+ResultTreeNode* getHighestLeafValueGESpecifiedLevel(ResultTreeNode* prtree, int level);
 
 Tree3D* readTree3D(FILE *fpio);
 int readNode(FILE *fpio, OctNode* node);

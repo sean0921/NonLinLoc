@@ -52,7 +52,7 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #include "GridLib.h"
 #include "GridGraphLib.h"
 
-#define GMT_VER_3_3_4	1
+#define GMT_VER_3_3_4 1
 
 
 
@@ -72,8 +72,8 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #define ANNOTATION_FONT_SIZE 7
 #define ANNOTATION_FONT 4
 
-#define MAX_GRID_VALUE 			1.0e8
-#define SUBSTITUTE_MAX_GRID_VALUE 	-1.0
+#define MAX_GRID_VALUE    1.0e8
+#define SUBSTITUTE_MAX_GRID_VALUE  -1.0
 
 #define DEFAULT_LENGTH_UNITS "km"
 #define DEFAULT_LABEL_CONTOURS " -A- "
@@ -94,6 +94,8 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 char lengthUnits[64] = DEFAULT_LENGTH_UNITS;
 char title[MAXLINE] = "\0";
 int reverse_xy = 0;
+int plot_lat_lon = 0;
+int no_plot_contours = 0;
 char label_contours[64] = DEFAULT_LABEL_CONTOURS;
 
 char fninput[FILENAME_MAX], fnoutput[FILENAME_MAX];
@@ -193,15 +195,24 @@ int main(int argc, char *argv[]) {
         fprintf(stdout, "\n");
     }
 
+    // count non option arguments
+    int argc_non_opt = 0;
+        for (narg = 0; narg < argc; narg++) {
+            if (argv[narg][0] != '-') {
+                argc_non_opt++;
+            }
+        }
+
+
     clatlongmode = '\0';
-    if (argc > 4)
+    if (argc_non_opt > 4)
         sscanf(argv[4], "%c%c", &cplotmode, &clatlongmode);
     else
         cplotmode = '\0';
     cplotmode = toupper(cplotmode);
-    if (argc < 6 || cplotmode == '\0' || (cplotmode == 'V' && argc < 10)
-            || (cplotmode == 'H' && argc < 7)
-            || (cplotmode == 'L' && argc < 6)) {
+    if (argc_non_opt < 6 || cplotmode == '\0' || (cplotmode == 'V' && argc_non_opt < 10)
+            || (cplotmode == 'H' && argc_non_opt < 7)
+            || (cplotmode == 'L' && argc_non_opt < 6)) {
         nll_puterr("ERROR wrong number of command line arguments.");
         usage();
         exit(-1);
@@ -237,17 +248,17 @@ int main(int argc, char *argv[]) {
         sscanf(argv[++narg], "%d", &izlevel);
         sprintf(args_str, "%s", argv[6]);
     } else if (cplotmode == 'L') {
-        if (argc == 9) {
+        if (argc_non_opt == 9) {
             ix1 = iy1 = izlevel = 0;
             sscanf(argv[++narg], "%d", &ix1);
             sscanf(argv[++narg], "%d", &iy1);
             sscanf(argv[++narg], "%d", &izlevel);
             sprintf(args_str, "x%s_y%s_z%s", argv[6], argv[7], argv[8]);
-        } else if (argc == 7) {
+        } else if (argc_non_opt == 7) {
             sprintf(args_str, "z%s", argv[6]);
         }
     }
-    // check for length units
+    // check for further options
     if (argc - narg > 0)
         parameter_proc(argc - narg, argv + narg);
 
@@ -312,9 +323,10 @@ int main(int argc, char *argv[]) {
         //grid0.iSwapBytes = 1;
         if ((istat = OpenGrid3dFile(fnroot_input, &fp_grid, &fp_hdr, &grid0, "", NULL,
                 grid0.iSwapBytes)) < 0) {
-            nll_puterr2("ERROR opening grid file: ", fnroot_input);
+            nll_puterr2("ERROR opening grid file", fnroot_input);
             exit(EXIT_ERROR_FILEIO);
         }
+        printf("DEBUG: Grid3dFile: %s, type:%s\n", fnroot_input, grid0.chr_type);
         /* convert lat/long specification of ends to grid index */
         if (clatlongmode == 'L') {
             latlon2rect(proj_index_output, vlat1, vlong1, &xrect, &yrect);
@@ -343,7 +355,7 @@ int main(int argc, char *argv[]) {
             exit(EXIT_ERROR_MISC);
         }
 
-        CloseGrid3dFile(&fp_grid, &fp_hdr);
+        CloseGrid3dFile(&grid0, &fp_grid, &fp_hdr);
     }
 
 
@@ -387,14 +399,22 @@ int parseCommandArgument(char* arg, char* pcommandchr, char arg_elements[][20]) 
 /* prgram usage messages
  */
 void usage() {
-            disp_usage(PNAME,
-                "<controlfile> <gridroot> <outroot> V [G][S][Ennndx][M] ix1 iy1 ix2 iy2 [length_units]");
-        disp_usage(PNAME,
-                "<controlfile> <gridroot> <outroot> VL [G][S][Ennndx][M] lat1 long1 lat2 long2 [length_units]");
-        disp_usage(PNAME,
-                "<controlfile> <gridroot> <outroot> H [G][S][Ennndx][M][Rphases/scale] iz [length_units]");
-        disp_usage(PNAME,
-                "<controlfile> <gridroot> <outroot> L [G][S][Ennndx][M][Rphases/scale] [ix iy iz] [length_units]");
+    disp_usage(PNAME,
+            "<controlfile> <gridroot> <outroot> V [G][S][Ennndx][M] ix1 iy1 ix2 iy2 [length_units]");
+    disp_usage(PNAME,
+            "<controlfile> <gridroot> <outroot> VL [G][S][Ennndx][M] lat1 long1 lat2 long2 [length_units]");
+    disp_usage(PNAME,
+            "<controlfile> <gridroot> <outroot> H [G][S][Ennndx][M][Rphases/scale] iz [length_units]");
+    disp_usage(PNAME,
+            "<controlfile> <gridroot> <outroot> L [G][S][Ennndx][M][Rphases/scale] [ix iy iz] [length_units]");
+    disp_usage(PNAME,
+            "Options: -title <title>\n"
+            "         -length-units <km, ...>\n"
+            "         -plot-lat-lon\n"
+            "         -no_plot_contours\n"
+            "         -label_contours\n"
+            );
+
 }
 
 /** *************************************************************************
@@ -424,7 +444,11 @@ int parameter_proc(int argcount, char **argvec) {
             strcpy(lengthUnits, argvec[++optind]);
         } else if (strcmp(argvec[optind], "-reverse-xy") == 0) {
             reverse_xy = 1;
-       } else if (strcmp(argvec[optind], "-label_contours") == 0) {
+        } else if (strcmp(argvec[optind], "-plot-lat-lon") == 0) {
+            plot_lat_lon = 1;
+        } else if (strcmp(argvec[optind], "-no_plot_contours") == 0) {
+            no_plot_contours = 1;
+        } else if (strcmp(argvec[optind], "-label_contours") == 0) {
             strcpy(label_contours, " -A ");
         } else if (strncmp(argvec[optind], "-", 1) == 0) {
             fprintf(stderr, "Unknown option: %s\n", argvec[optind]);
@@ -500,13 +524,17 @@ int GenGMTCommands(char cplotmode, char cdatatype,
             "# NOTE: LAT/LONG plotting works only for unrotated, Horizontal section (H) plots\n");
     fprintf(fp_gmt,
             "#     for X/Y plot, uncomment the folowing line:\n");
-    fprintf(fp_gmt,
-            "set PLOT_LAT_LONG = 0\n");
+    if (!plot_lat_lon)
+        fprintf(fp_gmt, "set PLOT_LAT_LONG = 0\n");
+    else
+        fprintf(fp_gmt, "#set PLOT_LAT_LONG = 0\n");
     //if (doLatLong) {
     fprintf(fp_gmt,
             "#     for LAT/LONG plot, uncomment the folowing line:\n");
-    fprintf(fp_gmt,
-            "#set PLOT_LAT_LONG = 1\n");
+    if (plot_lat_lon)
+        fprintf(fp_gmt, "set PLOT_LAT_LONG = 1\n");
+    else
+        fprintf(fp_gmt, "#set PLOT_LAT_LONG = 1\n");
     //}
     fprintf(fp_gmt,
             "# ========================================================\n");
@@ -599,7 +627,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
                 0, HYPO_FONT, 2, hypotext);
 
         fclose(fp_hypo);
-    }        // no hypocenter file
+    }// no hypocenter file
     else {
         if (strlen(title) < 1)
             sprintf(title_str, "%s__(%s)", fn_root_output, args_str);
@@ -785,7 +813,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
         } else if (pgrid0->type == GRID_INCLINATION ||
                 pgrid0->type == GRID_INCLINATION_2D) {
             strcpy(cpt_str, "");
-                strcpy(scale_label_str,
+            strcpy(scale_label_str,
                     "Dip Angle(deg) (>180 = unstable)");
         } else {
             strcpy(cpt_str, "");
@@ -892,13 +920,14 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
     double vxmin, vxmax, vymin, vymax, vdummy, vdgridx = 0.0, vdgridy = 0.0, vlmean;
     float value;
 
-    /*	union
-            {
-                    long ival;
-                    float fval;
-            }
-            byteval;
-     */
+    /* DEBUG
+    union {
+        long ival;
+        float fval;
+    }
+    byteval;
+    */
+
 
 
     double plot_scale, gmt_scale;
@@ -991,19 +1020,19 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
     // horizontal view
     if (cviewmode == 'H') {
         if (message_flag > 0)
-            fprintf(stdout, "Generating horizontal view...\n");
+            fprintf(stdout, "Generating horizontal view (izlevel=%d)...\n", izlevel);
         if (cdatatype == 'G') {
             for (ny = pgrid->numy - 1; ny >= 0; ny--) {
                 for (nx = 0; nx < pgrid->numx; nx++) {
-                    value = ReadGrid3dValue(fp_grid, nx, ny, izlevel, pgrid);
-                    /*
-                    if (nx % 20 == 0 && ny % 20 == 0) {
-                    byteval.fval = value;
-                    fprintf(stderr, "%d %d %d value %lf (%lf,%d)\n", nx, ny, izlevel, value, byteval.fval, byteval.ival);
+                    value = ReadGrid3dValue(fp_grid, nx, ny, izlevel, pgrid, 0);
+                    /* DEBUG
+                    if ((value < grid_value_min || value > grid_value_max) || (nx % 20 == 0 && ny % 20 == 0)) {
+                        byteval.fval = value;
+                        fprintf(stderr, "%d %d %d value %lf (%lf,%ld)\n", nx, ny, izlevel, value, byteval.fval, byteval.ival);
                     }
-                    if (value < 0.0)
-                    value = 0.0;
-                     */
+                    //*/
+                    //if (value < 0.0)
+                    //value = 0.0;
                     if (iAzAngle || iDipAngle)
                         value = CalcAngleValue(value, iAzAngle, iDipAngle);
                     if (value > MAX_GRID_VALUE)
@@ -1013,7 +1042,6 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
                         grid_value_max = value;
                     if (value < grid_value_min)
                         grid_value_min = value;
-
                 }
             }
             fclose(fp_gmtgrd);
@@ -1031,8 +1059,8 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         vert_min = pgrid->origy;
         vert_max = vert_min + (double) (pgrid->numy - 1) * pgrid->dy;
         vert_dgrid = pgrid->dy;
-        sprintf(horiz_label, "%s(%s)", reverse_xy ? "Y": "X", lengthUnits);
-        sprintf(vert_label, "%s(%s)", reverse_xy ? "X": "Y", lengthUnits);
+        sprintf(horiz_label, "%s(%s)", reverse_xy ? "Y" : "X", lengthUnits);
+        sprintf(vert_label, "%s(%s)", reverse_xy ? "X" : "Y", lengthUnits);
         strcpy(horiz_label_deg, "Long(deg)");
         strcpy(vert_label_deg, "Lat(deg)");
         yscalefact = 1.0;
@@ -1048,7 +1076,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         if (cdatatype == 'G') {
             for (ny = iy2 - 1; ny >= iy1; ny--) {
                 for (nz = 0; nz < pgrid->numz; nz++) {
-                    value = ReadGrid3dValue(fp_grid, ix1, ny, nz, pgrid);
+                    value = ReadGrid3dValue(fp_grid, ix1, ny, nz, pgrid, 0);
                     if (iAzAngle || iDipAngle)
                         value = CalcAngleValue(value, iAzAngle, iDipAngle);
                     if (value > MAX_GRID_VALUE)
@@ -1076,7 +1104,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         horiz_max = horiz_min + (double) (pgrid->numz - 1) * pgrid->dz;
         horiz_dgrid = pgrid->dz;
         sprintf(horiz_label, "Z(%s)", lengthUnits);
-        sprintf(vert_label, "%s(%s)", reverse_xy ? "X": "Y", lengthUnits);
+        sprintf(vert_label, "%s(%s)", reverse_xy ? "X" : "Y", lengthUnits);
         sprintf(horiz_label_deg, "Z(%s)", lengthUnits);
         strcpy(vert_label_deg, "Lat(deg)");
         yscalefact = 1.0;
@@ -1099,7 +1127,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
             for (nz = pgrid->numz - 1; nz >= 0; nz--)
                 /*		for (nz = 0; nz < pgrid->numz; nz++)*/ {
                 for (ny = iy1; ny < iy2; ny++) {
-                    value = ReadGrid3dValue(fp_grid, ix1, ny, nz, pgrid);
+                    value = ReadGrid3dValue(fp_grid, ix1, ny, nz, pgrid, 0);
                     if (iAzAngle || iDipAngle)
                         value = CalcAngleValue(value, iAzAngle, iDipAngle);
                     if (value > MAX_GRID_VALUE)
@@ -1129,7 +1157,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         vert_min = pgrid->origz;
         vert_max = vert_min + (double) (pgrid->numz - 1) * pgrid->dz;
         vert_dgrid = pgrid->dz;
-        sprintf(horiz_label, "%s(%s)", reverse_xy ? "X": "Y", lengthUnits);
+        sprintf(horiz_label, "%s(%s)", reverse_xy ? "X" : "Y", lengthUnits);
         sprintf(vert_label, "Z(%s)", lengthUnits);
         strcpy(horiz_label_deg, "Lat(deg)");
         sprintf(vert_label_deg, "Z(%s)", lengthUnits);
@@ -1152,7 +1180,13 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         if (cdatatype == 'G') {
             for (nz = pgrid->numz - 1; nz >= 0; nz--) {
                 for (nx = ix1; nx < ix2; nx++) {
-                    value = ReadGrid3dValue(fp_grid, nx, iy1, nz, pgrid);
+                    value = ReadGrid3dValue(fp_grid, nx, iy1, nz, pgrid, 0);
+                    /* DEBUG
+                    if ((value < grid_value_min || value > grid_value_max) || (nx % 20 == 0 && ny % 20 == 0)) {
+                        byteval.fval = value;
+                        fprintf(stderr, "%d %d %d value %lf (%lf,%ld)\n", nx, iy1, nz, value, byteval.fval, byteval.ival);
+                    }
+                    //*/
                     if (iAzAngle || iDipAngle)
                         value = CalcAngleValue(value, iAzAngle, iDipAngle);
                     if (value > MAX_GRID_VALUE)
@@ -1179,7 +1213,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         vert_min = pgrid->origz;
         vert_max = vert_min + (double) (pgrid->numz - 1) * pgrid->dz;
         vert_dgrid = pgrid->dz;
-        sprintf(horiz_label, "%s(%s)", reverse_xy ? "Y": "X", lengthUnits);
+        sprintf(horiz_label, "%s(%s)", reverse_xy ? "Y" : "X", lengthUnits);
         sprintf(vert_label, "Z(%s)", lengthUnits);
         strcpy(horiz_label_deg, "Long(deg)");
         sprintf(vert_label_deg, "Z(%s)", lengthUnits);
@@ -1203,7 +1237,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 
         // assume dx = dy
         if (pgrid->dx != pgrid->dy) {
-            nll_puterr("ERROR cannot have datatype = S when grid dx != dy.");
+            nll_puterr("ERROR cannot plot oblique vertical section when grid dx != dy.");
             exit(-1);
         }
 
@@ -1223,7 +1257,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
                     if (nx < 0) nx = 0;
                     if (ny < 0) ny = 0;
 
-                    value = ReadGrid3dValue(fp_grid, nx, ny, nz, pgrid);
+                    value = ReadGrid3dValue(fp_grid, nx, ny, nz, pgrid, 0);
                     if (iAzAngle || iDipAngle)
                         value = CalcAngleValue(value, iAzAngle, iDipAngle);
                     if (value > MAX_GRID_VALUE)
@@ -1274,7 +1308,9 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
          */
         vymin = vert_min;
         vymax = vert_max;
-        vdgridx = (vxmax - vxmin) / (double) (pgrid->numx - 1);
+        // 20140102 AJL - bug fix
+        //vdgridx = (vxmax - vxmin) / (double) (pgrid->numx - 1);
+        vdgridx = (horiz_max - horiz_min) / (double) (pgrid->numx - 1);
         vdgridy = vert_dgrid;
     }
 
@@ -1352,7 +1388,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         fprintf(fp_gmt, "# Latitude/Longitude in degrees\n");
         sprintf(gmt_RVAL_latlong_string, "\'-R%lf/%lf/%lf/%lf\'",
                 vxmin, vxmax, vymin, vymax);
-        fprintf(fp_gmt, "set RVAL_LL = %s\n", gmt_RVAL_latlong_string);
+        fprintf(fp_gmt, "set RVAL = %s\n", gmt_RVAL_latlong_string);
         if (message_flag > 0)
             fprintf(stdout, "   => LONG/X: %lf/%lf  LAT/Y:%lf/%lf\n",
                 vxmin, vxmax, vymin, vymax);
@@ -1362,18 +1398,18 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         printf("GetContourInterval vtick_int G: ");
         vtick_int = GetContourInterval(vymin, vymax, 3, &nstep);
         fprintf(fp_gmt, "# Latitude/Longitude in degrees\n");
-        fprintf(fp_gmt, "set BVAL_LL = \'-B%lf:%s:/%lf:%s::.%s:%s\'\n",
+        fprintf(fp_gmt, "set BVAL = \'-B%lf:%s:/%lf:%s::.%s:%s\'\n",
                 htick_int, horiz_label_deg, vtick_int, vert_label_deg,
                 chr_title, chr_bounds);
         /* JVAL geographic version */
         gmt_scale = getGMTJVAL(proj_index_output, gmt_JVAL_latlong_string, *pxlen, vxmax, vxmin, *pylen, vymax, vymin);
         fprintf(fp_gmt, "# Latitude/Longitude in degrees\n");
-        sprintf(gmt_JVAL, "set JVAL_LL = \'%s -Jz%lf\'",
+        sprintf(gmt_JVAL, "set JVAL = \'%s -Jz%lf\'",
                 gmt_JVAL_latlong_string, gmt_scale * zscalefact);
         fprintf(fp_gmt, "%s\n", gmt_JVAL);
 
         fprintf(fp_gmt,
-                "psbasemap ${JVAL_LL} ${RVAL_LL} ${BVAL_LL} %s -K -O >> %s.ps\n", str_shift, fn_ps_output);
+                "psbasemap ${JVAL} ${RVAL} ${BVAL} %s -K -O >> %s.ps\n", str_shift, fn_ps_output);
 
         fprintf(fp_gmt, "endif\n");
     }
@@ -1416,9 +1452,15 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         if (doLatLong) {
             fprintf(fp_gmt, "# Latitude/Longitude in degrees\n");
             fprintf(fp_gmt, "if ($PLOT_LAT_LONG) then\n");
-            fprintf(fp_gmt,
-                    "xyz2grd %s -G%sgmt -I%lf/%lf ${RVAL_LL} -Ddeg/deg/=/0.0/0.0/%s/remark -V -Z -b\n",
-                    fn_gmtgrd, fn_gmtgrd, vdgridx, vdgridy, fn_root_output);
+            if (GMT_VER_3_3_4) {
+                fprintf(fp_gmt,
+                        "xyz2grd %s -G%sgmt -I%lf/%lf ${RVAL} -Ddeg/deg/=/0.0/0.0/%s/remark -V -Zf\n",
+                        fn_gmtgrd, fn_gmtgrd, vdgridx, vdgridy, fn_root_output);
+            } else {
+                fprintf(fp_gmt,
+                        "xyz2grd %s -G%sgmt -I%lf/%lf ${RVAL} -Ddeg/deg/=/0.0/0.0/%s/remark -V -Z -b\n",
+                        fn_gmtgrd, fn_gmtgrd, vdgridx, vdgridy, fn_root_output);
+            }
             fprintf(fp_gmt, "endif\n\n");
         }
 
@@ -1429,11 +1471,14 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
             sprintf(fn_cont, "%s.conf", fnroot_input);
             MakeConfCPT(fn_cont, fn_root_output);
             fprintf(fp_gmt,
-                    "grdimage %sgmt -C%s.conf.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
+                    "grdimage -S-n %sgmt -C%s.conf.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
                     fn_gmtgrd, fn_root_output, fn_ps_output);
+            if (no_plot_contours) {
+                fprintf(fp_gmt, "#");
+            }
             fprintf(fp_gmt,
-                    "grdcontour %sgmt %s -C%s.conf.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
-                    fn_gmtgrd, label_contours, fn_root_output, fn_ps_output);
+                    "grdcontour %sgmt %s -C%s.conf.cpt -D%s $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
+                    fn_gmtgrd, label_contours, fn_root_output, fn_root_output, fn_ps_output);
 
         } else if (pgrid->type == GRID_MISFIT) {
 
@@ -1449,9 +1494,12 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
                 iFirstPlot = 0;
             }
             fprintf(fp_gmt,
-                    "grdimage %sgmt -C%s.misfit.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
+                    "grdimage -S-n %sgmt -C%s.misfit.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
                     fn_gmtgrd, fn_root_output, fn_ps_output);
 
+            if (no_plot_contours) {
+                fprintf(fp_gmt, "#");
+            }
             fprintf(fp_gmt,
                     "grdcontour %sgmt %s -C%s.misfit.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
                     fn_gmtgrd, label_contours, fn_root_output, fn_ps_output);
@@ -1479,17 +1527,17 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
                                 fn_root_output);
                     } else { // rainbow
                         double contour_int_cpt = contour_int;
-                        double value_min = contour_int * floor(grid_value_min / contour_int);
-                        double value_max = contour_int * (1.0 + ceil(grid_value_max / contour_int));
+                        double value_min = contour_int * (floor(grid_value_min / contour_int) - 0.0);
+                        double value_max = contour_int * (0.0 + ceil(grid_value_max / contour_int));
                         if (value_max - value_min < value_min / 1000.0) {
-                            value_min -= value_min /100.0;
-                            value_max += value_max /100.0;
+                            value_min -= value_min / 100.0;
+                            value_max += value_max / 100.0;
                             contour_int_cpt = (value_max - value_min) / 3.0;
                         }
                         char cpt_colortable[MAXLINE];
-                        strcpy(cpt_colortable, "rainbow");
-                        /*if (value_min < 0.0 && value_max > 0.0) {
-                            // value range straddles zero, set min/max for color tablel equal.
+                        //strcpy(cpt_colortable, "rainbow");
+                        if (value_min < -contour_int / 100.0 && value_max > contour_int / 100.0) {
+                            // value range straddles zero, set min/max for color table equal.
                             strcpy(cpt_colortable, "seis");
                             if (value_max < contour_int)
                                 value_max = contour_int;
@@ -1498,13 +1546,13 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
                         } else {
                             // value range positive
                             strcpy(cpt_colortable, "rainbow");
-                        }*/
+                        }
                         char cpt_command[10 * MAXLINE];
                         sprintf(cpt_command, "makecpt -Z -C%s -T%g/%g/%g > %s.cpt",
                                 cpt_colortable, value_min, value_max, contour_int_cpt, fn_root_output);
                         fprintf(fp_gmt, "   %s\n", cpt_command);
                         //if (message_flag > 0)
-                        nll_putmsg2(1, "INFO: %s", cpt_command);
+                        nll_putmsg2(1, "INFO", cpt_command);
                     }
                 } else {
                     fprintf(fp_gmt,
@@ -1519,9 +1567,12 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
                         "endif\n\n");
                 iFirstPlot = 0;
             }
-            fprintf(fp_gmt, "grdimage %sgmt -C%s.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
+            fprintf(fp_gmt, "grdimage -S-n %sgmt -C%s.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
                     fn_gmtgrd, fn_root_output, fn_ps_output);
 
+            if (no_plot_contours) {
+                fprintf(fp_gmt, "#");
+            }
             fprintf(fp_gmt,
                     "grdcontour %sgmt %s -C%s.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
                     fn_gmtgrd, label_contours, fn_root_output, fn_ps_output);
@@ -1686,20 +1737,8 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 
     /* redraw axes */
 
-    if (doLatLong)
-        fprintf(fp_gmt, "if (! $PLOT_LAT_LONG) then\n");
     fprintf(fp_gmt,
             "psbasemap $JVAL $RVAL $BVAL -K -O >> %s.ps\n", fn_ps_output);
-    if (doLatLong)
-        fprintf(fp_gmt, "endif\n");
-
-    if (doLatLong) {
-        fprintf(fp_gmt, "if ($PLOT_LAT_LONG) then\n");
-        fprintf(fp_gmt,
-                "psbasemap ${JVAL_LL} ${RVAL_LL} ${BVAL_LL} -K -O >> %s.ps\n", fn_ps_output);
-        fprintf(fp_gmt, "endif\n");
-    }
-
     fprintf(fp_gmt, "\n");
     fprintf(fp_gmt, "\n");
 
@@ -1860,7 +1899,6 @@ int MakeConfCPT(char* fn_in, char* fileout) {
     conf_level_last = 1.0;
     nconf = 0;
     while (fscanf(fp_in, "%lf C %lf", &contour, &conf_level) != EOF) {
-        cont_high = contour;
         ndx = (int) (0.1 + 10.0 * conf_level);
         cont_high = contour;
         fprintf(fp_out, "%le %d %d %d %le %d %d %d\n",
@@ -2113,7 +2151,7 @@ int grd2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double ymax0
         FILE* fp_gmt, char* fn_ps_output, int doLatLong) {
 
     /*
-     grdimage grdfile -Ccptfile -Jparameters [  -Btickinfo ]  [
+     grdimage -S-n grdfile -Ccptfile -Jparameters [  -Btickinfo ]  [
          -Edpi ] [ -G[f|b]rgb ] [ -Iintensfile] [ -K ] [ -M ] [ -O ]
          [ -P ] [ -Rwest/east/south/north[r] ] [ -Ssearch_radius ]  [
          -T[s]  ] [ -U[/dx/dy/][label] ] [ -V ] [ -Xx-shift ] [ -Yy-
@@ -2155,7 +2193,7 @@ int grd2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double ymax0
 
     //	if (doLatLong)
     //		fprintf(fp_gmt, "if (! $PLOT_LAT_LONG) then\n");
-    fprintf(fp_gmt, "grdimage %s %s -C%s %s %s %s -K -O >> %s.ps\n",
+    fprintf(fp_gmt, "grdimage -S-n %s %s -C%s %s %s %s -K -O >> %s.ps\n",
             mapfile[nmapfile].name, int_string, fname_cpt, int_string, gmt_JVAL_latlong_string,
             gmt_RVAL_latlong_string, fn_ps_output);
     //	if (doLatLong)
@@ -2164,7 +2202,7 @@ int grd2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double ymax0
             if (doLatLong) {
                     fprintf(fp_gmt, "if ($PLOT_LAT_LONG) then\n");
                     fprintf(fp_gmt,
-    "psxy %s ${JVAL_LL} ${RVAL_LL} -W2/%d/%d/%d -m -K -O >> %s.ps\n",
+    "psxy %s ${JVAL} ${RVAL} -W2/%d/%d/%d -m -K -O >> %s.ps\n",
                             fn_gmtlatlon, ired, igreen, iblue,
                             //texture,
                             fn_ps_output);
@@ -2208,132 +2246,132 @@ int MapLines2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double 
     /*set_line_color(mapfile[nmapfile].rgb, ); */
     /*set_line_style(mapfile[nmapfile].line_style); */
 
-    /* open output file (if exists, do not re-generate) */
+    // 20120504 AJL /* open output files (if exists, do not re-generate) */
+    /* open output files */
 
     GenMapFileName(fn_gmtxy, fn_gmtxz, fn_gmtzy, fn_gmtlatlon, fnoutput,
             mapfile[nmapfile].name);
 
-    if ((fp_gmtxy = fopen(fn_gmtxy, "r")) == NULL
-            || (fp_gmtlatlon = fopen(fn_gmtlatlon, "r")) == NULL) {
+    // 20120504 AJL if ((fp_gmtxy = fopen(fn_gmtxy, "r")) == NULL || (fp_gmtlatlon = fopen(fn_gmtlatlon, "r")) == NULL) {
 
-        if ((fp_gmtxy = fopen(fn_gmtxy, "w")) == NULL)
-            nll_puterr2("ERROR: cannot open map xy output file", fn_gmtxy);
-        if ((fp_gmtlatlon = fopen(fn_gmtlatlon, "w")) == NULL)
-            nll_puterr2("ERROR: cannot open map lat/lon output file", fn_gmtxy);
-        if ((fp_gmtxz = fopen(fn_gmtxz, "w")) == NULL)
-            nll_puterr2("ERROR: cannot open map xy output file", fn_gmtxy);
-        if ((fp_gmtzy = fopen(fn_gmtzy, "w")) == NULL)
-            nll_puterr2("ERROR: cannot open map xy output file", fn_gmtxy);
+    if ((fp_gmtxy = fopen(fn_gmtxy, "w")) == NULL)
+        nll_puterr2("ERROR: cannot open map xy output file", fn_gmtxy);
+    if ((fp_gmtlatlon = fopen(fn_gmtlatlon, "w")) == NULL)
+        nll_puterr2("ERROR: cannot open map lat/lon output file", fn_gmtxy);
+    if ((fp_gmtxz = fopen(fn_gmtxz, "w")) == NULL)
+        nll_puterr2("ERROR: cannot open map xy output file", fn_gmtxy);
+    if ((fp_gmtzy = fopen(fn_gmtzy, "w")) == NULL)
+        nll_puterr2("ERROR: cannot open map xy output file", fn_gmtxy);
 
 
-        /* open input file */
+    /* open input file */
 
-        if ((fp_map = fopen(mapfile[nmapfile].name, "r")) == NULL) {
-            nll_puterr2("ERROR: cannot open map file",
-                    mapfile[nmapfile].name);
-            return (-1);
+    if ((fp_map = fopen(mapfile[nmapfile].name, "r")) == NULL) {
+        nll_puterr2("ERROR: cannot open map file",
+                mapfile[nmapfile].name);
+        return (-1);
+    }
+
+
+    if (message_flag > 0)
+        fprintf(stdout, "Generating map lines for file %s\n",
+            mapfile[nmapfile].name);
+
+    /* draw each segment */
+
+    fprintf(fp_gmtxy, "> XY_LONLAT\n");
+    fprintf(fp_gmtxz, "> XY_XZ\n");
+    fprintf(fp_gmtzy, "> XY_ZY\n");
+    fprintf(fp_gmtlatlon, "> GMT_LONLAT\n");
+    depth = 0.0;
+    do {
+
+        inside = 0;
+        for (;;) {
+
+            if ((lstat = fgets(line, MAXLINE, fp_map))
+                    == NULL)
+                break;
+
+            if (strcmp(mapfile[nmapfile].format,
+                    "XY_LONLAT") == 0) {
+                sscanf(line, "%lf %lf",
+                        &maplong, &maplat);
+                if (maplong < -900.0) {
+                    lstat = fgets(line,
+                            MAXLINE, fp_map);
+                    break;
+                }
+            } else if (strncmp(mapfile[nmapfile].format,
+                    "GMT_LATLONELEV_M", 17) == 0) {
+                if (sscanf(line, "%lf %lf %lf",
+                        &maplat, &maplong, &depth) != 3)
+                    break;
+                depth *= -0.001; // convert to detph in km
+            } else if (strncmp(mapfile[nmapfile].format,
+                    "GMT_LONLATELEV_M", 17) == 0) {
+                if (sscanf(line, "%lf %lf %lf",
+                        &maplong, &maplat, &depth) != 3)
+                    break;
+                depth *= -0.001; // convert to detph in km
+            } else if (strncmp(mapfile[nmapfile].format,
+                    "GMT_LATLON", 10) == 0) {
+                if (sscanf(line, "%lf %lf",
+                        &maplat, &maplong) != 2)
+                    break;
+            } else if (strncmp(mapfile[nmapfile].format,
+                    "GMT_LONLAT", 10) == 0) {
+                if (sscanf(line, "%lf %lf",
+                        &maplong, &maplat) != 2)
+                    break;
+            } else {
+                nll_puterr2(
+                        "ERROR: unrecognized map line type",
+                        mapfile[nmapfile].format);
+                lstat = NULL;
+                break;
+            }
+
+            latlon2rect(proj_index_output, maplat, maplong, &xtemp, &ytemp);
+
+            if (xtemp < xmin || xtemp > xmax ||
+                    ytemp < ymin || ytemp > ymax) {
+                if (inside) {
+                    fprintf(fp_gmtxy, ">\n");
+                    fprintf(fp_gmtxz, ">\n");
+                    fprintf(fp_gmtzy, ">\n");
+                    fprintf(fp_gmtlatlon, ">\n");
+                }
+                inside = 0;
+            } else {
+                fprintf(fp_gmtxy, "%lf %lf\n",
+                        xtemp, ytemp);
+                fprintf(fp_gmtxz, "%lf %lf\n",
+                        xtemp, depth);
+                fprintf(fp_gmtzy, "%lf %lf\n",
+                        depth, ytemp);
+                fprintf(fp_gmtlatlon, "%lf %lf\n",
+                        maplong, maplat);
+                inside = 1;
+            }
+        }
+        if (inside) {
+            fprintf(fp_gmtxy, ">\n");
+            fprintf(fp_gmtxz, ">\n");
+            fprintf(fp_gmtzy, ">\n");
+            fprintf(fp_gmtlatlon, ">\n");
         }
 
-
-        if (message_flag > 0)
-            fprintf(stdout, "Generating map lines for file %s\n",
-                mapfile[nmapfile].name);
-
-        /* draw each segment */
-
-        fprintf(fp_gmtxy, "> XY_LONLAT\n");
-        fprintf(fp_gmtxz, "> XY_XZ\n");
-        fprintf(fp_gmtzy, "> XY_ZY\n");
-        fprintf(fp_gmtlatlon, "> GMT_LONLAT\n");
-        depth = 0.0;
-        do {
-
-            inside = 0;
-            for (;;) {
-
-                if ((lstat = fgets(line, MAXLINE, fp_map))
-                        == NULL)
-                    break;
-
-                if (strcmp(mapfile[nmapfile].format,
-                        "XY_LONLAT") == 0) {
-                    sscanf(line, "%lf %lf",
-                            &maplong, &maplat);
-                    if (maplong < -900.0) {
-                        lstat = fgets(line,
-                                MAXLINE, fp_map);
-                        break;
-                    }
-                } else if (strncmp(mapfile[nmapfile].format,
-                        "GMT_LATLONELEV_M", 17) == 0) {
-                    if (sscanf(line, "%lf %lf %lf",
-                            &maplat, &maplong, &depth) != 3)
-                        break;
-                    depth *= -0.001; // convert to detph in km
-                } else if (strncmp(mapfile[nmapfile].format,
-                        "GMT_LONLATELEV_M", 17) == 0) {
-                    if (sscanf(line, "%lf %lf %lf",
-                            &maplong, &maplat, &depth) != 3)
-                        break;
-                    depth *= -0.001; // convert to detph in km
-                } else if (strncmp(mapfile[nmapfile].format,
-                        "GMT_LATLON", 10) == 0) {
-                    if (sscanf(line, "%lf %lf",
-                            &maplat, &maplong) != 2)
-                        break;
-                } else if (strncmp(mapfile[nmapfile].format,
-                        "GMT_LONLAT", 10) == 0) {
-                    if (sscanf(line, "%lf %lf",
-                            &maplong, &maplat) != 2)
-                        break;
-                } else {
-                    nll_puterr2(
-                            "ERROR: unrecognized map line type",
-                            mapfile[nmapfile].format);
-                    lstat = NULL;
-                    break;
-                }
-
-                latlon2rect(proj_index_output, maplat, maplong, &xtemp, &ytemp);
-
-                if (xtemp < xmin || xtemp > xmax ||
-                        ytemp < ymin || ytemp > ymax) {
-                    if (inside) {
-                        fprintf(fp_gmtxy, ">\n");
-                        fprintf(fp_gmtxz, ">\n");
-                        fprintf(fp_gmtzy, ">\n");
-                        fprintf(fp_gmtlatlon, ">\n");
-                    }
-                    inside = 0;
-                } else {
-                    fprintf(fp_gmtxy, "%lf %lf\n",
-                            xtemp, ytemp);
-                    fprintf(fp_gmtxz, "%lf %lf\n",
-                            xtemp, depth);
-                    fprintf(fp_gmtzy, "%lf %lf\n",
-                            depth, ytemp);
-                    fprintf(fp_gmtlatlon, "%lf %lf\n",
-                            maplong, maplat);
-                    inside = 1;
-                }
-            }
-            if (inside) {
-                fprintf(fp_gmtxy, ">\n");
-                fprintf(fp_gmtxz, ">\n");
-                fprintf(fp_gmtzy, ">\n");
-                fprintf(fp_gmtlatlon, ">\n");
-            }
-
-        } while (lstat != NULL);
+    } while (lstat != NULL);
 
 
-        fclose(fp_map);
-        fclose(fp_gmtxy);
-        fclose(fp_gmtxz);
-        fclose(fp_gmtzy);
-        fclose(fp_gmtlatlon);
+    fclose(fp_map);
+    fclose(fp_gmtxy);
+    fclose(fp_gmtxz);
+    fclose(fp_gmtzy);
+    fclose(fp_gmtlatlon);
 
-    }
+    // 20120504 AJL }
 
     // ensure that files are closed
     //	if (fp_gmtxy != NULL)
@@ -2352,7 +2390,6 @@ int MapLines2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double 
     else
         strcpy(texture, "solid");
 
-
     if (doLatLong)
         fprintf(fp_gmt, "if (! $PLOT_LAT_LONG) then\n");
     fprintf(fp_gmt,
@@ -2361,16 +2398,16 @@ int MapLines2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double 
             /*texture,*/ fn_ps_output);
     if (doLatLong)
         fprintf(fp_gmt, "endif\n");
-    if (doLatLong) {
-        fprintf(fp_gmt, "if ($PLOT_LAT_LONG) then\n");
-        fprintf(fp_gmt,
-                "psxy %s ${JVAL_LL} ${RVAL_LL} -W2/%d/%d/%d -m -K -O >> %s.ps\n",
-                fn_gmtlatlon, ired, igreen, iblue,
-                /*texture,*/ fn_ps_output);
-        fprintf(fp_gmt, "endif\n");
-    }
 
-    fprintf(fp_gmt, "\n");
+    if (doLatLong)
+        fprintf(fp_gmt, "if ($PLOT_LAT_LONG) then\n");
+    fprintf(fp_gmt,
+            "psxy %s $JVAL $RVAL -W2/%d/%d/%d -m -K -O >> %s.ps\n",
+            fn_gmtlatlon, ired, igreen, iblue,
+            /*texture,*/ fn_ps_output);
+    if (doLatLong)
+        fprintf(fp_gmt, "endif\n");
+
 
     return (0);
 
@@ -2438,7 +2475,7 @@ int Scat2GMT(char* fnroot_in, char* orientation, int ilonglat, char* fnscat_out)
     else if (strcmp(orientation, "ZY") == 0)
         or_zy = 1;
 
-    /* read header informaion */
+    /* read header information */
     fseek(fp_scat_in, 0, SEEK_SET);
     fread(&tot_npoints, sizeof (int), 1, fp_scat_in);
 
@@ -2540,7 +2577,7 @@ int PlotTraditionStats(char cdatatype, char view_type, double barlen,
 
         fprintf(fp_io,
                 "# Maximum Likelihood\npsxy $JVAL $RVAL -W1/%s -Sa%lf -G%s -K -O << END >> %s.ps\n", GMTcolor, 0.4 * barlen / 2.54, GMTcolor, "${POSTSCRIPT_NAME}");
-                // 20110112 AJL  "# Maximum Likelihood\npsxy $JVAL $RVAL -W1/%s -Sa%lf -K -O << END >> %s.ps\n", GMTcolor, 0.25 * barlen / 2.54, "${POSTSCRIPT_NAME}");
+        // 20110112 AJL  "# Maximum Likelihood\npsxy $JVAL $RVAL -W1/%s -Sa%lf -K -O << END >> %s.ps\n", GMTcolor, 0.25 * barlen / 2.54, "${POSTSCRIPT_NAME}");
         if (view_type == 'Y')
             fprintf(fp_io, "%lf %lf\n", max_like_x, max_like_z);
         else if (view_type == 'H')
@@ -2644,9 +2681,13 @@ int PlotTraditionStats(char cdatatype, char view_type, double barlen,
 
         /* clean up */
         free(ellipse_array);
+        ellipse_array = NULL;
         free(ellArray12);
+        ellArray12 = NULL;
         free(ellArray13);
+        ellArray13 = NULL;
         free(ellArray23);
+        ellArray23 = NULL;
 
     }
 
@@ -2822,7 +2863,7 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
 
 /** function to generate GMT code for a positive station residual */
 
-#define RESID_MIN 0.01	// minimum size of residual symbol in inches or cm
+#define RESID_MIN 0.01 // minimum size of residual symbol in inches or cm
 
 void genResidualGMT(FILE* fp_out, char* xtra_args, double resid, double x, double y, double scale) {
 

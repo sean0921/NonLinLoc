@@ -13,6 +13,7 @@
 #include <float.h>
 #include "alomax_matrix.h"
 #include "alomax_matrix_svd.h"
+#include "eigv.h"
 
 //#define EPSILON_BIG  (1.0e-5)
 //#define EPSILON_BIG  (1.0e-3)
@@ -32,17 +33,20 @@ MatrixDouble matrix_double(int nrow, int ncol) {
 
     mtx = (MatrixDouble) calloc(nrow, sizeof (double*));
     if (mtx == NULL) {
-        snprintf(error_message, sizeof(error_message), "ERROR: in matrix_double(): allocating rows.");
+        snprintf(error_message, sizeof (error_message), "ERROR: in matrix_double(): allocating rows.");
         return (NULL);
     }
 
-    int n;
+    int n, m;
     for (n = 0; n < nrow; n++) {
         mtx[n] = (double *) calloc(ncol, sizeof (double));
         if (mtx[n] == NULL) {
-            snprintf(error_message, sizeof(error_message), "ERROR: in matrix_double():  allocating columns.");
+            snprintf(error_message, sizeof (error_message), "ERROR: in matrix_double():  allocating columns.");
             free_matrix_double(mtx, nrow, ncol);
             return (NULL);
+        }
+        for (m = 0; m < ncol; m++) {
+            mtx[n][m] = 0.0;
         }
     }
     return (mtx);
@@ -55,10 +59,13 @@ void free_matrix_double(MatrixDouble mtx, int nrow, int ncol) {
 
     int n;
     for (n = nrow - 1; n >= 0; n--) {
-        if (mtx[n] != NULL)
+        if (mtx[n] != NULL) {
             free(mtx[n]);
+            mtx[n] = NULL;
+        }
     }
     free((mtx));
+    mtx = NULL;
 
 }
 
@@ -88,7 +95,7 @@ VectorDouble vector_double(int nsize) {
 
     vect = (VectorDouble) calloc(nsize, sizeof (double));
     if (vect == NULL) {
-        snprintf(error_message, sizeof(error_message), "ERROR: in vector_double(): allocating elements.");
+        snprintf(error_message, sizeof (error_message), "ERROR: in vector_double(): allocating elements.");
         return (NULL);
     }
 
@@ -101,6 +108,7 @@ void free_vector_double(VectorDouble vect) {
     if ((vect) == NULL) return;
 
     free((vect));
+    vect = NULL;
 
 }
 
@@ -159,7 +167,7 @@ int gauss_jordan(MatrixDouble dmtx, int num_rows, int num_cols) {
             dmtx[iy][i] = temp;
         }
         if (fabs(dmtx[iy][iy]) <= EPSILON) { // Singular?
-            snprintf(error_message, sizeof(error_message), "ERROR: in gauss_jordan(): singular matrix: element %d %d with value %f.", iy, iy, dmtx[iy][iy]);
+            snprintf(error_message, sizeof (error_message), "ERROR: in gauss_jordan(): singular matrix: element %d %d with value %f.", iy, iy, dmtx[iy][iy]);
             /*{
                 fprintf(stderr, "DEBUG:  current state of matrix:\n");
                 int k, l;
@@ -204,7 +212,7 @@ int matrix_double_inverse(MatrixDouble dmtx, int num_rows, int num_cols) {
     //clone the matrix and append the identity matrix
     MatrixDouble augmented_mtx;
     if ((augmented_mtx = matrix_double(num_rows, 2 * num_cols)) < 0) {
-        snprintf(error_message, sizeof(error_message), "ERROR: in matrix_double_inverse(): allocating matrix: augmented_mtx.");
+        snprintf(error_message, sizeof (error_message), "ERROR: in matrix_double_inverse(): allocating matrix: augmented_mtx.");
         return (-1);
     }
 
@@ -272,7 +280,7 @@ int matrix_double_check_diagonal_non_zero_inverse(MatrixDouble mtx_original, int
     }
 
     if (i_checked_size < 1) {
-        snprintf(error_message, sizeof(error_message), "ERROR: in matrix_double_check_diagonal_non_zero_inverse(): no non-zero diagonal elements.");
+        snprintf(error_message, sizeof (error_message), "ERROR: in matrix_double_check_diagonal_non_zero_inverse(): no non-zero diagonal elements.");
         return (-1);
     }
 
@@ -281,7 +289,7 @@ int matrix_double_check_diagonal_non_zero_inverse(MatrixDouble mtx_original, int
     // load original matrix to checked matrix
     if (i_checked_size != i_original_size) {
         if ((mtx_checked = matrix_double(i_checked_size, i_checked_size)) < 0) {
-            snprintf(error_message, sizeof(error_message), "ERROR: in matrix_double_check_diagonal_non_zero_inverse(): allocating matrix: mtx_checked.");
+            snprintf(error_message, sizeof (error_message), "ERROR: in matrix_double_check_diagonal_non_zero_inverse(): allocating matrix: mtx_checked.");
             return (-1);
         }
         int nrow_original, ncol_original;
@@ -337,7 +345,7 @@ int matrix_double_check_diagonal_non_zero_inverse(MatrixDouble mtx_original, int
     int ierror = 0;
     if (verify_inverse) {
         if (square_inverse_not_ok(mtx_checked, mtx_checked_before_inverse, i_checked_size, verbose)) {
-            snprintf(error_message, sizeof(error_message), "ERROR: in matrix_double_check_diagonal_non_zero_inverse(): square_inverse_not_ok.");
+            snprintf(error_message, sizeof (error_message), "ERROR: in matrix_double_check_diagonal_non_zero_inverse(): square_inverse_not_ok.");
             ierror = -1;
         }
         free_matrix_double(mtx_checked_before_inverse, i_checked_size, i_checked_size);
@@ -448,3 +456,61 @@ void svd_helper(MatrixDouble A_matrix, int num_rows, int num_cols, VectorDouble 
     clean_SingularValueDecomposition();
 
 }
+
+/**
+ *  Helper function to apply real symmetric eigen decomposition
+ *
+ * input:
+ *    a_matrix - isize x isize matrix to which to apply svs
+ *
+ * output:
+ *   s_vector - vector of eigenvalues of size isize, in ascending order
+ *   v_matrix - orthogonal matrix of right singular vectors of size isize x isize
+ *
+ * returns:
+ *   error code or zero on normal completion
+ *
+ */
+
+int real_symmetric_eigen_helper(MatrixDouble A_matrix, int isize, VectorDouble S_vector, MatrixDouble V_matrix) {
+
+    int i, j;
+
+    int n = isize;
+    double *a = (double *) calloc(isize * isize, sizeof (double));
+    double *w = (double *) calloc(isize, sizeof (double));
+    double *z = (double *) calloc(isize * isize, sizeof (double));
+
+    for (i = 0; i < isize; i++) { // row
+        for (j = 0; j < isize; j++) { // col
+            a[j + i * n] = A_matrix[i][j];
+        }
+    }
+
+    //    Input, int n, the order of the matrix.
+    //    Input, double a[N*N], the real symmetric matrix.
+    //    Output, double w[N], the eigenvalues in ascending order.
+    //    Output, double z[N*N], contains the eigenvectors
+    //    Output, int rs, is set equal to an error
+    //    completion code described in the documentation for TQLRAT and TQL2.
+    //    The normal completion code is zero.
+    int istat = rs(n, a, w, z);
+
+    for (i = 0; i < isize; i++) { // row
+        for (j = 0; j < isize; j++) { // col
+            V_matrix[i][j] = z[j + i * n];
+        }
+    }
+    for (j = 0; j < isize; j++) {
+        S_vector[j] = w[j];
+    }
+
+    free(a);
+    free(w);
+    free(z);
+
+    return (istat);
+
+}
+
+

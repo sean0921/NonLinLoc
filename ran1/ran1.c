@@ -12,7 +12,7 @@
 
 /*** function to get random integer between imin and imax */
 
-INLINE int get_rand_int(const int imin, const int imax)
+ int get_rand_int(const int imin, const int imax)
 {
 
 	return( imin + (int) ( (double) RAND_FUNC() * (double) (imax - imin + 1)
@@ -22,10 +22,10 @@ INLINE int get_rand_int(const int imin, const int imax)
 
 /*** function to get random double between xmin and xmax */
 
-INLINE double get_rand_double(const double xmin, const double xmax)
+ double get_rand_double(const double xmin, const double xmax)
 {
 
-	return( xmin + (double) RAND_FUNC() 
+	return( xmin + (double) RAND_FUNC()
 		* (xmax - xmin) / (double) RAND_MAX1 );
 }
 
@@ -47,7 +47,7 @@ void test_rand_int()
 		ibin[n] = 0;
 		ibinmax[n] = (n + 1) * ((imax + 1) / NUM_BIN) - 1;
 	}
-		
+
 
 	for (n = 0; n < nmax; n++) {
 		itest = get_rand_int(0, imax);
@@ -76,13 +76,13 @@ void test_rand_int()
 
 /* (C) Copr. 1986-92 Numerical Recipes Software */
 
-INLINE double seed_ran1(int iseed)
+ double seed_ran1(int iseed)
 {
 	RanSeed = iseed < 0 ? iseed : -iseed;
 	return ran1(&RanSeed);
 }
 
-INLINE double get_ran1()
+ double get_ran1()
 {
 	return ran1(&RanSeed);
 }
@@ -101,7 +101,7 @@ INLINE double get_ran1()
 #define IA3 4561
 #define IC3 51349
 
-INLINE double ran1(int* idum)
+ double ran1(int* idum)
 {
 	static long ix1,ix2,ix3;
 	static double r[98];
@@ -165,7 +165,7 @@ INLINE double ran1(int* idum)
  *		not callable from Fortran (yet)
  */
 
-/*	As far as I can tell, use init(ijkl) to initialise, 
+/*	As far as I can tell, use init(ijkl) to initialise,
  *	then uni() to generate a random number in the range (0-1).
  */
 
@@ -177,7 +177,7 @@ double uni_u[98];	/* Was U(97) in Fortran version -- too lazy to fix */
 double uni_c, uni_cd, uni_cm;
 int uni_ui, uni_uj;
 
-INLINE double uni(void)
+ double uni(void)
 {
 	double luni;			/* local variable for uni */
 
@@ -196,7 +196,7 @@ INLINE double uni(void)
 	return (double) luni;
 }
 
-INLINE void rstart(int i, int j, int k, int l)
+ void rstart(int i, int j, int k, int l)
 {
 	int ii, jj, m;
 	double s, t;
@@ -238,7 +238,7 @@ INLINE void rstart(int i, int j, int k, int l)
  *	independent sequence of random numbers.
  *
  *     Very funny. If that statement was worth anything he would have provided
- *     a proof to go with it. spb 12/12/90 
+ *     a proof to go with it. spb 12/12/90
  */
 
 void rinit(int ijkl)

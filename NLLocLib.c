@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2010 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
+ * Copyright (C) 1999-2015 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser Public License as published by
@@ -27,8 +27,8 @@
 /*-----------------------------------------------------------------------
 Anthony Lomax
 Anthony Lomax Scientific Software
-161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
-tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
+Mouans-Sartoux, France
+e-mail: anthony@alomax.net  web: http://www.alomax.net
 -------------------------------------------------------------------------*/
 
 
@@ -79,6 +79,12 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
                 APR2006  AJL   Added  LOCMETH-EDT_OT_WT, LOCSEARCH-OCT:useStationsDensity, stopOnMinNodeSize
                 ...
                 20100506 AJL - added to support preservation of observation index order for calls to NLLoc() function (e.g. from SeisComp3)
+                20130627 AJL - add prior weighting, change station distribution weighing from sum to product
+                201501   AJL - added EW_PTWC_HAWAII obs format
+                20150324 AJL - added L1_NORM
+                20170811 AJL - added HYPO_TYPE_EXPECTATION: support for expectation hypocenter results output
+
+
 
 
 .........1.........2.........3.........4.........5.........6.........7.........8
@@ -132,7 +138,7 @@ int last_matrix_alloc_size = -1;
 
 /** function to perform grid search location */
 
-int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locations, int return_oct_tree_grid, int return_scatter_sample, LocNode **ploc_list_head) {
+int Locate(int ngrid, char* fn_loc_obs, char* fn_root_out, int numArrivalsReject, int return_locations, int return_oct_tree_grid, int return_scatter_sample, LocNode **ploc_list_head) {
 
     int istat, n, narr;
     char fnout[FILENAME_MAX];
@@ -177,6 +183,17 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
     sprintf(Hypocenter.locStatComm, "Location completed.");
     Hypocenter.x = Hypocenter.y = Hypocenter.z = 0.0;
     Hypocenter.ix = Hypocenter.iy = Hypocenter.iz = -1;
+    // 20110620 AJL - preserve event id if available
+    if (NumArrivalsLocation > 0 && Arrival[0].dd_event_id_1 >= 0)
+        Hypocenter.event_id = Arrival[0].dd_event_id_1;
+    else
+        Hypocenter.event_id = -1;
+    // 20170811 AJL - support for expectation hypocenter results output
+    if (iSaveNLLocExpectation) {
+        strcpy(Hypocenter.type, HYPO_TYPE_EXPECTATION);
+    } else {
+        strcpy(Hypocenter.type, HYPO_TYPE_MAXIMUM_LIKELIHOOD);
+    }
 
 
     /* search type dependent initializations */
@@ -237,7 +254,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
             nll_puterr("ERROR: creating array for scatter samples.");
             return (clean_memory(EXIT_ERROR_LOCATE));
         }
-        NumAllocations++;
+        //NumAllocations++;
 
     } else if (SearchType == SEARCH_OCTTREE) {
 
@@ -247,7 +264,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
             octtreeParams.use_stations_density = 0;
         }
 
-        // station denisty weighting
+        // station density weighting
         if (octtreeParams.use_stations_density) {
             AveInterStationDistance = calcAveInterStationDistance(StationList, NumStations);
             sprintf(MsgStr, "Station Density Weight:  Ave Station Distance: %lf", AveInterStationDistance);
@@ -259,10 +276,10 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
         }
 
         // initialize memory/arrays for regular, initial oct-tree search grid
-        // this is an x, y, z array of octtree root nodes,
+        // this is an x, y, z array of oct-tree root nodes,
         // a true oct-tree is created at each of these roots
         octTree = InitializeOcttree(LocGrid + ngrid, &octtreeParams);
-        NumAllocations++;
+        //NumAllocations++;
 
         // allocate scatter array for saved samples
         iSizeOfFdata = octtreeParams.num_scatter * 4 * sizeof (float);
@@ -271,7 +288,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
             nll_puterr("ERROR: creating array for scatter samples.");
             return (clean_memory(EXIT_ERROR_LOCATE));
         }
-        NumAllocations++;
+        //NumAllocations++;
 
     }
 
@@ -282,10 +299,24 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
         for (narr = 0; narr < NumArrivals; narr++) {
             if (Arrival[narr].n_companion < 0)
                 continue;
+            int n_companion_save = Arrival[narr].n_companion;
+            // 20160805 AJL - bug fix  narr -> NumArrivals
+            //             if (IsPhaseID(Arrival[narr].phase, "S") &&
+            //        (Arrival[narr].n_companion = IsSameArrival(Arrival, narr, narr, "P")) < 0) {
             if (IsPhaseID(Arrival[narr].phase, "S") &&
-                    (Arrival[narr].n_companion =
-                    IsSameArrival(Arrival, narr, narr, "P")) < 0) {
-                nll_puterr("ERROR: cannot find companion arrival.");
+                    (Arrival[narr].n_companion = IsSameArrival(Arrival, NumArrivals, narr, "P")) < 0) {
+                //
+                sprintf(MsgStr, "ERROR: cannot find companion arrival: %s %s n_companion %d->%d", Arrival[narr].label, Arrival[narr].phase, n_companion_save, Arrival[narr].n_companion);
+                nll_puterr(MsgStr);
+                // DEBUG
+                if (1) {
+                    sprintf(MsgStr, "Target:   narr %d %s label %s  time_grid_label %s", narr, Arrival[narr].phase, Arrival[narr].label, Arrival[narr].time_grid_label);
+                    nll_puterr(MsgStr);
+                    for (n = 0; n < NumArrivals; n++) {
+                        sprintf(MsgStr, "      narr %d %s label %s  time_grid_label %s", n, Arrival[n].phase, Arrival[n].label, Arrival[n].time_grid_label);
+                        nll_puterr(MsgStr);
+                    }
+                }
                 return (clean_memory(EXIT_ERROR_LOCATE));
             }
         }
@@ -329,21 +360,22 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
 
     }
 
+    /* 20170911 moved below
 
+        // clean up dates, calculate rms
+        StdDateTime(Arrival, NumArrivals, &Hypocenter);
 
-    /* clean up dates, caclulate rms */
-    StdDateTime(Arrival, NumArrivals, &Hypocenter);
+        // determine azimuth gaps
+        double gap_secondary;
+        Hypocenter.gap = CalcAzimuthGap(Arrival, NumArrivalsLocation, &gap_secondary);
+        Hypocenter.gap_secondary = gap_secondary;
 
-    /* determine azimuth gaps */
-    double gap_secondary;
-    Hypocenter.gap = CalcAzimuthGap(Arrival, NumArrivalsLocation, &gap_secondary);
-    Hypocenter.gap_secondary = gap_secondary;
-
-    /* re-sort arrivals by distance */
-    if ((istat = SortArrivalsDist(Arrival, NumArrivals)) < 0) {
-        nll_puterr("ERROR: sorting arrivals by distance.");
-        return (clean_memory(EXIT_ERROR_LOCATE));
-    }
+        // re-sort arrivals by distance
+        if ((istat = SortArrivalsDist(Arrival, NumArrivals)) < 0) {
+            nll_puterr("ERROR: sorting arrivals by distance.");
+            return (clean_memory(EXIT_ERROR_LOCATE));
+        }
+     */
 
     /* search type dependent processing */
 
@@ -405,7 +437,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
         if (iSaveNLLocEvent) {
             sprintf(fname, "%s.loc.scat", fnout);
             if ((fpio = fopen(fname, "w")) != NULL) {
-                /* write scatter file header informaion */
+                /* write scatter file header information */
                 fseek(fpio, 0, SEEK_SET);
                 fwrite(&(Hypocenter.nScatterSaved), sizeof (int), 1, fpio);
                 ftemp = (float) Hypocenter.probmax;
@@ -466,6 +498,44 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
 
 
     /* search type independent processing */
+
+    // re-calculate solution and arrival statistics for expectation hypocenter in case that expectation results are to be saved
+    // 20170811 AJL - added to allow saving of expectation hypocenter results instead of maximum likelihood
+    if (iSaveNLLocExpectation) {
+
+        // set hypocenter x,y,z to expectation
+        Hypocenter.max_like.x = Hypocenter.x;
+        Hypocenter.max_like.y = Hypocenter.y;
+        Hypocenter.max_like.z = Hypocenter.z;
+        istat = rect2latlon(0, Hypocenter.max_like.x, Hypocenter.max_like.y, &(Hypocenter.max_like_dlat), &(Hypocenter.max_like_dlong));
+        int hypo_hour, hypo_min;
+        hypotime2hrminsec(Hypocenter.time, &hypo_hour, &hypo_min, &(Hypocenter.max_like_sec));
+        Hypocenter.x = Hypocenter.expect.x;
+        Hypocenter.y = Hypocenter.expect.y;
+        Hypocenter.z = Hypocenter.expect.z;
+
+        double cell_diagonal_time_var_best = 0.0; // TODO: add to Grid Search ?
+        double cell_diagonal_best = 0.0; // TODO: add to Grid Search ?
+        double cell_volume_best = 0.0; // TODO: add to Grid Search ?
+        double misfit_max = Hypocenter.grid_misfit_max; // maximum likelihood misfit_max set in previous call to SaveBestLocation
+        SaveBestLocation(NULL, NumArrivals, NumArrivalsLocation, Arrival, LocGrid + ngrid,
+                &Gauss, &Hypocenter, misfit_max, LocGrid[ngrid].type, 1, cell_diagonal_time_var_best, cell_diagonal_best, cell_volume_best);
+
+    }
+
+    // clean up dates, calculate rms
+    StdDateTime(Arrival, NumArrivals, &Hypocenter);
+
+    // determine azimuth gaps
+    double gap_secondary;
+    Hypocenter.gap = CalcAzimuthGap(Arrival, NumArrivalsLocation, &gap_secondary);
+    Hypocenter.gap_secondary = gap_secondary;
+
+    // re-sort arrivals by distance
+    if ((istat = SortArrivalsDist(Arrival, NumArrivals)) < 0) {
+        nll_puterr("ERROR: sorting arrivals by distance.");
+        return (clean_memory(EXIT_ERROR_LOCATE));
+    }
 
 
     // QML fields added for compatibility with QuakeML OriginQuality attributes (AJL 201005)
@@ -540,9 +610,9 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
             qual = 'A';
         }
         Hypocenter.diffMaxLikeExpect = diff;
-        Hypocenter.qualitySED = qual; // flags SED fields availalble - will be written to NLL Hypocenter .
+        Hypocenter.qualitySED = qual; // flags SED fields available - will be written to NLL Hypocenter .
     } else {
-        Hypocenter.qualitySED = '\0'; // flags SED fields not availalble.
+        Hypocenter.qualitySED = '\0'; // flags SED fields not available.
     }
 
 
@@ -581,13 +651,15 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
         Hypocenter.num_amp_mag = 0;
         Hypocenter.dur_mag = MAGNITUDE_NULL;
         Hypocenter.num_dur_mag = 0;
-        for (n = 0; n < MAX_NUM_MAG_METHODS; n++)
+        // 20121015 AJL - bug fix
+        //for (n = 0; n < MAX_NUM_MAG_METHODS; n++)
+        for (n = 0; n < NumMagnitudeMethods; n++)
             CalculateMagnitude(&Hypocenter, Arrival, NumArrivals,
                 Component, NumCompDesc, Magnitude + n);
         /* calculate estimated VpVs ratio */
         CalculateVpVsEstimate(&Hypocenter, Arrival, NumArrivals);
         /* save location */
-        if ((istat = SaveLocation(&Hypocenter, ngrid, fnout, numArrivalsReject, "grid", 1, &Gauss)) < 0) {
+        if ((istat = SaveLocation(&Hypocenter, ngrid, fn_loc_obs, fnout, numArrivalsReject, "grid", 1, &Gauss)) < 0) {
             nll_puterr("ERROR: saving location.");
             return (clean_memory(istat));
         }
@@ -655,7 +727,8 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
         /* free saved samples memory */
         if (!return_scatter_sample) {
             free(fdata);
-            NumAllocations--;
+            fdata = NULL;
+            //NumAllocations--;
         }
 
     } else if (SearchType == SEARCH_OCTTREE) {
@@ -663,16 +736,17 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locat
         // free results tree - IMPORTANT!
         freeResultTree(resultTreeRoot);
 
-        /* free octree memory */
+        /* free oct-tree memory */
         if (!return_oct_tree_grid) {
             freeTree3D(octTree, 1);
-            NumAllocations--;
+            //NumAllocations--;
         }
 
         /* free saved samples memory */
         if (!return_scatter_sample) {
             free(fdata);
-            NumAllocations--;
+            fdata = NULL;
+            //NumAllocations--;
         }
 
     }
@@ -730,7 +804,7 @@ int clean_memory(int istat) {
     ot_ml_arrival_edt_sum = NULL;
     isize_ot_ml_array = 0;
 
-    return(istat);
+    return (istat);
 
 }
 
@@ -801,10 +875,12 @@ void InitializeMetropolisWalk(GridDesc* ptgrid, ArrivalDesc* parrivals, int
 
 }
 
+static int save_location_count = 0;
+
 /** function to display and save minimum misfit location to file */
 
-int SaveLocation(HypoDesc* hypo, int ngrid, char *fnout, int numArrivalsReject,
-        char* typename, int isave_phases, GaussLocParams* gauss_par) {
+int SaveLocation(HypoDesc* hypo, int ngrid, char* fnobs, char *fnout, int numArrivalsReject,
+        char* typename, int isave_phases, GaussLocParams * gauss_par) {
     int istat;
     char *pchr;
     char sys_command[MAXLINE_LONG];
@@ -812,8 +888,8 @@ int SaveLocation(HypoDesc* hypo, int ngrid, char *fnout, int numArrivalsReject,
     FILE *fp_tmp;
 
     /* set signature string */
-    sprintf(hypo->signature, "%s   %s:v%s %s",
-            LocSignature, prog_name, PVER, CurrTimeStr());
+    sprintf(hypo->signature, "%s   obs:%s   %s:v%s(%s)  run:%s",
+            LocSignature, fnobs, prog_name, PVER, PDATE, CurrTimeStr());
     while ((pchr = strchr(hypo->signature, '\n')))
         *pchr = ' ';
 
@@ -878,22 +954,22 @@ int SaveLocation(HypoDesc* hypo, int ngrid, char *fnout, int numArrivalsReject,
 
     if (iSaveHypo71Event) {
         /* write HYPO71 hypocenter to event file */
-        WriteHypo71(NULL, hypo, Arrival, fnout, 1, 1);
+        WriteHypo71(NULL, hypo, Arrival, NumArrivals, fnout, 1, 1);
     }
     if (iSaveHypo71Sum) {
         /* write HYPO71 hypocenter to summary file */
         WriteHypo71(pSumFileHypo71[ngrid], hypo,
-                Arrival, fnout, iWriteHypHeader[ngrid], 0);
+                Arrival, NumArrivals, fnout, iWriteHypHeader[ngrid], 0);
     }
 
     if (iSaveHypoEllEvent) {
         /* write pseudo-HypoEllipse hypo to event file */
-        WriteHypoEll(NULL, hypo, Arrival, fnout, 1, 1);
+        WriteHypoEll(NULL, hypo, Arrival, NumArrivals, fnout, 1, 1);
     }
     if (iSaveHypoEllSum) {
         /* write pseudo-HypoEllipse hypo to summary file */
         WriteHypoEll(pSumFileHypoEll[ngrid], hypo,
-                Arrival, fnout, iWriteHypHeader[ngrid], 0);
+                Arrival, NumArrivals, fnout, iWriteHypHeader[ngrid], 0);
     }
 
     if (iSaveHypoInvSum) {
@@ -924,11 +1000,17 @@ int SaveLocation(HypoDesc* hypo, int ngrid, char *fnout, int numArrivalsReject,
 
     if (iSaveAlberto4Sum) {
         /* write Alberto 4 SIMULPS format */
-        WriteHypoAlberto4(pSumFileAlberto4[ngrid], hypo,
-                Arrival, fnout);
+        WriteHypoAlberto4(pSumFileAlberto4[ngrid], hypo, Arrival, NumArrivals, fnout);
+    }
+
+    if (iSaveFmamp) {
+        /* write fmamp format */
+        WriteHypoFmamp(pSumFileFmamp[ngrid], hypo, Arrival, NumArrivals, fnout, save_location_count < 1);
     }
 
     iWriteHypHeader[ngrid] = 0;
+
+    save_location_count++;
 
     return (0);
 
@@ -941,7 +1023,8 @@ int checkObs(ArrivalDesc *arrival, int nobs) {
     int istat;
 
     // 20100506 AJL - added to support preservation of observation index order for calls to NLLoc() function (e.g. from SeisComp3)
-    arrival[nobs].original_obs_index = nobs;  // sets index of observation in order originally read from input
+    // 20130326 AJL - moved to calling function
+    //arrival[nobs].original_obs_index = nobs;  // sets index of observation in order originally read from input
 
     /* check for aliased arrival label */
     if ((istat = EvaluateArrivalAlias(arrival + nobs)) < 0)
@@ -1007,7 +1090,7 @@ int checkObs(ArrivalDesc *arrival, int nobs) {
             INGV*/
     /* check for duplicate arrival */
     if (nll_mode != MODE_DIFFERENTIAL) {
-        // AJL 20041201 - alogoritm changed, less strict
+        // AJL 20041201 - algorithm changed, less strict
         //if ( IsDuplicateArrival(arrival, nobs + 1, nobs, NULL) >= 0
         //		|| IsDuplicateArrival(arrival, nobs + 1, nobs, arrival[nobs].phase) >= 0 )
         //		) {
@@ -1032,11 +1115,13 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
         int* pMaxArrExceeded, int *pnumSArrivals, int nobs_prev) {
 
     int nobs, nobs_read, nobs_total;
+    int index_obs_original; // 20130326 AJL - added
     int istat, ntry, nLocate, n_NoAbsTime, n_compan, n_time_grid;
     char filename[FILENAME_MAX];
     char eval_phase[PHASE_LABEL_LEN];
     int isZeroWeight;
     char arrival_phase[PHASE_LABEL_LEN];
+    char tmp_phase[PHASE_LABEL_LEN];
     int read_2d_sheets;
     int i_need_elev_corr, n_phs_try;
 
@@ -1051,6 +1136,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
     /** read observations to arrival array */
 
     nobs = nobs_prev;
+    index_obs_original = 0; // 20130326 AJL - added
     *pnignore = 0;
     *pnreject = 0;
     nLocate = 0;
@@ -1066,19 +1152,25 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
             break;
         }
         if (istat == OBS_FILE_END_OF_EVENT) {
-            if (nobs == 0)
+            if (nobs == 0) {
+                ntry = 0; // 20160925 AJL - bug fix, to reset event fields as if new event
                 continue;
-            else
+            } else {
                 break;
+            }
         }
         if (istat == OBS_FILE_END_OF_INPUT) {
             *pi_end_of_input = 1;
             break;
         }
-        if (istat == OBS_FILE_INVALID_PHASE)
+        if (istat == OBS_FILE_INVALID_PHASE) {
+            index_obs_original++; // 20130326 AJL - added
             continue;
-        if (istat == OBS_FILE_INVALID_DATE)
+        }
+        if (istat == OBS_FILE_INVALID_DATE) {
+            index_obs_original++; // 20130326 AJL - added
             continue;
+        }
         if (istat == OBS_FILE_SKIP_INPUT_LINE)
             continue;
         /* SH if comment line found -> read next obs */
@@ -1087,19 +1179,27 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
         if (nobs == MAX_NUM_ARRIVALS - 1) {
             if (!*pMaxArrExceeded) {
                 *pMaxArrExceeded = 1;
-                nll_putmsg(1, "WARNING: maximum number of arrivals exceeded.");
+                sprintf(MsgStr, "WARNING: maximum number of arrivals exceeded, only first %d will be processed.", MAX_NUM_ARRIVALS);
+                nll_putmsg(1, MsgStr);
             }
             continue;
         }
 
+        // 20100506 AJL - added to support preservation of observation index order for calls to NLLoc() function (e.g. from SeisComp3)
+        arrival[nobs].original_obs_index = index_obs_original; // sets index of observation in order originally read from input    // 20130326 AJL - added
+        index_obs_original++; // 20130326 AJL - added
         // check and initialize observation
         if (checkObs(arrival, nobs) > 0)
             nobs++;
         // check and initialize second observation
         // SH if istat = OBS_FILE_TWO_ARRIVALS_READ then S-arrival has been read in -> two observations per line
-        if (istat == OBS_FILE_TWO_ARRIVALS_READ)
+        if (istat == OBS_FILE_TWO_ARRIVALS_READ) {
+            // 20100506 AJL - added to support preservation of observation index order for calls to NLLoc() function (e.g. from SeisComp3)
+            arrival[nobs].original_obs_index = index_obs_original; // sets index of observation in order originally read from input    // 20130326 AJL - added
+            index_obs_original++; // 20130326 AJL - added
             if (checkObs(arrival, nobs + 1) > 0)
                 nobs++;
+        }
 
     }
 
@@ -1181,7 +1281,8 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                     arrival[nobs].label, arrival[nobs].phase);
             nll_putmsg(3, MsgStr);
             isZeroWeight = 1;
-            strcpy(arrival_phase, arrival_phase + 1);
+            strcpy(tmp_phase, arrival_phase + 1);
+            strcpy(arrival_phase, tmp_phase);
         } else if (arrival[nobs].apriori_weight < VERY_SMALL_DOUBLE) {
             sprintf(MsgStr,
                     "INFO: arrival is isZeroWeight since apriori_weight < VERY_SMALL_DOUBLE: %s %s",
@@ -1370,7 +1471,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                         "WARNING: cannot open time grid file: %s: rejecting observation: %s %s",
                         filename, arrival[nobs].label, arrival[nobs].phase);
                 nll_putmsg(2, MsgStr);
-                CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+                CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
                 strcpy(arrival[nobs].fileroot, "\0");
                 goto RejectArrival;
             }
@@ -1383,7 +1484,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                 sprintf(MsgStr,
                         "WARNING: initial location search grid not contained inside arrival time grid, rejecting observation: %s %s", arrival[nobs].label, arrival[nobs].phase);
                 nll_putmsg(1, MsgStr);
-                CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+                CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
                 goto RejectArrival;
             }
 
@@ -1405,7 +1506,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                     LocGrid[0].origy + (LocGrid[0].dy
                     * (double) (LocGrid[0].numy - 1)) / 2.0)
                     ) != 1) {
-                CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+                CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
                 if (istat == -1) {
                     sprintf(MsgStr,
                             "WARNING: greatest distance from initial 3D location search grid to station \n\texceeds 2D time grid size, rejecting observation: %s %s",
@@ -1451,7 +1552,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                     arrival[nobs].label, arrival[nobs].phase);
             nll_putmsg(2, MsgStr);
             arrival[nobs].flag_ignore = 1;
-            CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+            CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
             goto IgnoreArrival;
         }
         // no absolute time and not EDT
@@ -1460,7 +1561,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                     "INFO: arrival does not have absolute timing, ignoring observation in misfit calculation: %s %s %s",
                     arrival[nobs].label, arrival[nobs].phase, arrival[nobs].inst);
             arrival[nobs].flag_ignore = 1;
-            CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+            CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
             nll_putmsg(2, MsgStr);
             goto IgnoreArrival;
         }
@@ -1470,7 +1571,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                     "INFO: method is EDT_BOX but arrival does not have error type BOX, ignoring observation in misfit calculation: %s %s %s",
                     arrival[nobs].label, arrival[nobs].phase, arrival[nobs].inst);
             arrival[nobs].flag_ignore = 1;
-            CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+            CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
             nll_putmsg(2, MsgStr);
             goto IgnoreArrival;
         }
@@ -1482,7 +1583,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
             nll_putmsg(2,
                     "WARNING: maximum number of arrivals for location exceeded, \n\tignoring observation in misfit calculation.");
             arrival[nobs].flag_ignore = 1;
-            CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+            CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
             goto IgnoreArrival;
         }
 
@@ -1532,14 +1633,14 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
 
         /* read 3D grid into memory (3D grids for Metropolis or Octtree search) */
 
+        //int XX_last = NumAllocations;
         if ((SearchType == SEARCH_MET || SearchType == SEARCH_OCTTREE)
                 && arrival[nobs].gdesc.type == GRID_TIME
-                && (MaxNum3DGridMemory < 0 ||
-                Num3DGridReadToMemory < MaxNum3DGridMemory)) {
+                && (MaxNum3DGridMemory < 0 || Num3DGridReadToMemory < MaxNum3DGridMemory)) {
 
             /* allocate grid */
-            arrival[nobs].gdesc.buffer =
-                    NLL_AllocateGrid(&(arrival[nobs].gdesc));
+            arrival[nobs].gdesc.buffer = NLL_AllocateGrid(&(arrival[nobs].gdesc));
+            //printf("DEBUG: ALLOCATE: nobs %d Arrival[nobs].n_time_grid %d\n", nobs, Arrival[nobs].n_time_grid);
             if (arrival[nobs].gdesc.buffer == NULL) {
                 nll_puterr(
                         "ERROR: allocating memory for arrival time grid buffer; grid will be read from disk.");
@@ -1553,24 +1654,24 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
                     //return(EXIT_ERROR_MEMORY);
                 }
                 /* read time grid */
-                if (NLL_ReadGrid3dBuf(&(arrival[nobs].gdesc),
-                        arrival[nobs].fpgrid) < 0) {
+                if (NLL_ReadGrid3dBuf(&(arrival[nobs].gdesc), arrival[nobs].fpgrid) < 0) {
                     nll_puterr(
                             "ERROR: reading arrival time grid buffer.");
                     goto RejectArrival;
                     //return(EXIT_ERROR_MEMORY);
                 }
-                CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+                CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
                 Num3DGridReadToMemory++;
             }
         }
+        //printf("XXX: NLLoc try put in memory: NumAllocations %d->%d\n", XX_last, NumAllocations);
 
 
         /* read time grid and close file (2D grids)*/
 
         if (read_2d_sheets && arrival[nobs].gdesc.type == GRID_TIME_2D) {
             istat = ReadArrivalSheets(1, &(arrival[nobs]), 0.0);
-            CloseGrid3dFile(&(arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
+            CloseGrid3dFile(&(Arrival[nobs].gdesc), &(Arrival[nobs].fpgrid), &(arrival[nobs].fphdr));
             if (istat < 0) {
                 sprintf(MsgStr,
                         "ERROR: reading arrival travel time sheets (2D grid), rejecting observation: %s %s",
@@ -1645,7 +1746,7 @@ RejectArrival:
 
 /** function to initialize arrival fields */
 
-void InitializeArrivalFields(ArrivalDesc *arrival) {
+void InitializeArrivalFields(ArrivalDesc * arrival) {
 
     arrival->abs_time = 1;
     arrival->obs_centered = 0.0;
@@ -1659,8 +1760,11 @@ void InitializeArrivalFields(ArrivalDesc *arrival) {
     arrival->residual = 0.0;
     arrival->dist = 0.0;
     arrival->azim = 0.0;
-    arrival->ray_azim = 0.0;
-    arrival->ray_dip = 0.0;
+    // 20110601 AJL - default/unset values set to -1.0 so unset angles can be more easily identified in later processing (e.g. in SeisComp3).
+    //arrival->ray_azim = 0.0;
+    //arrival->ray_dip = 0.0;
+    arrival->ray_azim = -1.0;
+    arrival->ray_dip = -1.0;
     arrival->ray_qual = 0;
     arrival->pdf_residual_sum = 0.0;
     arrival->pdf_weight_sum = 0.0;
@@ -1704,7 +1808,7 @@ int isExcluded(char *label, char *phase) {
 
 // returns 'P' if P, 'S' if S, ' ' otherwise
 
-char lastLegType(ArrivalDesc *arrival) {
+char lastLegType(ArrivalDesc * arrival) {
     char *c_last_p, *c_last_P, *c_last_s, *c_last_S;
     int i_last_p, i_last_P, i_last_s, i_last_S;
 
@@ -1736,7 +1840,7 @@ double CalcSimpleElevCorr(ArrivalDesc *arrival, int narr, double pvel, double sv
     double yval_grid, t_surface, t_elev, elev_corr;
     int n_compan, diagnostic;
 
-// TODO: procedure could  be simplified by using cell slowness from model files fp_model_grid_P, etc., if available
+    // TODO: procedure could  be simplified by using cell slowness from model files fp_model_grid_P, etc., if available
 
     // Switch debug messages from this function on/off (1/0).
     diagnostic = message_flag >= 3;
@@ -1764,11 +1868,11 @@ double CalcSimpleElevCorr(ArrivalDesc *arrival, int narr, double pvel, double sv
             }
             /* 3D grid */
             if ((t_surface = (double) ReadAbsInterpGrid3d(arrival[narr].fpgrid,
-                    &(arrival[narr].gdesc), 0.0, 0.0, 0.0)) < 0.0)
+                    &(arrival[narr].gdesc), 0.0, 0.0, 0.0, 0)) < 0.0)
                 return (0.0);
             // read pos along X dir because grid may not extend above surface
             if ((t_elev = (double) ReadAbsInterpGrid3d(arrival[narr].fpgrid,
-                    &(arrival[narr].gdesc), fabs(arrival[narr].station.depth), 0.0, 0.0)) < 0.0)
+                    &(arrival[narr].gdesc), fabs(arrival[narr].station.depth), 0.0, 0.0, 0)) < 0.0)
                 return (0.0);
         } else {
             if (diagnostic) {
@@ -1806,7 +1910,7 @@ double CalcSimpleElevCorr(ArrivalDesc *arrival, int narr, double pvel, double sv
 
 /** function to evaluate arrival label aliases */
 
-int EvaluateArrivalAlias(ArrivalDesc *arrival) {
+int EvaluateArrivalAlias(ArrivalDesc * arrival) {
     int nAlias;
     int checkAgain = 1, icount = 0, aliasApplied = 0;
     char *pchr, tmpLabel[MAXLINE];
@@ -1862,8 +1966,7 @@ int EvaluateArrivalAlias(ArrivalDesc *arrival) {
                 nll_putmsg(4, MsgStr);
             }
 
-            /* if alias label is same as arrival label,
-            end check to avoid infinite recurssion */
+            /* if alias label is same as arrival label, end check to avoid infinite recursion */
             if (strcmp(tmpLabel, arrival->label) == 0)
                 checkAgain = 0;
             else
@@ -1912,7 +2015,7 @@ int EvaluateArrivalAlias(ArrivalDesc *arrival) {
 
 /** function to apply time delays */
 
-int ApplyTimeDelays(ArrivalDesc *arrival) {
+int ApplyTimeDelays(ArrivalDesc * arrival) {
     int nDelay, i;
     int ifound;
     double tmp_delay;
@@ -2019,7 +2122,7 @@ int ApplyTimeDelays(ArrivalDesc *arrival) {
 
 /** function to get time delay from time delay surface */
 
-double ApplySurfaceTimeDelay(int nsurface, ArrivalDesc *arrival) {
+double ApplySurfaceTimeDelay(int nsurface, ArrivalDesc * arrival) {
     double x, y;
 
     if (arrival->station.is_coord_latlon) {
@@ -2077,6 +2180,7 @@ int ExtractFilenameInfo(char *filename, char *type_obs) {
 /** function to read arrival from observation file */
 
 int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) {
+
     int istat = 0, iloop;
     char *cstat;
     char chr, instruction[MAXSTRING];
@@ -2188,6 +2292,8 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
     arrival->dur_mag = MAGNITUDE_NULL;
     arrival->apriori_weight = 1.0;
 
+    arrival->dd_event_id_1 = -1;
+    arrival->flag_ignore = 0; // 20150521 AJL
 
     /* attempt to read obs based on obs file type */
 
@@ -2206,12 +2312,9 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         if ((arrival->quality = Err2Qual(arrival)) < 0)
             arrival->quality = 99;
         return (istat);
-    }
-
-
-    /* SH Seismograph Station University of Utah format (PING)
-                first line: reftime (yymmddhhmm)
-                next lines arrival times rel. to reftime incl. duration
+    }/* SH Seismograph Station University of Utah format (PING)
+                    first line: reftime (yymmddhhmm)
+                    next lines arrival times rel. to reftime incl. duration
          */
 
     else if (strcmp(ftype_obs, "UUSS") == 0) {
@@ -2320,6 +2423,8 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
             return (OBS_FILE_TWO_ARRIVALS_READ);
         } else
             return (istat);
+
+
     } else if (strcmp(ftype_obs, "HYPO71") == 0 ||
             strcmp(ftype_obs, "HYPO71_OV") == 0 ||
             strcmp(ftype_obs, "HYPOELLIPSE") == 0) {
@@ -2367,6 +2472,12 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
                 //printf(" -> arrival->sec=%f\n", arrival->sec);
                 // END - 20090126 AJL bug fix
                 istat += ReadFortranReal(line, 20, 5, &psec);
+                // 20140528 AJL - bug fix, check for integer P time
+                strncpy(chrtmp, line + 19, 5);
+                chrtmp[5] = '\0';
+                if (strchr(chrtmp, '.') == NULL)
+                    psec /= 100.0;
+                // END - 20140528 AJL - bug fix
                 /* check for P second >= 60.0 */
                 if (psec >= 60.0 && arrival->sec < 60.0)
                     arrival->sec += 60.0;
@@ -2481,8 +2592,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "HYPOINVERSE_Y2000_ARC") == 0) {
+    } else if (strcmp(ftype_obs, "HYPOINVERSE_Y2000_ARC") == 0) {
 
         /*
                         Y2000 (station) archive format
@@ -2740,8 +2850,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "INGV_BOLL") == 0 ||
+    } else if (strcmp(ftype_obs, "INGV_BOLL") == 0 ||
             strcmp(ftype_obs, "INGV_BOLL_LOCAL") == 0 ||
             strcmp(ftype_obs, "INGV_ARCH") == 0) {
         /*
@@ -2923,8 +3032,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "NCSN_Y2K_5") == 0) {
+    } else if (strcmp(ftype_obs, "NCSN_Y2K_5") == 0) {
 
         if (check_for_S_arrival) {
             /* check for S phase input in last input line read */
@@ -2935,6 +3043,14 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
                 /* read S phase input in last input line read */
                 istat = ReadFortranString(line, 1, 5, arrival->label);
                 TrimString(arrival->label);
+                // 20120928 AJL - added
+                istat = ReadFortranString(line, 6, 2, arrival->network); // network code ignored in NLL
+                TrimString(arrival->network);
+                istat += ReadFortranString(line, 9, 1, arrival->comp);
+                TrimString(arrival->comp);
+                istat += ReadFortranString(line, 10, 3, arrival->inst);
+                TrimString(arrival->inst);
+                // END - 20120928 AJL - added
                 istat += ReadFortranInt(line, 18, 4, &arrival->year);
                 istat += ReadFortranInt(line, 22, 2, &arrival->month);
                 istat += ReadFortranInt(line, 24, 2, &arrival->day);
@@ -2999,6 +3115,11 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         /* read formatted P (or S) arrival input */
         istat = ReadFortranString(line, 1, 5, arrival->label);
         TrimString(arrival->label);
+        // 20120928 AJL - added
+        istat = ReadFortranString(line, 6, 2, arrival->network); // network code ignored in NLL
+        //printf("DEBUG: arrival->network %s [%s]", arrival->network, line);
+        TrimString(arrival->network);
+        // END - 20120928 AJL - added
         istat += ReadFortranString(line, 9, 1, arrival->comp);
         TrimString(arrival->comp);
         istat += ReadFortranString(line, 10, 3, arrival->inst);
@@ -3065,8 +3186,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
 
         return (istat);
 
-    }
-    else if (strcmp(ftype_obs, "PAOLO_OV") == 0 ||
+    } else if (strcmp(ftype_obs, "PAOLO_OV") == 0 ||
             strcmp(ftype_obs, "ALBERTO_3D") == 0 ||
             strcmp(ftype_obs, "ALBERTO_3D_4") == 0 ||
             strcmp(ftype_obs, "SIMULPS") == 0 ||
@@ -3310,8 +3430,9 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
                 }
 #endif
                 /* SH 07/26/2004
-                                                other identiers for SED_LOC are Tele and Unkn  */
+                                                other identiers for SED_LOC are regi, Tele and Unkn  */
                 if ((strcmp(eth_line_key, "Loca") == 0) ||
+                        (strcmp(eth_line_key, "Regi") == 0) ||
                         (strcmp(eth_line_key, "Tele") == 0) ||
                         (strcmp(eth_line_key, "Unkn") == 0)) {
                     ifound = 1;
@@ -3449,10 +3570,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         }
 
         return (istat);
-    }
-
-
-    else if (strcmp(ftype_obs, "SED_LOC_OLD") == 0) {
+    } else if (strcmp(ftype_obs, "SED_LOC_OLD") == 0) {
 
         /* example:
                         1 1   200.0   300.0    1.71 1                        INST
@@ -3615,8 +3733,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
             arrival->amplitude = AMPLITUDE_NULL;
 
         return (istat);
-    }
-        //  ETH_LOC replaced by SED_LOC
+    }//  ETH_LOC replaced by SED_LOC
         //else if (strcmp(ftype_obs, "ETH_LOC") == 0)
     else if (0) {
 
@@ -3760,8 +3877,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
             arrival->amplitude = AMPLITUDE_NULL;
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "NEIC") == 0) {
+    } else if (strcmp(ftype_obs, "NEIC") == 0) {
 
         /* example:
         20 JUN 2003  (171)
@@ -3904,8 +4020,139 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "ISC_IMS1.0") == 0) {
+
+
+    } else if (strcmp(ftype_obs, "NEIC_LATEST_EQS") == 0) {
+
+        // http://earthquake.usgs.gov/earthquakes/map/
+
+        /* example:
+
+Channel	Distance	Azimuth	Phase	Arrival Time	Status	Residual	Weight
+IM PD31 BHZ --	0.378028	236.911	Pn	2013-09-21T13:16:45.66Z	manual	-0.10	0.0160
+IM PD31 BHN --	0.378028	236.911	Sn	2013-09-21T13:16:55.11Z	manual	0.00	0.0340
+IM PDAR SHZ FB	0.378181	236.836	Pn	2013-09-21T13:16:45.75Z	manual	0.00	0.0160
+IM PDAR SHZ FB	0.378181	236.836	Sn	2013-09-21T13:16:55.35Z	manual	0.20	0.0340
+US BW06 BHZ 00	0.378425	236.86	Pn	2013-09-21T13:16:45.58Z	manual	-0.20	0.0160
+US BW06 BHN 00	0.378425	236.86	Pn	2013-09-21T13:16:45.67Z	manual	0.00	0.0000
+
+         *        */
+        /* read line */
+        cstat = fgets(line, MAXLINE_LONG, fp_obs);
+        //printf(">1 %s", line);
+        if (cstat == NULL)
+            return (OBS_FILE_END_OF_INPUT);
+        /* check for end of event (assumes empty lines between event) */
+        if (LineIsBlank(line)) {
+            /* end of event */
+            return (OBS_FILE_END_OF_EVENT);
+        }
+
+
+        if (0 && !in_hypocenter_event) {
+            // find phase line
+            while (strncmp(line, "Channel", 7) != 0) {
+                // read next line
+                cstat = fgets(line, MAXLINE_LONG, fp_obs);
+                //printf(">2 %s", line);
+                if (cstat == NULL)
+                    return (OBS_FILE_END_OF_INPUT);
+            }
+            in_hypocenter_event = 1;
+        }
+
+
+        /* read phase arrival input */
+        /*
+IM PD31 BHZ --	0.378028	236.911	Pn	2013-09-21T13:16:45.66Z	manual	-0.10	0.0160
+IM PD31 BHN --	0.378028	236.911	Sn	2013-09-21T13:16:55.11Z	manual	0.00	0.0340
+         */
+        istat = sscanf(line, "%s %s %s %*s %*f %*f %s %4d-%2d-%2dT%2d:%2d:%lfZ",
+                arrival->network, arrival->label, arrival->inst, arrival->phase, &arrival->year, &arrival->month, &arrival->day, &arrival->hour, &arrival->min, &arrival->sec);
+        //printf("%s %s %s - - - %s %4d-%2d-%2dT%2d:%2d:%fZ\n", arrival->network, arrival->label, arrival->inst, arrival->phase, arrival->year, arrival->month, arrival->day, arrival->hour, arrival->min, arrival->sec);
+
+        if (istat != 10) {
+            return (OBS_FILE_END_OF_EVENT);
+        }
+
+        /* convert quality to error */
+        //Qual2Err(arrival);
+        strcpy(arrival->error_type, "GAU");
+        arrival->error = 2.0;
+        // error if first arrival P
+        if (strstr("P$Pg$Pn$Pb$P0$P1$PKP$PKPdf", arrival->phase) != NULL) {
+            arrival->error = 1.0;
+        }
+
+
+        return (istat);
+
+    } else if (strcmp(ftype_obs, "GEM") == 0) {
+
+        /* example:
+
+ 132750016  261603062   KSA       P       P  84.13 355.75 1929-07-03 01:05:49 ?
+ 132750016  261603063   KSA       S       S  84.13 355.75 1929-07-03 01:15:55 ?
+ 132750017  261603064   LPZ       P         100.36 105.55 1929-07-03 01:45:50 ?
+
+#     evid      hypid author origin time               lat      lon    depth F  nsta  nass  ndef
+    905632  607283695    GEM 1933/06/12 15:23:41.916  61.231 -151.354  15.00 H    21    68    26
+
+#     rdid       phid   sta  Pphase  Aphase  delta   esaz    arrival time    ch
+ 132814560  261709084   VIC       P      Pn  20.30 116.11 1933-06-12 15:28:16 ?
+ 132814560  261709085   VIC      SS      Sn  20.30 116.11 1933-06-12 15:32:19 ?
+ 132814561  261709086   BZM      SS      SS  28.04 105.18 1933-06-12 15:36:24 ?
+ 132814562  261709087   UKI       S       S  28.12 128.91 1933-06-12 15:34:30 ?
+
+         *        */
+        /* read line */
+        cstat = fgets(line, MAXLINE_LONG, fp_obs);
+        //printf(">1 %s", line);
+        if (cstat == NULL)
+            return (OBS_FILE_END_OF_INPUT);
+        /* check for end of event (assumes empty lines between event) */
+        if (LineIsBlank(line)) {
+            /* end of event */
+            return (OBS_FILE_END_OF_EVENT);
+        }
+
+        if (!in_hypocenter_event) {
+            // find phase line
+            while (strstr(line, "Pphase") == NULL) {
+                // read next line
+                cstat = fgets(line, MAXLINE_LONG, fp_obs);
+                //printf(">2 %s", line);
+                if (cstat == NULL)
+                    return (OBS_FILE_END_OF_INPUT);
+            }
+            in_hypocenter_event = 1;
+            cstat = fgets(line, MAXLINE_LONG, fp_obs);
+        }
+
+
+        /* read phase arrival input */
+        /*
+ 132814560  261709084   VIC       P      Pn  20.30 116.11 1933-06-12 15:28:16 ?
+         */
+        istat = ReadFortranString(line, 25, 9, chrtmp);
+        istat = sscanf(chrtmp, "%s", arrival->label);
+        istat = ReadFortranString(line, 42, 3, chrtmp);
+        istat = sscanf(chrtmp, "%s", arrival->phase);
+        istat = ReadFortranString(line, 59, 22, chrtmp);
+        istat = sscanf(chrtmp, "%4d-%2d-%2d %2d:%2d:%lf %s",
+                &arrival->year, &arrival->month, &arrival->day, &arrival->hour, &arrival->min, &arrival->sec, arrival->comp);
+        //printf("%s %s %4.4d-%2.2d-%2.2d %2.2d:%2.2d:%f %s\n", arrival->label, arrival->phase, arrival->year, arrival->month, arrival->day, arrival->hour, arrival->min, arrival->sec, arrival->comp);
+
+        if (istat != 7) {
+            return (OBS_FILE_END_OF_EVENT);
+        }
+
+        /* convert quality to error */
+        arrival->error = Quality2Error[0];
+
+        return (istat);
+
+    } else if (strcmp(ftype_obs, "ISC_IMS1.0") == 0) {
 
         /* example:
                         ...
@@ -3955,7 +4202,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         //printf("1 %s", line);
         if (cstat == NULL)
             return (OBS_FILE_END_OF_INPUT);
-        /* check for end of event (assumes Event or STOP at end of event) */
+        // check for end of event (assumes Event or STOP at end of event
         if ((in_hypocenter_event && strncmp(line, "Event", 5) == 0)
                 || strncmp(line, "STOP", 4) == 0) {
             /* end of event */
@@ -3965,7 +4212,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
 
         /* not yet in event, find and read event hypocenter line */
         if (!in_hypocenter_event) {
-            // assume may alredy be in "Event" block
+            // assume may already be in "Event" block
             // find date
             while (strncmp(line, "   Date", 7) != 0) {
                 // read next line
@@ -3994,12 +4241,22 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
                     //printf("4 %s", line);
                     if (cstat == NULL)
                         return (OBS_FILE_END_OF_INPUT);
+                    // check for end of event (assumes Event or STOP at end of event
+                    if (strncmp(line, "Event", 5) == 0 || strncmp(line, "STOP", 4) == 0) {
+                        /* end of event */
+                        return (OBS_FILE_END_OF_EVENT);
+                    }
                 }
                 /* read next line */
                 cstat = fgets(line, MAXLINE_LONG, fp_obs);
                 //printf("5 %s", line);
                 if (cstat == NULL)
                     return (OBS_FILE_END_OF_INPUT);
+                // check for end of event (assumes Event or STOP at end of event
+                if (strncmp(line, "Event", 5) == 0 || strncmp(line, "STOP", 4) == 0) {
+                    /* end of event */
+                    return (OBS_FILE_END_OF_EVENT);
+                }
             } else {
                 return (OBS_FILE_END_OF_EVENT); // blank line or ignored line
             }
@@ -4026,6 +4283,11 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
             //printf("6 %s", line);
             if (cstat == NULL)
                 return (OBS_FILE_END_OF_INPUT);
+            // check for end of event (assumes Event or STOP at end of event
+            if (strncmp(line, "Event", 5) == 0 || strncmp(line, "STOP", 4) == 0) {
+                /* end of event */
+                return (OBS_FILE_END_OF_EVENT);
+            }
             if (strncmp(line, "Event", 5) == 0 || strncmp(line, "STOP", 4) == 0)
                 return (OBS_FILE_END_OF_EVENT);
         }
@@ -4062,9 +4324,10 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         else
             arrival->quality = 3;
         // check if "P" arrival
-        if (strncmp(arrival->phase, "P", 1) != 0) {
+        /* 20160929 AJL - replace with multiplication of error below
+        if (if arrival->quality < 3 && strncmp(arrival->phase, "P", 1) != 0) {
             arrival->quality += 1;
-        }
+        }*/
 
         if (istat != 7) {
             return (OBS_FILE_INVALID_PHASE);
@@ -4077,10 +4340,15 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
 
         /* convert quality to error */
         Qual2Err(arrival);
+        // 20160929 AJL - multiplication of error if not first arrival P
+        if (0 && strstr("P$Pg$Pn$Pb$P0$P1$PKP$PKPdf", arrival->phase) == NULL) {
+            arrival->error *= 2.0;
+        }
+
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "CSEM_GSE2.0") == 0) {
+
+    } else if (strcmp(ftype_obs, "CSEM_GSE2.0") == 0) {
 
         /* example:
                         ...
@@ -4217,8 +4485,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "CSEM_ALERT") == 0) {
+    } else if (strcmp(ftype_obs, "CSEM_ALERT") == 0) {
 
         /* example:
 
@@ -4299,8 +4566,183 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "INGV_AUTOPICKS") == 0) {
+
+
+    } else if (strcmp(ftype_obs, "TEXNET_BULLETIN") == 0 || strcmp(ftype_obs, "TEXNET_BULLETIN__ZERO_WT_X") == 0) {
+
+        /* example:
+Event:
+    Public ID              texnet2017gqxp
+    Type                   earthquake
+    Description
+      region name: Western Texas
+Origin:
+    Date                   2017-04-05
+    Time                   15:18:54.087
+    Latitude                31.5335 deg  +/-   2.8 km
+    Longitude             -103.7448 deg  +/-   3.7 km
+    Depth                      0.0 km   +/-   2.1 km
+    Agency                 TXNet
+    Mode                   manual
+    Status                 final
+    Residual RMS              0.73 s
+    Azimuthal gap              88 deg
+
+3 Network magnitudes:
+    ML        0.93            2 preferred
+    MLv       0.90            3
+    M         0.91            3
+
+18 Phase arrivals:
+    sta  net   dist azi  phase   time         res     wt  sta
+    PECS  TX    0.2 213  P       15:18:57.657  -0.1 M  1.5  PECS
+    PECS  TX    0.2 213  S       15:19:00.866   0.4 M  1.4  PECS
+    PB02  TX    0.2 122  S       15:19:01.446  -0.5 M  1.3  PB02
+    HTMS  SC    0.9   6  P       15:19:12.251   0.1 M  1.5  HTMS
+    ALPN  TX    1.2 175  S       15:19:29.664  -2.9 MX 0.0  ALPN
+    ODSA  TX    1.2  60  P       15:19:19.587   3.0 MX 0.1  ODSA
+    ODSA  TX    1.2  60  S       15:19:32.332  -0.6 M  1.2  ODSA
+    VHRN  TX    1.3 235  P       15:19:18.180  -0.8 M  1.0  VHRN
+    VHRN  TX    1.3 235  S       15:19:35.733  -1.3 M  0.6  VHRN
+    DAG   SC    1.3 323  P       15:19:20.635   1.1 M  1.0  DAG
+    MNTX  US    1.4 277  S       15:19:40.423  -0.2 MX 0.0  MNTX
+    SAND  TX    2.1 138  S       15:19:59.042   0.6 M  1.3  SAND
+    TX31  IM    2.2 178  P       15:19:32.265   0.4 M  1.4  TX31
+    TX31  IM    2.2 178  S       15:20:02.066   1.3 M  0.9  TX31
+    TX32  IM    2.2 178  S       15:20:01.922   1.1 MX 0.0  TX32
+    OZNA  TX    2.3 105  P       15:19:39.487   5.9 MX 0.0  OZNA
+    OZNA  TX    2.3 105  S       15:20:05.104   1.3 M  0.9  OZNA
+    FW07  TX    5.2  75  P       15:20:16.860   4.0 AX 0.0  FW07
+
+0 Station magnitudes:
+    sta  net   dist azi  type   value   res        amp per
+
+         */
+
+        // read next line
+        cstat = fgets(line, MAXLINE_LONG, fp_obs);
+        //printf("1 %s", line);
+        if (cstat == NULL)
+            return (OBS_FILE_END_OF_INPUT);
+        if (in_hypocenter_event) {
+            if (strncmp(line, "Event:", 6) == 0) {
+                // end of event
+                return (OBS_FILE_END_OF_EVENT);
+            }
+        }
+
+
+        // not yet in event, find and read event hypocenter line
+        if (!in_hypocenter_event) {
+            // assume may already be in "Event" block
+            // find date
+            while (strncmp(line, "    Date", 8) != 0) {
+                // read next line
+                cstat = fgets(line, MAXLINE_LONG, fp_obs);
+                //printf("2 %s", line);
+                if (cstat == NULL)
+                    return (OBS_FILE_END_OF_INPUT);
+                if (strncmp(line, "Event:", 6) == 0) {
+                    // end of event
+                    return (OBS_FILE_END_OF_EVENT);
+                }
+            }
+            // read hypocenter date
+            //    Date                   2017-08-01
+            istat = ReadFortranInt(line, 28, 4, &EventTime.year);
+            istat += ReadFortranInt(line, 33, 2, &EventTime.month);
+            istat += ReadFortranInt(line, 36, 2, &EventTime.day);
+            if (istat == 3) {
+                in_hypocenter_event = 1;
+                // find phases lines
+                //    sta  net   dist azi  phase   time         res     wt  sta
+                while (strncmp(line, "    sta  net", 12) != 0) {
+                    // read next line
+                    cstat = fgets(line, MAXLINE_LONG, fp_obs);
+                    //printf("3 %s", line);
+                    if (cstat == NULL)
+                        return (OBS_FILE_END_OF_INPUT);
+                    if (strncmp(line, "Event:", 6) == 0) {
+                        // end of event
+                        return (OBS_FILE_END_OF_EVENT);
+                    }
+                }
+                // read next line/
+                cstat = fgets(line, MAXLINE_LONG, fp_obs);
+                //printf("4 %s", line);
+                if (cstat == NULL)
+                    return (OBS_FILE_END_OF_INPUT);
+                if (strncmp(line, "Event:", 6) == 0) {
+                    // end of event
+                    return (OBS_FILE_END_OF_EVENT);
+                }
+            } else {
+                return (OBS_FILE_END_OF_EVENT); // blank line or ignored line
+            }
+        }
+
+
+        /* read phase arrival input */
+        /*
+    sta  net   dist azi  phase   time         res     wt  sta
+    PECS  TX    0.2 213  P       15:18:57.657  -0.1 M  1.5  PECS
+    PECS  TX    0.2 213  S       15:19:00.866   0.4 M  1.4  PECS
+    PB02  TX    0.2 122  S       15:19:01.446  -0.5 M  1.3  PB02
+    HTMS  SC    0.9   6  P       15:19:12.251   0.1 M  1.5  HTMS
+    ALPN  TX    1.2 175  S       15:19:29.664  -2.9 MX 0.0  ALPN
+    ODSA  TX    1.2  60  P       15:19:19.587   3.0 MX 0.1  ODSA
+    ODSA  TX    1.2  60  S       15:19:32.332  -0.6 M  1.2  ODSA
+    ...
+         */
+
+        // read phase time reading
+        istat = ReadFortranString(line, 5, 5, arrival->label);
+        TrimString(arrival->label);
+        istat += ReadFortranString(line, 26, 7, arrival->phase);
+        TrimString(arrival->phase);
+        istat += ReadFortranInt(line, 34, 2, &arrival->hour);
+        // ISC_IMS1.0 uses 00h for phases arriving after 24h of day of event !!!
+        //if (arrival->hour < EventTime.hour)
+        //    arrival->hour += 24;
+        //
+        istat += ReadFortranInt(line, 37, 2, &arrival->min);
+        istat += ReadFortranReal(line, 40, 6, &arrival->sec);
+        //istat += ReadFortranString(line, 101, 1, arrival->first_mot);
+        //istat += ReadFortranString(line, 102, 1, arrival->onset);
+        // set weight, check for P - reset weight
+        if (strcmp(arrival->phase, "P") == 0)
+            arrival->quality = 0;
+        else
+            arrival->quality = 1;
+
+        if (istat != 5) {
+            return (OBS_FILE_INVALID_PHASE);
+        }
+
+        arrival->year = EventTime.year;
+        arrival->month = EventTime.month;
+        arrival->day = EventTime.day;
+
+
+        // convert quality to error
+        Qual2Err(arrival);
+        // multiplication of error if not first arrival P
+        //if (0 && strstr("P$Pg$Pn$Pb$P0$P1$PKP$PKPdf", arrival->phase) == NULL) {
+        //    arrival->error *= 2.0;
+        //}
+
+        if (strcmp(ftype_obs, "TEXNET_BULLETIN__ZERO_WT_X") == 0) {
+            // check if phase is excluded for location
+            istat = ReadFortranString(line, 54, 1, chrtmp);
+            if (istat == 1 && strcmp(chrtmp, "X") == 0) {
+                arrival->apriori_weight = 0.0;
+            }
+        }
+
+
+        return (istat);
+
+    } else if (strcmp(ftype_obs, "INGV_AUTOPICKS") == 0) {
 
         /* example:
                         ...
@@ -4346,8 +4788,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "NCEDC_UCB") == 0) {
+    } else if (strcmp(ftype_obs, "NCEDC_UCB") == 0) {
 
         /* example:
                         ...
@@ -4452,8 +4893,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "HYPOCENTER") == 0) {
+    } else if (strcmp(ftype_obs, "HYPOCENTER") == 0) {
 
         /* example:
                         67  827 1632 12.4 L
@@ -4523,8 +4963,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "HYPODD_PHA") == 0) {
+    } else if (strcmp(ftype_obs, "HYPODD_PHA") == 0) {
 
         /* example:
         # 1985  1 24  2 19 58.71  37.8832 -122.2415    9.80 1.40  0.15  0.51  0.02      38542
@@ -4564,10 +5003,10 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         /* read event hypocenter line */
         if (!in_hypocenter_event) {
             /* read hypocenter time */
-            istat = sscanf(line, "# %d %d %d %d %d %lf",
+            istat = sscanf(line, "# %d %d %d %d %d %lf %*f %*f %*f %*f %*f %*f %*f %ld",
                     &EventTime.year, &EventTime.month, &EventTime.day,
-                    &EventTime.hour, &EventTime.min, &EventTime.sec);
-            if (istat == 6) {
+                    &EventTime.hour, &EventTime.min, &EventTime.sec, &EventID);
+            if (istat == 7) {
                 in_hypocenter_event = 1;
                 /* read next line */
                 cstat = fgets(line, MAXLINE_LONG, fp_obs);
@@ -4599,6 +5038,9 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         arrival->month = EventTime.month;
         arrival->day = EventTime.day;
 
+        // 20110620 AJL - preserve event id if available
+        arrival->dd_event_id_1 = EventID;
+
         // convert weight to quality (following Appendix C in hypoDD.pdf)
         weight = fabs(weight);
         if (weight > 0.99)
@@ -4615,7 +5057,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    }        // DD
+    }// DD
     else if (strcmp(ftype_obs, "HYPODD_CC") == 0 || strcmp(ftype_obs, "HYPODD_CT") == 0
             || strcmp(ftype_obs, "HYPODD_") == 0) {
 
@@ -4679,7 +5121,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
 
             istat = sscanf(line, "%s %lf %lf %s",
                     arrival->label, &arrival->dd_dtime, &arrival->weight, arrival->phase);
-            //printf("%s %lf %lf %s\n", arrival->label, arrival->dd_dtime, arrival->weight, arrival->phase);
+            //printf("%s %lf %lf %s ignore:%d\n", arrival->label, arrival->dd_dtime, arrival->weight, arrival->phase, arrival->flag_ignore);
             if (istat != 4) {
                 printf("ERROR: HYPODD_CC format error: %s\n", line);
                 return (OBS_FILE_FORMAT_ERROR);
@@ -4689,13 +5131,14 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
             arrival->dd_event_id_2 = dd_event_id_2;
             // incorporate OTC into dd_dtime when reading dt file
             arrival->dd_dtime -= dd_otime_corr;
+            arrival->error = 0.0;
             strcpy(arrival->error_type, "XCC");
 
         } else { // HYPODD_CT
 
             istat = sscanf(line, "%s %lf %lf %lf %s",
                     arrival->label, &tt_sta1, &tt_sta2, &arrival->weight, arrival->phase);
-            //printf("%s %lf %lf %lf %s\n", arrival->label, tt_sta1, tt_sta2, arrival->weight, arrival->phase);
+            //printf("%s %lf %lf %lf %s ignore:%d\n", arrival->label, tt_sta1, tt_sta2, arrival->weight, arrival->phase, arrival->flag_ignore);
             if (istat != 5) {
                 printf("ERROR: HYPODD_CT format error: %s\n", line);
                 return (OBS_FILE_FORMAT_ERROR);
@@ -4704,6 +5147,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
             arrival->dd_event_id_1 = dd_event_id_1;
             arrival->dd_event_id_2 = dd_event_id_2;
             arrival->dd_dtime = tt_sta1 - tt_sta2;
+            arrival->error = 0.0;
             strcpy(arrival->error_type, "CAT");
 
         }
@@ -4713,8 +5157,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         //
 
         return (istat);
-    }
-    else if (strcmp(ftype_obs, "RENASS_WWW") == 0) {
+    } else if (strcmp(ftype_obs, "RENASS_WWW") == 0) {
 
         /* read next line */
         cstat = fgets(line, MAXLINE_LONG, fp_obs);
@@ -4779,8 +5222,8 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         Qual2Err(arrival);
 
         return (istat);
-    } else if (strcmp(ftype_obs, "SEISAN") == 0 ||
-            strcmp(ftype_obs, "NORDIC") == 0) {
+    } else if (strcmp(ftype_obs, "SEISAN") == 0 || strcmp(ftype_obs, "NORDIC") == 0) {
+
         /* read next line */
         cstat = fgets(line, MAXLINE_LONG, fp_obs);
         if (cstat == NULL)
@@ -4862,9 +5305,8 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) 
         /* convert quality to error */
         Qual2Err(arrival);
 
-
-
         return (istat);
+
     } else if (strcmp(ftype_obs, "SAFOD") == 0) {
 
         /* example:
@@ -4970,8 +5412,8 @@ arrival->error = 0.2;
         if (istat != 9) {
             if (nfirst) // may be header line
                 return (OBS_FILE_SKIP_INPUT_LINE);
-            nll_puterr2("ERROR: bad SAFOD phase line:", line);
-            return (OBS_FILE_END_OF_EVENT);
+            nll_puterr2("ERROR: bad INERIS phase line:", line);
+            return (OBS_FILE_SKIP_INPUT_LINE);
         }
 
         // set error fields
@@ -5036,14 +5478,63 @@ arrival->error = 0.2;
         // set error fields
         strcpy(arrival->error_type, "GAU");
 
+        return (istat);
 
+    } else if (strcmp(ftype_obs, "EW_PTWC_HAWAII") == 0) {
+
+        /* example:
+
+ 10 70  9 3888 MLOA PTHNZ  1  20150124165003.00     107     103 68
+ 10 70  9 3889 SPDD HVEHZ D1  20150124165021.21     141     154 88
+ 10 70  9 3890 MLOA PTHNZ  2  20150124165039.47      55      71 11
+ 10 70  9 3891 POLD HVEHZ U1  20150124165049.40     155     363 312
+ 10 70  9 3892 KLUD HVEHZ U3  20150124165043.35      26      15 27
+ 10 70  9 3893 HTCD HVEHZ U0  20150124165047.15     754     858 574
+
+         */
+
+        // read line
+        cstat = fgets(line, MAXLINE_LONG, fp_obs);
+        if (cstat == NULL)
+            return (OBS_FILE_END_OF_INPUT);
+        // check for end of event (assumes empty lines between event)
+        if (LineIsBlank(line)) {
+            // end of event
+            return (OBS_FILE_END_OF_EVENT);
+        }
+
+        // read phase arrival input
+        istat = ReadFortranString(line, 16, 5, arrival->label);
+        istat += ReadFortranString(line, 21, 2, arrival->network);
+        istat += ReadFortranString(line, 23, 3, arrival->comp);
+        istat += ReadFortranString(line, 27, 1, arrival->first_mot);
+        istat += ReadFortranInt(line, 28, 1, &arrival->quality);
+        istat += ReadFortranInt(line, 31, 4, &arrival->year);
+        istat += ReadFortranInt(line, 35, 2, &arrival->month);
+        istat += ReadFortranInt(line, 37, 2, &arrival->day);
+        istat += ReadFortranInt(line, 39, 2, &arrival->hour);
+        istat += ReadFortranInt(line, 41, 2, &arrival->min);
+        istat += ReadFortranReal(line, 43, 6, &arrival->sec);
+
+        if (istat != 11) {
+            nll_puterr2("ERROR: bad EW_PTWC_HAWAII phase line:", line);
+            return (OBS_FILE_END_OF_EVENT);
+        }
+
+        TrimString(arrival->label);
+        TrimString(arrival->network);
+        TrimString(arrival->comp);
+
+        strcpy(arrival->phase, "P");
+
+        // convert quality to error
+        Qual2Err(arrival);
+        // set error fields
+        strcpy(arrival->error_type, "GAU");
 
         return (istat);
 
-    }
-
-
-    else if (strcmp(ftype_obs, "GEOFON") == 0) {
+    } else if (strcmp(ftype_obs, "GEOFON") == 0) {
 
         /* example:
           Northern Sumatra, Indonesia  M=6.3  2008/01/22  17:14:57.4  1.10 N  97.49 E   31 km
@@ -5096,88 +5587,10 @@ arrival->error = 0.2;
 
         return (istat);
 
-    }
-
-
-    else {
+    } else {
         nll_puterr2("ERROR: unrecognized observation file type", ftype_obs);
         return (OBS_FILE_END_OF_INPUT);
     }
-}
-
-/** function remove whitespace from string */
-
-void removeSpace(char *str) {
-
-    int n, m;
-
-    n = 0;
-    while (str[n] != '\0' && n < 1000000)
-        if (isspace(str[n])) {
-            m = n;
-            while (str[m] != '\0' && m < 1000000) {
-                str[m] = str[m + 1];
-                m++;
-            }
-        } else {
-            n++;
-        }
-
-}
-
-/** function to check if phase_in matches phase_check
-true if phase_in == phase_check
-true if phase_in is in phase ID list for phase_check */
-
-int IsPhaseID(char *phase_in, char *phase_check) {
-    int npha_id;
-    char test_str[PHASE_LABEL_LEN + 4];
-
-    //printf("phase_in %s, phase_check %s, ", phase_in, phase_check);
-    /* check for blank phase_in */
-    if (strstr("              ", phase_in) != NULL)
-        //{printf(" NO - BLANK\n");
-        return (0);
-    //}
-
-    // check if phase_in == phase_check (AJL 20041201 added)
-    if (strcmp(phase_in, phase_check) == 0)
-        return (1);
-
-    // check if phase_in is in phase ID list for phase_check
-    removeSpace(phase_in);
-    sprintf(test_str, " %s ", phase_in);
-    for (npha_id = 0; npha_id < NumPhaseID; npha_id++) {
-        //printf(" compare (<%s> <%s>)\n", PhaseID[npha_id].id_string, test_str);
-        if (strcmp(PhaseID[npha_id].phase, phase_check) == 0) {
-            if (strstr(PhaseID[npha_id].id_string, test_str) != NULL)
-                //{printf(" YES (%s %s)\n", PhaseID[npha_id].id_string,  phase_in);
-                return (1);
-            //}
-        }
-    }
-
-    //printf(" NO\n");
-    return (0);
-}
-
-/** function to evaluate phase ID from phase ID lists */
-
-int EvalPhaseID(char *phase_out, char *phase_in) {
-    int npha_id;
-
-    for (npha_id = 0; npha_id < NumPhaseID; npha_id++) {
-        if (IsPhaseID(phase_in, PhaseID[npha_id].phase)) {
-            if (phase_out != NULL)
-                strcpy(phase_out, PhaseID[npha_id].phase);
-            return (1);
-        }
-    }
-
-    if (phase_out != NULL)
-        strcpy(phase_out, phase_in);
-
-    return (0); // returned unchanged
 }
 
 /** function to check if a date is reasonable */
@@ -5193,7 +5606,7 @@ int IsGoodDate(int iyear, int imonth, int iday) {
 
 /** function to homogenize date / time of arrivals */
 
-int HomogDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo) {
+int HomogDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc * phypo) {
     int narr;
     int dofymin = 10000, yearmin = 10000;
     int test_month, test_day;
@@ -5280,23 +5693,40 @@ int CheckAbsoluteTiming(ArrivalDesc *arrival, int num_arrivals) {
 
 }
 
-/** function to standardize date / time of arrivals, caclulate rms */
+int hypotime2hrminsec(long double phypo_time, int *phypo_hour, int *phypo_min, double *phypo_sec) {
 
-int StdDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo) {
+    long double hyp_time_tmp = phypo_time;
+    *phypo_hour = (int) (hyp_time_tmp / 3600.0L);
+    hyp_time_tmp -= (long double) *phypo_hour * 3600.0L;
+    *phypo_min = (int) (hyp_time_tmp / 60.0L);
+    hyp_time_tmp -= (long double) *phypo_min * 60.0L;
+    *phypo_sec = (double) hyp_time_tmp;
+
+    // TODO: check for case of origin time in previous day and correct date and time (currently get negative otime min, sec)  20150716 AJL
+
+    return (0);
+
+}
+
+/** function to standardize date / time of arrivals, calculate rms */
+
+int StdDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc * phypo) {
     int narr;
     double rms_resid = 0.0, weight_sum = 0.0;
-    long double sec_tmp, hyp_time_tmp;
+    long double sec_tmp;
 
 
     for (narr = 0; narr < num_arrivals; narr++) {
         // calc obs travel time and residual for arrivals with finite travel time and abs timing
         // AJL 20050926 bug fix - do not update rms with arrivals with no travel time!
         // if (arrival[narr].abs_time) {
+        //printf("DEBUG: abs_time: %d, tt_Pred: %9.4le\n", arrival[narr].abs_time, arrival[narr].pred_travel_time);
         if (arrival[narr].abs_time && arrival[narr].pred_travel_time > 0.0) {
             arrival[narr].obs_travel_time =
                     arrival[narr].obs_time - phypo->time;
             arrival[narr].residual = arrival[narr].obs_travel_time -
                     arrival[narr].pred_travel_time;
+            //printf("DEBUG: residual: %9.4le, tt_obs: %9.4le, tt_Pred: %9.4le, ", arrival[narr].residual, arrival[narr].obs_travel_time, arrival[narr].pred_travel_time);
             rms_resid += arrival[narr].weight *
                     arrival[narr].residual * arrival[narr].residual;
             weight_sum += arrival[narr].weight;
@@ -5321,15 +5751,17 @@ int StdDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo) {
     if (phypo->rms < 0.0) {
         phypo->rms = 999.99;
         if (weight_sum > 0.0)
-            phypo->rms = sqrt(rms_resid / weight_sum);
+            phypo->rms = sqrt(rms_resid / weight_sum); // 20150324 AJL - TODO: should be mean of residuals for METH_L1_NORM ???
     }
 
-    hyp_time_tmp = phypo->time;
+    hypotime2hrminsec(phypo->time, &(phypo->hour), &(phypo->min), &(phypo->sec));
+
+    /*hyp_time_tmp = phypo->time;
     phypo->hour = (int) (hyp_time_tmp / 3600.0L);
     hyp_time_tmp -= (long double) phypo->hour * 3600.0L;
     phypo->min = (int) (hyp_time_tmp / 60.0L);
     hyp_time_tmp -= (long double) phypo->min * 60.0L;
-    phypo->sec = (double) hyp_time_tmp;
+    phypo->sec = (double) hyp_time_tmp;*/
 
     return (0);
 
@@ -5457,7 +5889,7 @@ int FindDuplicateTimeGrid(ArrivalDesc *arrival, int num_arrivals, int ntest) {
 
 int LocGridSearch(int ngrid, int num_arr_total, int num_arr_loc,
         ArrivalDesc *arrival,
-        GridDesc* ptgrid, GaussLocParams* gauss_par, HypoDesc* phypo) {
+        GridDesc* ptgrid, GaussLocParams* gauss_par, HypoDesc * phypo) {
 
     int istat;
     int ix = -1, iy = -1, iz = -1, narr;
@@ -5591,7 +6023,7 @@ int LocGridSearch(int ngrid, int num_arr_total, int num_arr_loc,
     double cell_diagonal_best = 0.0; // TODO: add to Grid Search ?
     double cell_volume_best = 0.0; // TODO: add to Grid Search ?
     SaveBestLocation(NULL, num_arr_total, num_arr_loc, arrival, ptgrid, gauss_par, phypo, misfit_max,
-            iGridType, cell_diagonal_time_var_best, cell_diagonal_best, cell_volume_best);
+            iGridType, 0, cell_diagonal_time_var_best, cell_diagonal_best, cell_volume_best);
 
 
     return (0);
@@ -5914,7 +6346,7 @@ int LocMetropolis(int ngrid, int num_arr_total, int num_arr_loc,
     double cell_diagonal_best = 0.0; // TODO: add to Metropolis Search ?
     double cell_volume_best = 0.0; // TODO: add to Metropolis Search ?
     SaveBestLocation(NULL, num_arr_total, num_arr_loc, arrival, ptgrid,
-            gauss_par, phypo, misfit_max, iGridType, cell_diagonal_time_var_best, cell_diagonal_best, cell_volume_best);
+            gauss_par, phypo, misfit_max, iGridType, 0, cell_diagonal_time_var_best, cell_diagonal_best, cell_volume_best);
 
 
     return (nScatterSaved);
@@ -5928,7 +6360,7 @@ int LocMetropolis(int ngrid, int num_arr_total, int num_arr_loc,
 
 /* move sample random distance and direction */
 
-INLINE int GetNextMetropolisSample(WalkParams* pMetrop, double xmin, double xmax,
+int GetNextMetropolisSample(WalkParams* pMetrop, double xmin, double xmax,
         double ymin, double ymax, double zmin, double zmax,
         double* pxval, double* pyval, double* pzval) {
 
@@ -5993,7 +6425,7 @@ INLINE int GetNextMetropolisSample(WalkParams* pMetrop, double xmin, double xmax
 
 /** function to test new metropolis string */
 
-INLINE int MetropolisTest(double likelihood_last, double likelihood_new) {
+int MetropolisTest(double likelihood_last, double likelihood_new) {
 
     double prob;
 
@@ -6016,7 +6448,8 @@ INLINE int MetropolisTest(double likelihood_last, double likelihood_new) {
 
 int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, ArrivalDesc *arrival,
         GridDesc* ptgrid, GaussLocParams* gauss_par, HypoDesc* phypo,
-        double misfit_max, int iGridType, double cell_diagonal_time_var_best, double cell_diagonal_best, double cell_volume_best) {
+        double misfit_max, int iGridType, int ignore_pred_travel_time_best,
+        double cell_diagonal_time_var_best, double cell_diagonal_best, double cell_volume_best) {
 
     int istat, narr, n_compan, iopened;
     char filename[FILENAME_MAX];
@@ -6024,6 +6457,15 @@ int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, Arr
     SourceDesc station;
 
     //printf("SaveBestLocation num_arr_total %d num_arr_loc %d\n", num_arr_total, num_arr_loc);
+
+    // force longitude within -180->180 for global mode  // 20160922 AJL - added
+    if (GeometryMode == MODE_GLOBAL) {
+        if (phypo->x < -180.0)
+            phypo->x += 360.0;
+        else if (phypo->x > 180.0)
+            phypo->x -= 360.0;
+    }
+
 
     // 20101005 AJL - added calculation of mean slowness
     double slowness_P = -1.0;
@@ -6033,7 +6475,7 @@ int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, Arr
         if (fp_model_grid_P != NULL) {
             if (model_grid_P.numx > 2) {
                 // 3D grid
-                slowness_P = (double) ReadAbsInterpGrid3d(fp_model_grid_P, &model_grid_P, phypo->x, phypo->y, phypo->z);
+                slowness_P = (double) ReadAbsInterpGrid3d(fp_model_grid_P, &model_grid_P, phypo->x, phypo->y, phypo->z, 1);
             } else {
                 // 2D grid (1D model)
                 yval_grid = model_grid_P.dy; // aribitrary, small y grid value
@@ -6045,7 +6487,7 @@ int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, Arr
         if (fp_model_grid_S != NULL) {
             if (model_grid_S.numx > 2) {
                 // 3D grid
-                slowness_S = (double) ReadAbsInterpGrid3d(fp_model_grid_S, &model_grid_S, phypo->x, phypo->y, phypo->z);
+                slowness_S = (double) ReadAbsInterpGrid3d(fp_model_grid_S, &model_grid_S, phypo->x, phypo->y, phypo->z, 1);
             } else {
                 // 2D grid (1D model)
                 yval_grid = model_grid_S.dy; // aribitrary, small y grid value
@@ -6077,18 +6519,18 @@ int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, Arr
         n_compan = arrival[narr].n_companion;
         iopened = 0;
         /* check for stored best travel time */
-        if (arrival[narr].pred_travel_time_best > 0.0) {
+        if (!ignore_pred_travel_time_best && arrival[narr].pred_travel_time_best > 0.0) {
             /* load stored best travel time */
             arrival[narr].pred_travel_time = arrival[narr].pred_travel_time_best;
             /* check for companion travel time */
-        } else if (n_compan >= 0 && arrival[n_compan].pred_travel_time_best > 0.0) {
+        } else if (!ignore_pred_travel_time_best && n_compan >= 0 && arrival[n_compan].pred_travel_time_best > 0.0) {
             /* load companion stored best travel time */
             arrival[narr].pred_travel_time =
                     arrival[n_compan].pred_travel_time_best;
             arrival[narr].pred_travel_time *= arrival[narr].tfact;
         } else {
             // temporarily open time grid file and read time for ignored arrivals
-            // save staion information (will be overwritten in OpenGrid3dFile()
+            // save station information (will be overwritten in OpenGrid3dFile()
             station = arrival[narr].station;
             sprintf(filename, "%s.time", arrival[narr].fileroot);
             if ((istat = OpenGrid3dFile(filename,
@@ -6106,7 +6548,7 @@ int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, Arr
                 if (arrival[narr].fpgrid != NULL)
                     arrival[narr].pred_travel_time = (double) ReadAbsInterpGrid3d(
                         arrival[narr].fpgrid, &(arrival[narr].gdesc),
-                        phypo->x, phypo->y, phypo->z);
+                        phypo->x, phypo->y, phypo->z, 1);
                 if (arrival[narr].pred_travel_time < -LARGE_DOUBLE)
                     arrival[narr].pred_travel_time = 0.0;
             } else {
@@ -6132,7 +6574,7 @@ int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, Arr
                 if (arrival[narr].pred_travel_time > 0.0) // ignore arrivals with no pred tt
                     arrival[narr].pred_travel_time += arrival[narr].elev_corr;
             }
-            CloseGrid3dFile(&(arrival[narr].fpgrid), &(arrival[narr].fphdr));
+            CloseGrid3dFile(&(arrival[narr].gdesc), &(arrival[narr].fpgrid), &(arrival[narr].fphdr));
 
         }
 
@@ -6192,7 +6634,7 @@ int SaveBestLocation(OctNode* poct_node, int num_arr_total, int num_arr_loc, Arr
     if (!FixOriginTimeFlag)
         phypo->time = otime;
     if (iGridType == GRID_PROB_DENSITY) {
-        phypo->probmax = exp(value);
+        phypo->probmax = expl(value); // 20130314 C Satriano, AJL - changed to long double
     }
 
     /* set misc hypo fields */
@@ -6312,7 +6754,7 @@ int ReadArrivalSheets(int num_arrivals, ArrivalDesc *arrival, double xsheet) {
 
 }
 
-/** function to consruct weight matrix (inverse of covariance matrix) */
+/** function to construct weight matrix (inverse of covariance matrix) */
 
 int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * gauss_par) {
 
@@ -6323,10 +6765,11 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * g
     int corr_len_nonzero = 1;
     double dx, dy, dz, dist2;
     double weight_sum;
-    double sta_wt;
+    double sta_wt, prior_wt;
     SourceDesc *sta1, *sta2;
     double arrivalWeightMax = -1.0;
 
+    double sigmaT, corr_len, dist; // 20150324 AJL - METH_L1_NORM
 
     // free old matrices
     if (last_matrix_alloc_size > 0) {
@@ -6343,6 +6786,10 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * g
 
     sigmaT2 = gauss_par->SigmaT * gauss_par->SigmaT;
     corr_len2 = gauss_par->CorrLen * gauss_par->CorrLen;
+    // 20150324 AJL - METH_L1_NORM
+    sigmaT = gauss_par->SigmaT;
+    corr_len = gauss_par->CorrLen;
+
     // AJL 20041201 - corr_len_nonzero flag added, before corr_len2 was set to 1.0 (was bug?)
     if (corr_len2 < VERY_SMALL_DOUBLE || gauss_par->CorrLen < 0.0) {
         corr_len_nonzero = 0;
@@ -6370,8 +6817,11 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * g
                 dy = sta1->y - sta2->y;
                 dz = sta1->z - sta2->z;
                 dist2 = dx * dx + dy * dy + dz * dz;
-                if (GeometryMode == MODE_GLOBAL)
+                if (GeometryMode == MODE_GLOBAL) {
                     dist2 *= DEG2KM * DEG2KM;
+                }
+                // 20150324 AJL - METH_L1_NORM
+                dist = sqrt(dist2);
                 // EDT
                 if (ncol == nrow) { // diagonal of EDT gets gaussian model time error
                     edt_matrix[nrow][ncol] = sigmaT2;
@@ -6384,12 +6834,19 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * g
                 // LS/L2 gaussian model time error
                 // AJL 20050914 - bug?  added ncol == nrow case so error is non-zero
                 if (ncol == nrow) { // diagonal gets gaussian model time error
-                    wt_matrix[nrow][ncol] = sigmaT2;
+                    wt_matrix[nrow][ncol] =
+                            (LocMethod == METH_L1_NORM) ?
+                            sigmaT // L1  METH_L1_NORM
+                            : sigmaT2; // L2  METH_GAU_ANALYTIC
                 } else { // off-diagonal
-                    if (corr_len_nonzero)
-                        wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] = sigmaT2 * exp(-0.5 * dist2 / corr_len2);
-                    else
+                    if (corr_len_nonzero) {
+                        wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] =
+                                (LocMethod == METH_L1_NORM) ?
+                                sigmaT * exp(-1.0 * dist / corr_len) // L1  METH_L1_NORM
+                                : sigmaT2 * exp(-0.5 * dist2 / corr_len2); // L2  METH_GAU_ANALYTIC
+                    } else {
                         wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] = 0.0;
+                    }
                 }
             } else {
                 // different phase types, assumed no spatial correlation
@@ -6400,7 +6857,10 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * g
             /* obs time error */
             if (ncol == nrow) {
                 edt_matrix[nrow][ncol] += arrival[nrow].error * arrival[nrow].error;
-                wt_matrix[nrow][ncol] += arrival[nrow].error * arrival[nrow].error;
+                wt_matrix[nrow][ncol] +=
+                        (LocMethod == METH_L1_NORM) ?
+                        arrival[nrow].error // L1  METH_L1_NORM
+                        : arrival[nrow].error * arrival[nrow].error; // L2  METH_GAU_ANALYTIC
             }
 
         }
@@ -6423,13 +6883,33 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * g
 
 
     // station distance weighting
+    if (iSetStationDistributionWeights) {
+        for (nrow = 0; nrow < num_arrivals; nrow++) {
+            //printf("station weight: %s %s %s weight: %lf\n", arrival[nrow].label, arrival[nrow].inst, arrival[nrow].comp, arrival[nrow].station_weight);
+            for (ncol = 0; ncol <= nrow; ncol++) {
+                // 20130627 AJL - change weighing from sum to product
+                //sta_wt = (arrival[nrow].station_weight + arrival[ncol].station_weight) / 2.0;
+                sta_wt = sqrt(arrival[nrow].station_weight * arrival[ncol].station_weight);
+                wt_matrix[nrow][ncol] *= sta_wt;
+                if (ncol != nrow) // 20130627 AJL - bug fix
+                    wt_matrix[ncol][nrow] *= sta_wt;
+            }
+        }
+    }
 
-    for (nrow = 0; nrow < num_arrivals; nrow++) {
-        //printf("station weight: %s %s %s weight: %lf\n", arrival[nrow].label, arrival[nrow].inst, arrival[nrow].comp, arrival[nrow].station_weight);
-        for (ncol = 0; ncol <= nrow; ncol++) {
-            sta_wt = (arrival[nrow].station_weight + arrival[ncol].station_weight) / 2.0;
-            wt_matrix[nrow][ncol] *= sta_wt;
-            wt_matrix[ncol][nrow] *= sta_wt;
+    // prior arrival weighting
+    // 20130627 AJL - add prior weighting
+    if (iUseArrivalPriorWeights) {
+        for (nrow = 0; nrow < num_arrivals; nrow++) {
+            //printf("station weight: %s %s %s weight: %lf\n", arrival[nrow].label, arrival[nrow].inst, arrival[nrow].comp, arrival[nrow].station_weight);
+            for (ncol = 0; ncol <= nrow; ncol++) {
+                if (iUseArrivalPriorWeights && arrival[nrow].apriori_weight >= -VERY_SMALL_DOUBLE && arrival[ncol].apriori_weight >= -VERY_SMALL_DOUBLE) {
+                    prior_wt = sqrt(arrival[nrow].apriori_weight * arrival[ncol].apriori_weight);
+                    wt_matrix[nrow][ncol] *= prior_wt;
+                    if (ncol != nrow)
+                        wt_matrix[ncol][nrow] *= prior_wt;
+                }
+            }
         }
     }
 
@@ -6568,7 +7048,7 @@ void CalcCenteredTimesObs(int num_arrivals, ArrivalDesc *arrival,
 
 /*		(TV82, eq. A-38) */
 
-INLINE void CalcCenteredTimesPred(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * gauss_par) {
+void CalcCenteredTimesPred(int num_arrivals, ArrivalDesc *arrival, GaussLocParams * gauss_par) {
 
     int nrow, ncol, narr;
     double sum, weighted_mean, pred_time_row;
@@ -6610,7 +7090,7 @@ INLINE void CalcCenteredTimesPred(int num_arrivals, ArrivalDesc *arrival, GaussL
 
     } else {
 
-        /* for fixed origin time use travel time directly */
+        // for fixed origin time use travel time directly
         weighted_mean = 0.0;
 
     }
@@ -6624,8 +7104,7 @@ INLINE void CalcCenteredTimesPred(int num_arrivals, ArrivalDesc *arrival, GaussL
         if (arrival[narr].pred_travel_time <= 0.0)
             continue; // ignore obs without predicted times
         // END
-        arrival[narr].pred_centered =
-                arrival[narr].pred_travel_time - weighted_mean;
+        arrival[narr].pred_centered = arrival[narr].pred_travel_time - weighted_mean;
     }
 
 
@@ -6639,7 +7118,7 @@ INLINE void CalcCenteredTimesPred(int num_arrivals, ArrivalDesc *arrival, GaussL
 
 /*		(MEN92, eq. 14) */
 
-INLINE double CalcSolutionQuality(OctNode* poct_node, int num_arrivals, ArrivalDesc *arrival,
+double CalcSolutionQuality(OctNode* poct_node, int num_arrivals, ArrivalDesc *arrival,
         GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime, double* potime_var,
         double cell_half_diagonal_time_range, double cell_diagonal, double cell_volume, double* peffective_cell_size, double *pot_variance_factor) {
     double value;
@@ -6649,6 +7128,9 @@ INLINE double CalcSolutionQuality(OctNode* poct_node, int num_arrivals, ArrivalD
         return (value);
     } else if (LocMethod == METH_GAU_TEST) {
         value = CalcSolutionQuality_GAU_TEST(num_arrivals, arrival, gauss_par, itype, pmisfit, potime);
+        return (value);
+    } else if (LocMethod == METH_L1_NORM) {
+        value = CalcSolutionQuality_L1_NORM(num_arrivals, arrival, gauss_par, itype, pmisfit, potime);
         return (value);
     } else if (LocMethod == METH_OT_STACK) {
         return (CalcSolutionQuality_OT_STACK(poct_node, num_arrivals, arrival,
@@ -6679,7 +7161,7 @@ INLINE double CalcSolutionQuality(OctNode* poct_node, int num_arrivals, ArrivalD
                 for all pairs of obs
  */
 
-INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
+double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
         GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime,
         double* potime_var, double cell_half_diagonal_time_range, int method_box) {
 
@@ -6797,9 +7279,10 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
                 tt_error = Gauss2.SigmaTmin;
             if (tt_error > Gauss2.SigmaTmax)
                 tt_error = Gauss2.SigmaTmax;
-            if (icalc_otime)
+            if (icalc_otime) {
                 arrival[nrow].tt_error = tt_error;
-            //printf("arrival[nrow].pred_travel_time %f\t  tt_error %f\n", arrival[nrow].pred_travel_time, tt_error);
+                //printf("DEBUG: arrival[nrow].pred_travel_time %f\t  tt_error %f, arrival[nrow].error %f\n", arrival[nrow].pred_travel_time, tt_error, arrival[nrow].error);
+            }
             tt_error *= tt_error;
             edtmtx[nrow][nrow] = arrival[nrow].error * arrival[nrow].error + tt_error;
             sigma2_row = edtmtx[nrow][nrow];
@@ -6832,7 +7315,7 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
             if (arrival[ncol].pred_travel_time <= 0.0)
                 continue; // ignore obs without predicted times
             // END
-            // check abslolute timing
+            // check absolute timing
             if (no_abs_time_row) {
                 if (arrival[ncol].abs_time) // cannot be same station/inst
                     continue;
@@ -6874,8 +7357,14 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
                 weight_search *= (1.0 - edtmtx[nrow][ncol]);		// correlation coeff
         }*/
             }
+            // 20130627 AJL - change weighing from sum to product
+            //if (iSetStationDistributionWeights)
+            //    weight *= (arrival[nrow].station_weight + arrival[ncol].station_weight) / 2.0;
             if (iSetStationDistributionWeights)
-                weight *= (arrival[nrow].station_weight + arrival[ncol].station_weight) / 2.0;
+                weight *= sqrt(arrival[nrow].station_weight * arrival[ncol].station_weight);
+            // 20130627 AJL - add prior weighting as product
+            if (iUseArrivalPriorWeights && arrival[nrow].apriori_weight >= -VERY_SMALL_DOUBLE && arrival[ncol].apriori_weight >= -VERY_SMALL_DOUBLE)
+                weight *= sqrt(arrival[nrow].apriori_weight * arrival[ncol].apriori_weight);
             prob *= weight;
             edt_sum += prob;
             edt_weight += weight;
@@ -6917,7 +7406,7 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
         // EDT_OT_WT_ML method
         ot_ml = calc_maximum_likelihood_ot(ot_ml_arrival, ot_ml_arrival_edt_sum, num_arrivals, arrival, edtmtx, &ot_ml_var, icalc_otime, &ot_prob_max);
         if (icalc_otime && potime_var != NULL) {
-            sprintf(MsgStr, "EDT_otime_weight: ot_ml_std %lf\n", sqrt(ot_ml_var));
+            sprintf(MsgStr, "INFO: EDT_otime_weight: ot_ml_std %lf\n", sqrt(ot_ml_var));
             nll_putmsg(2, MsgStr);
             *potime_var = ot_ml_var;
         }
@@ -6925,7 +7414,7 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
         if (ot_var_weight > EDT_OT_WT_FLOOR) {
             if (!EDT_otime_weight_active) {
                 EDT_otime_weight_active = 1;
-                sprintf(MsgStr, "EDT_otime_weight activated, OT_WT exceeds EDT_OT_WT_FLOOR.");
+                sprintf(MsgStr, "INFO: EDT_otime_weight activated, OT_WT exceeds EDT_OT_WT_FLOOR.");
                 nll_putmsg(2, MsgStr);
             }
         } else {
@@ -6942,7 +7431,7 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
         if (ot_var_weight > EDT_OT_WT_FLOOR) {
             if (!EDT_otime_weight_active) {
                 EDT_otime_weight_active = 1;
-                sprintf(MsgStr, "EDT_otime_weight activated, OT_WT exceeds EDT_OT_WT_FLOOR.");
+                sprintf(MsgStr, "INFO: EDT_otime_weight activated, OT_WT exceeds EDT_OT_WT_FLOOR.");
                 nll_putmsg(2, MsgStr);
             }
         } else {
@@ -6997,9 +7486,12 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
         *pmisfit = rms_misfit;
         return (rms_misfit);
     } else if (itype == GRID_PROB_DENSITY) {
-        ln_prob_density = -edtSumMisfit * num_arrivals; // best, give power of N
+        ln_prob_density = -edtSumMisfit * (long double) num_arrivals; // best, give power of N
         //if (EDT_otime_weight_active)
         ln_prob_density += ot_var_weight;
+        /*if (ln_prob_density > 1.0) {
+            printf("DEBUG: ln_prob_density %lf = -edtSumMisfit %lf * num_arrivals %d + ot_var_weight %lf\n", ln_prob_density, -(double) edtSumMisfit, num_arrivals, (double) ot_var_weight);
+        }*/
         //ln_prob_density = -0.5 * edtSumMisfit;
         rms_misfit = sqrt(edtSumMisfit + edt_weight); // edt_weight term similar to divide by num readings in rms
         *pmisfit = rms_misfit;
@@ -7023,7 +7515,7 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
 /*	OT_STACK - maximum of stack of otime estimates
  */
 
-INLINE double CalcSolutionQuality_OT_STACK(OctNode* poct_node, int num_arrivals, ArrivalDesc *arrival,
+double CalcSolutionQuality_OT_STACK(OctNode* poct_node, int num_arrivals, ArrivalDesc *arrival,
         GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime, double* potime_var,
         double cell_half_diagonal_time_range, double cell_diagonal, double cell_volume, double* peffective_cell_size, double *pot_variance_factor) {
 
@@ -7083,7 +7575,7 @@ INLINE double CalcSolutionQuality_OT_STACK(OctNode* poct_node, int num_arrivals,
 
 /** function to calculate origin time based on sort search for maximum likelihood peak of a set of ot estimates */
 
-INLINE double calc_maximum_likelihood_ot_sort(
+double calc_maximum_likelihood_ot_sort(
         OctNode* poct_node, int num_arrivals, ArrivalDesc *arrival,
         double cell_half_diagonal_time_range, double cell_diagonal, double cell_volume, double *pot_var, int icalc_otime,
         double *pprob_max, double *pot_stack_weight, double* peffective_cell_size, double *pot_variance_factor) {
@@ -7175,6 +7667,9 @@ INLINE double calc_maximum_likelihood_ot_sort(
             //    printf("NOTE!!!!!!!!!!! parr->station_weight < 0.5 || parr->station_weight > 2.0 %s %f\n", parr->label, parr->station_weight);
             weight *= parr->station_weight;
         }
+        // 20130627 AJL - add prior weighting
+        if (iUseArrivalPriorWeights && parr->apriori_weight >= -VERY_SMALL_DOUBLE)
+            weight *= parr->apriori_weight;
         parr->weight = weight;
         /*{
             static int icount = 0;
@@ -7361,7 +7856,7 @@ INLINE double calc_maximum_likelihood_ot_sort(
 
 #define ML_OT_WT_FLOOR log(0.00001)
 
-INLINE double CalcSolutionQuality_ML_OT(int num_arrivals, ArrivalDesc *arrival,
+double CalcSolutionQuality_ML_OT(int num_arrivals, ArrivalDesc *arrival,
         GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime,
         double* potime_var, double cell_half_diagonal_time_range, int method_box) {
 
@@ -7508,6 +8003,9 @@ INLINE double CalcSolutionQuality_ML_OT(int num_arrivals, ArrivalDesc *arrival,
 
         if (iSetStationDistributionWeights)
             weight *= arrival[nrow].station_weight;
+        // 20130627 AJL - add prior weighting
+        if (iUseArrivalPriorWeights && arrival[nrow].apriori_weight >= -VERY_SMALL_DOUBLE)
+            weight *= arrival[nrow].apriori_weight;
 
         prob = weight;
         edt_sum += prob;
@@ -7636,7 +8134,7 @@ INLINE double CalcSolutionQuality_ML_OT(int num_arrivals, ArrivalDesc *arrival,
 
 /** function to calculate origin time based on grid search for maximum likelihood peak of a set of ot estimates */
 
-INLINE double calc_maximum_likelihood_ot(double *pot_ml_arrival, double *pot_ml_arrival_edt_sum,
+double calc_maximum_likelihood_ot(double *pot_ml_arrival, double *pot_ml_arrival_edt_sum,
         int num_arrivals, ArrivalDesc *arrival, MatrixDouble edtmtx, double *pot_ml_var, int iwrite_errors,
         double *pprob_max) {
 
@@ -7648,7 +8146,7 @@ INLINE double calc_maximum_likelihood_ot(double *pot_ml_arrival, double *pot_ml_
     double edt_matrix_rms_error, edt_matrix_diagonal_sum;
 
 
-    // find ot estimate with largest likelihood over set of ot's
+    // coarse search: find ot estimate with largest likelihood over set of ot's for each arrival
     arr_prob_max = -1.0;
     edt_matrix_diagonal_sum = 0.0;
     for (narr = 0; narr < num_arrivals; narr++) {
@@ -7657,11 +8155,14 @@ INLINE double calc_maximum_likelihood_ot(double *pot_ml_arrival, double *pot_ml_
         parr = arrival + narr;
         ot_arr = pot_ml_arrival[narr];
         prob = calc_likelihood_ot(ot_ml_arrival, pot_ml_arrival_edt_sum, num_arrivals, arrival, edtmtx, ot_arr);
+        //printf("DEBUG: calc_likelihood_ot arr: narr %d, ot_ml_arrival %f, prob %f, edtmtx[narr][narr] %f ", narr, ot_arr, prob, edtmtx[narr][narr]);
         // store if largest cumulative ot likelihood
         if (prob > arr_prob_max) {
             arr_prob_max = prob;
             ot_arr_prob_max = ot_arr;
+            //printf("---------> max");
         }
+        //printf("\n");
         edt_matrix_diagonal_sum += edtmtx[narr][narr];
     }
     if (iwrite_errors && arr_prob_max < 0.0)
@@ -7680,6 +8181,7 @@ INLINE double calc_maximum_likelihood_ot(double *pot_ml_arrival, double *pot_ml_
     tlimit = ot_arr_prob_max + range;
     while ((time = time + step) < tlimit) {
         prob = calc_likelihood_ot(ot_ml_arrival, pot_ml_arrival_edt_sum, num_arrivals, arrival, edtmtx, time);
+        //printf("DEBUG: calc_likelihood_ot: inc time: time %f, prob %f\n", time, prob);
         if (prob < prob_max)
             break;
         prob_max = prob;
@@ -7693,6 +8195,7 @@ INLINE double calc_maximum_likelihood_ot(double *pot_ml_arrival, double *pot_ml_
     tlimit = ot_arr_prob_max - range;
     while ((time = time - step) > tlimit) {
         prob = calc_likelihood_ot(ot_ml_arrival, pot_ml_arrival_edt_sum, num_arrivals, arrival, edtmtx, time);
+        //printf("DEBUG: calc_likelihood_ot: dec time: time %f, prob %f\n", time, prob);
         if (prob < prob_max)
             break;
         prob_max = prob;
@@ -7715,7 +8218,7 @@ INLINE double calc_maximum_likelihood_ot(double *pot_ml_arrival, double *pot_ml_
 
 /** function to calculate origin time likelihood at at given time */
 
-INLINE double calc_likelihood_ot(double *pot_ml_arrival, double *pot_ml_arrival_edt_sum, int num_arrivals, ArrivalDesc *arrival, MatrixDouble edtmtx, double time) {
+double calc_likelihood_ot(double *pot_ml_arrival, double *pot_ml_arrival_edt_sum, int num_arrivals, ArrivalDesc *arrival, MatrixDouble edtmtx, double time) {
 
     int narr1;
     ArrivalDesc *parr1;
@@ -7728,14 +8231,28 @@ INLINE double calc_likelihood_ot(double *pot_ml_arrival, double *pot_ml_arrival_
         parr1 = arrival + narr1;
         sigma2 = edtmtx[narr1][narr1];
         temp = pot_ml_arrival[narr1] - time;
-        // normal dist (normalized relative) of arrival error around ot est for arrival
-        prob_arr1 = exp(-0.5 * temp * temp / sigma2) / sqrt(sigma2);
-        // weight by edt_prob for arrival
-        prob_arr1 *= pot_ml_arrival_edt_sum[narr1];
-        // weight by station distribution
+        //printf("DEBUG: calc_likelihood_ot: narr %d, temp %f = pot_ml_arrival[narr1] %f - time %f", narr1, temp, pot_ml_arrival[narr1], time);
+        // 20121005 AJL - bug fix, check for valid temp
+        if (temp > -1.0e8 && temp < 1.0e8) {
+            // normal dist (normalized relative) of arrival error around ot est for arrival
+            prob_arr1 = exp(-0.5 * temp * temp / sigma2) / sqrt(sigma2);
+            //printf(", -> A prob_arr1 %f", prob_arr1);
+            // weight by edt_prob for arrival
+            prob_arr1 *= pot_ml_arrival_edt_sum[narr1];
+            //printf(", -> B prob_arr1 %f", prob_arr1);
+            // weight by station distribution
+            // 20161013 AJL - bug fix: removed: pot_ml_arrival_edt_sum already includes station dist weight!
+            //if (iSetStationDistributionWeights)
+            //    prob_arr1 *= parr1->station_weight;
+            //printf(", swt %f -> C prob_arr1 %f", parr1->station_weight, prob_arr1);
+            // 20130627 AJL - add prior weighting
+            if (iUseArrivalPriorWeights && parr1->apriori_weight >= -VERY_SMALL_DOUBLE)
+                prob_arr1 *= parr1->apriori_weight;
+        } else {
+            prob_arr1 = 0.0;
+        }
+        //printf(", -> D prob_arr1 %f\n", prob_arr1);
 
-        if (iSetStationDistributionWeights)
-            prob_arr1 *= parr1->station_weight;
         // cumulate sum of ot likelihood
         prob += prob_arr1;
     }
@@ -7747,7 +8264,7 @@ INLINE double calc_likelihood_ot(double *pot_ml_arrival, double *pot_ml_arrival_
 
 /** function to calculate origin time variance for at given time */
 
-INLINE double calc_variance_ot(double *pot_ml_arrival, double *pot_ml_arrival_edt_sum, int num_arrivals, ArrivalDesc *arrival, MatrixDouble edtmtx, double expectation_time) {
+double calc_variance_ot(double *pot_ml_arrival, double *pot_ml_arrival_edt_sum, int num_arrivals, ArrivalDesc *arrival, MatrixDouble edtmtx, double expectation_time) {
 
     int narr1;
     double variance_sum, temp, sigma2, weight, weight_sum;
@@ -7766,8 +8283,12 @@ INLINE double calc_variance_ot(double *pot_ml_arrival, double *pot_ml_arrival_ed
         weight *= pot_ml_arrival_edt_sum[narr1];
         // weight by station distribution
 
-        if (iSetStationDistributionWeights)
-            weight *= arrival[narr1].station_weight;
+        // 20161013 AJL - bug fix: removed: pot_ml_arrival_edt_sum already includes station dist weight!
+        //if (iSetStationDistributionWeights)
+        //weight *= arrival[narr1].station_weight;
+        // 20130627 AJL - add prior weighting
+        if (iUseArrivalPriorWeights && arrival[narr1].apriori_weight >= -VERY_SMALL_DOUBLE)
+            weight *= arrival[narr1].apriori_weight;
         variance_sum += weight * temp * temp;
         weight_sum += weight;
     }
@@ -7819,13 +8340,117 @@ int NormalizeWeights(int num_arrivals, ArrivalDesc * arrival) {
 
 
 
+/** function to calculate probability density using L1 norm */
+
+// 20150323 AJL - added
+
+double CalcSolutionQuality_L1_NORM(int num_arrivals, ArrivalDesc *arrival,
+        GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime) {
+
+    int nrow, ncol, narr;
+    int narr_misfit;
+
+    double misfit = 0.0;
+    double ln_prob_density, l1_misfit;
+
+    double arr_row_res;
+    MatrixDouble wtmtx;
+    double *wtmtxrow;
+
+    wtmtx = gauss_par->WtMtrx;
+
+
+    /* calculate weighted mean of predicted travel times  */
+    /*		(TV82, eq. A-38) */
+
+    CalcCenteredTimesPred(num_arrivals, arrival, gauss_par);
+
+
+    /* calculate residuals (TV82, eqs. 10-12, 10-13; MEN92, eq. 15) */
+
+    for (narr = 0; narr < num_arrivals; narr++) {
+        // AJL 20041115 bug fix!
+        if (arrival[narr].pred_travel_time <= 0.0)
+            arrival[narr].cent_resid = 0.0; // ignore obs without predicted times
+        else
+            arrival[narr].cent_resid = arrival[narr].obs_centered - arrival[narr].pred_centered;
+    }
+
+    narr_misfit = 0;
+    for (nrow = 0; nrow < num_arrivals; nrow++) {
+        // AJL 20041115 bug fix!
+        if (arrival[nrow].pred_travel_time <= 0.0) {
+            //printf("IGNORE: %s %s\n", arrival[nrow].label, arrival[nrow].phase);
+            continue; // ignore obs without predicted times
+        }
+        // END
+        if (!arrival[nrow].abs_time)
+            continue;
+        narr_misfit++;
+        wtmtxrow = wtmtx[nrow];
+        arr_row_res = arrival[nrow].cent_resid;
+        for (ncol = 0; ncol <= nrow; ncol++) {
+            // AJL 20041115 bug fix!
+            if (arrival[ncol].pred_travel_time <= 0.0)
+                continue; // ignore obs without predicted times
+            // END
+            if (!arrival[ncol].abs_time)
+                continue;
+            if (ncol != nrow) {
+                // misfit += 2.0 * (double) *(wtmtxrow + ncol) * arr_row_res * arrival[ncol].cent_resid;    // L2  METH_GAU_ANALYTIC
+                misfit += 2.0 * (double) *(wtmtxrow + ncol) * sqrt(fabs(arr_row_res * arrival[ncol].cent_resid)); // L1  METH_L1_NORM  20150324 AJL - TODO: should be sqrt(PRODUCT) or (SUM)/2 ???
+            } else {
+                //misfit += (double) *(wtmtxrow + ncol) * arr_row_res * arrival[ncol].cent_resid;    // L2  METH_GAU_ANALYTIC
+                misfit += (double) *(wtmtxrow + ncol) * fabs(arr_row_res); // L1  METH_L1_NORM
+            }
+        }
+    }
+
+
+    if (potime != NULL)
+        *potime = CalcMaxLikeOriginTime(num_arrivals, arrival, gauss_par);
+
+    /* return misfit or ln(prob density) */
+
+    if (itype == GRID_MISFIT) {
+        /* convert misfit to rms misfit */
+        if (narr_misfit > 0) { // 20120724 AJL - bug fix!
+            //rms_misfit = sqrt(misfit / narr_misfit);    // L2  METH_GAU_ANALYTIC
+            l1_misfit = misfit / narr_misfit; // L1  METH_L1_NORM
+        } else {
+            l1_misfit = VERY_LARGE_DOUBLE;
+        }
+        *pmisfit = l1_misfit;
+        return (l1_misfit);
+    } else if (itype == GRID_PROB_DENSITY) {
+        if (narr_misfit > 0) { // 20120724 AJL - bug fix!
+            //ln_prob_density = -0.5 * misfit;    // L2  METH_GAU_ANALYTIC
+            ln_prob_density = -1.0 * misfit; // L1  METH_L1_NORM
+            //rms_misfit = sqrt(misfit / narr_misfit);    // L2  METH_GAU_ANALYTIC
+            l1_misfit = misfit / narr_misfit; // L1  METH_L1_NORM
+        } else {
+            ln_prob_density = -VERY_LARGE_DOUBLE;
+            l1_misfit = VERY_LARGE_DOUBLE;
+        }
+        *pmisfit = l1_misfit;
+        return (ln_prob_density);
+    } else {
+
+        return (-1.0);
+    }
+
+
+
+}
+
+
 
 
 /** function to calculate probability density */
 
 /*	sum of individual L2 residual probablities */
 
-INLINE double CalcSolutionQuality_GAU_TEST(int num_arrivals, ArrivalDesc *arrival,
+double CalcSolutionQuality_GAU_TEST(int num_arrivals, ArrivalDesc *arrival,
         GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime) {
 
     int nrow, ncol, narr;
@@ -7954,7 +8579,7 @@ INLINE double CalcSolutionQuality_GAU_TEST(int num_arrivals, ArrivalDesc *arriva
 
 /*		(MEN92, eq. 14) */
 
-INLINE double CalcSolutionQuality_GAU_ANALYTIC(int num_arrivals, ArrivalDesc *arrival,
+double CalcSolutionQuality_GAU_ANALYTIC(int num_arrivals, ArrivalDesc *arrival,
         GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime) {
 
     int nrow, ncol, narr;
@@ -8023,12 +8648,20 @@ INLINE double CalcSolutionQuality_GAU_ANALYTIC(int num_arrivals, ArrivalDesc *ar
 
     if (itype == GRID_MISFIT) {
         /* convert misfit to rms misfit */
-        rms_misfit = sqrt(misfit / narr_misfit);
+        if (narr_misfit > 0) // 20120724 AJL - bug fix!
+            rms_misfit = sqrt(misfit / narr_misfit);
+        else
+            rms_misfit = VERY_LARGE_DOUBLE;
         *pmisfit = rms_misfit;
         return (rms_misfit);
     } else if (itype == GRID_PROB_DENSITY) {
-        ln_prob_density = -0.5 * misfit;
-        rms_misfit = sqrt(misfit / narr_misfit);
+        if (narr_misfit > 0) { // 20120724 AJL - bug fix!
+            ln_prob_density = -0.5 * misfit;
+            rms_misfit = sqrt(misfit / narr_misfit);
+        } else {
+            ln_prob_density = -VERY_LARGE_DOUBLE;
+            rms_misfit = VERY_LARGE_DOUBLE;
+        }
         *pmisfit = rms_misfit;
         return (ln_prob_density);
     } else {
@@ -8074,7 +8707,7 @@ long double CalcMaxLikeOriginTime(int num_arrivals, ArrivalDesc *arrival, GaussL
 
 /** function to update arrival probabilistic residuals */
 
-INLINE void UpdateProbabilisticResiduals(int num_arrivals, ArrivalDesc *arrival, double prob) {
+void UpdateProbabilisticResiduals(int num_arrivals, ArrivalDesc *arrival, double prob) {
 
     int narr;
 
@@ -8097,8 +8730,8 @@ INLINE void UpdateProbabilisticResiduals(int num_arrivals, ArrivalDesc *arrival,
 /** function to calculate confidence intervals and save to file */
 /*		(MEN92, eq. 25ff) */
 
-#define N_STEPS_SRCH	101
-#define N_STEPS_CONF	11
+#define N_STEPS_SRCH 101
+#define N_STEPS_CONF 11
 
 int CalcConfidenceIntrvl(GridDesc* ptgrid, HypoDesc* phypo, char* filename) {
     FILE *fpio;
@@ -8132,7 +8765,6 @@ int CalcConfidenceIntrvl(GridDesc* ptgrid, HypoDesc* phypo, char* filename) {
     for (ix = 0; ix < ptgrid->numx; ix++) {
         for (iy = 0; iy < ptgrid->numy; iy++) {
             for (iz = 0; iz < ptgrid->numz; iz++) {
-
                 ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix][iy][iz] = (GRID_FLOAT_TYPE) (
                         exp((double) ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix][iy][iz])
                         / sum_volume);
@@ -8275,7 +8907,7 @@ int GenEventScatterGrid(GridDesc* ptgrid, HypoDesc* phypo, ScatterParams* pscat,
     }
 
 
-    /* write header informaion */
+    /* write header information */
     fseek(fpio, 0, SEEK_SET);
     fwrite(&tot_npoints, sizeof (int), 1, fpio);
     fdata[0] = (float) probmax;
@@ -8406,6 +9038,15 @@ patch below fixes this problem.
                 nll_puterr("ERROR: readingng control params.");
             else
                 flag_control = 1;
+        }
+
+        /* read transform params */
+
+        if (strcmp(param, "TRANS") == 0) {
+            if ((istat = get_transform(0, strchr(line, ' '))) < 0)
+                nll_puterr("ERROR: reading transformation parameters.");
+            else
+                flag_trans = 1;
         }
 
 
@@ -8658,17 +9299,6 @@ patch below fixes this problem.
 
 
 
-        /*read transform params */
-
-        if (strcmp(param, "TRANS") == 0) {
-            if ((istat = get_transform(0, strchr(line, ' '))) < 0)
-                nll_puterr("ERROR: reading transformation parameters.");
-            else
-                flag_trans = 1;
-        }
-
-
-
         /* unrecognized input */
 
         if (istat < 0) {
@@ -8722,14 +9352,16 @@ patch below fixes this problem.
                 "INFO: no hypocenter output file type (LOCHYPOUT) params read.");
         nll_putmsg(2, MsgStr);
         sprintf(MsgStr,
-                "INFO: DEFAULT: \"LOCHYPOUT SAVE_NLLOC_ALL SAVE_HYPOINVERSE_Y2000_ARC\"");
+                "INFO: DEFAULT: \"LOCHYPOUT SAVE_NLLOC_ALL SAVE_HYPOINVERSE_Y2000_ARC SAVE_FMAMP\"");
         nll_putmsg(2, MsgStr);
         iSaveNLLocEvent = iSaveNLLocSum = 1;
+        iSaveNLLocExpectation = 0;
         iSaveHypo71Sum = iSaveHypoEllSum = 0;
         iSaveHypo71Event = iSaveHypoEllEvent = 0;
         iSaveHypoInvSum = 0;
         iSaveHypoInvY2KArc = 1;
         iSaveAlberto4Sum = 0;
+        iSaveFmamp = 1;
         iSaveSnapSum = 0;
         iCalcSedOrigin = 0;
         iSaveDecSec = 0;
@@ -9000,13 +9632,6 @@ int GetNLLoc_HypOutTypes(char* line1) {
 
     sprintf(MsgStr, "LOCHYPOUT:  ");
 
-    /*  20060619 AJL - commented out to allow repeating of LOCHYPOUT
-    iSaveNLLocEvent = iSaveNLLocSum = iSaveHypo71Event = iSaveHypo71Sum
-    = iSaveHypoEllEvent = iSaveHypoEllSum
-    = iSaveHypoInvSum = iSaveHypoInvY2KArc
-    = iSaveAlberto4Sum = iSaveNLLocOctree = 0;
-     */
-
     pchr = line1;
     do {
 
@@ -9023,6 +9648,8 @@ int GetNLLoc_HypOutTypes(char* line1) {
             iSaveNLLocEvent = iSaveNLLocSum = 1;
         else if (strcmp(hyp_type, "SAVE_NLLOC_SUM") == 0)
             iSaveNLLocSum = 1;
+        else if (strcmp(hyp_type, "SAVE_NLLOC_EXPECTATION") == 0) // 20170811 AJL - added
+            iSaveNLLocExpectation = 1;
         else if (strcmp(hyp_type, "SAVE_NLLOC_OCTREE") == 0)
             iSaveNLLocOctree = 1;
         else if (strcmp(hyp_type, "SAVE_HYPO71_ALL") == 0)
@@ -9039,8 +9666,10 @@ int GetNLLoc_HypOutTypes(char* line1) {
             iSaveHypoInvY2KArc = 1;
         else if (strcmp(hyp_type, "SAVE_ALBERTO_3D_4") == 0)
             iSaveAlberto4Sum = 1;
-            /* SH 02/26/2004 added SNAP summary file */
+        else if (strcmp(hyp_type, "SAVE_FMAMP") == 0)
+            iSaveFmamp = 1;
         else if (strcmp(hyp_type, "SAVE_SNAP_SUM") == 0)
+            /* SH 02/26/2004 added SNAP summary file */
             iSaveSnapSum = 1;
             /* filename format, int sec or 5.2 decimal seconds */
             // 20100617 AJL -  added: calculate and report SED origin, e.g. SED location quality indicators
@@ -9057,7 +9686,8 @@ int GetNLLoc_HypOutTypes(char* line1) {
             iSaveNone = 1;
             iSaveNLLocEvent = iSaveNLLocSum = iSaveHypo71Sum = iSaveHypoEllSum =
                     iSaveHypo71Event = iSaveHypoEllEvent = iSaveHypoInvSum = iSaveHypoInvY2KArc =
-                    iSaveAlberto4Sum = iSaveSnapSum = iCalcSedOrigin = iSaveDecSec = 0;
+                    iSaveAlberto4Sum = iSaveFmamp = iSaveSnapSum = iCalcSedOrigin = iSaveDecSec = 0;
+            iSaveNLLocExpectation = 0; // 20170811 AJL - added
         } else
             return (-1);
 
@@ -9093,6 +9723,11 @@ int GetNLLoc_Method(char* line1) {
             MinNumSArrLoc, VpVsRatio, MaxNum3DGridMemory, DistStaGridMin, iRejectDuplicateArrivals);
     nll_putmsg(3, MsgStr);
 
+    // 20170922 AJL - bug fix, since MaxNum3DGridMemory used in GridMemLib.c with values assumed >=0, just set very large value here if <0
+    if (MaxNum3DGridMemory < 0) {
+        MaxNum3DGridMemory = INT_MAX;
+    }
+
     ierr = 0;
 
     if (ierr < 0 || istat < 7)
@@ -9119,9 +9754,12 @@ int GetNLLoc_Method(char* line1) {
         EDT_use_otime_weight = 2;
     } else if (strcmp(loc_method, "EDT_BOX") == 0) {
         LocMethod = METH_EDT_BOX;
+    } else if (strcmp(loc_method, "L1_NORM") == 0) { // 20140515 AJL - added for NLDiffLoc    // 20150324 AJL - added for NLLoc
+        LocMethod = METH_L1_NORM;
     } else {
         LocMethod = METH_UNDEF;
         nll_puterr2("ERROR: unrecognized location method:", loc_method);
+        return (EXIT_ERROR_LOCATE);
     }
 
     if (MaxNumArrLoc < 1)
@@ -9276,8 +9914,8 @@ int GetNLLoc_Gaussian2(char* line1) {
 
     sprintf(MsgStr, "LOCGAUSS2:  SigmaTfraction: %lf  SigmaTmin: %lf  SigmaTmax: %lf",
             Gauss2.SigmaTfraction, Gauss2.SigmaTmin, Gauss2.SigmaTmax);
-    nll_putmsg(1, MsgStr);
-    //nll_putmsg(3, MsgStr);
+    //nll_putmsg(1, MsgStr);
+    nll_putmsg(3, MsgStr);
 
     ierr = 0;
     if (checkRangeDouble("LOCGAU2", "SigmaTfraction",
@@ -9410,7 +10048,7 @@ int GetNLLoc_PhaseStats(char* line1) {
         Hypo_Dist_Max = VERY_LARGE_DOUBLE;
 
     sprintf(MsgStr,
-            "LOCPHSTAT:  RMS_Max: %f  NRdgs_Min: %d  Gap_Max: %f  P_ResidualMax: %f S_ResidualMax: %f Ell_Len3_Max %f Hypo_Depth_min %f Hypo_Depth_max %f Hypo_Dist_Max %f",
+            "LOCPHSTAT:  RMS_Max: %f  NRdgs_Min: %d  Gap_Max: %.3g  P_ResidualMax: %.3g S_ResidualMax: %.3g Ell_Len3_Max %.3g Hypo_Depth_min %.3g Hypo_Depth_max %.3g Hypo_Dist_Max %.3g",
             RMS_Max, NRdgs_Min, Gap_Max,
             P_ResidualMax, S_ResidualMax, Ell_Len3_Max, Hypo_Depth_Min, Hypo_Depth_Max, Hypo_Dist_Max);
     nll_putmsg(3, MsgStr);
@@ -9598,19 +10236,32 @@ int GetTopoSurface(char* line1) {
     topo_surface = model_surface + (MAX_SURFACES - 1);
     topo_surface_index = MAX_SURFACES - 1;
 
-    sscanf(line1, "%s %d",
-            topo_surface->grd_file, &idump_decimation);
+    sscanf(line1, "%s %d", topo_surface->grd_file, &idump_decimation);
 
-    sprintf(MsgStr, "LOCTOPO_SURFACE:  GMT GRD File: %s  Dump to file decimation: %d",
-            topo_surface->grd_file, idump_decimation);
-    //nll_putmsg(3, MsgStr);
-    nll_putmsg(0, MsgStr);
+    sprintf(MsgStr, "LOCTOPO_SURFACE:  GMT GRD File: %s  Dump to file decimation: %d", topo_surface->grd_file, idump_decimation);
+    nll_putmsg(3, MsgStr);
+    //nll_putmsg(0, MsgStr);
 
-    if (read_grd(topo_surface, message_flag > 2) < 0) {
+    if (read_grd(topo_surface, message_flag >= 2) < 0) {
         nll_puterr2("ERROR: reading Topo Surface GMT GRD File: ",
                 topo_surface->grd_file);
         return (-1);
     }
+
+    // print grid limits info (for seismicitydefaults)
+    double lat_ul, lon_ul, lat_ur, lon_ur, lat_lr, lon_lr, lat_ll, lon_ll;
+    if (!topo_surface->is_latlon) {
+        rect2latlon(0, topo_surface->hdr->x_min, topo_surface->hdr->y_max, &lat_ul, &lon_ul);
+        rect2latlon(0, topo_surface->hdr->x_max, topo_surface->hdr->y_max, &lat_ur, &lon_ur);
+        rect2latlon(0, topo_surface->hdr->x_max, topo_surface->hdr->y_min, &lat_lr, &lon_lr);
+        rect2latlon(0, topo_surface->hdr->x_min, topo_surface->hdr->y_min, &lat_ll, &lon_ll);
+        sprintf(MsgStr, "LOCTOPO_SURFACE:  FileURL; lat, long upper left; lat, long upper right; lat, long lower right; lat, long lower left;");
+        nll_putmsg(1, MsgStr);
+        sprintf(MsgStr, "LOCTOPO_SURFACE:  %s; %f,%f; %f,%f; %f,%f; %f,%f;",
+                topo_surface->grd_file, lat_ul, lon_ul, lat_ur, lon_ur, lat_lr, lon_lr, lat_ll, lon_ll);
+        nll_putmsg(1, MsgStr);
+    }
+
 
     if (idump_decimation) {
 
@@ -9784,6 +10435,21 @@ int OpenSummaryFiles(char *path_output, char* typename) {
             }
         }
 
+        // fmamp hypocenter-phase format  // 20160920 AJL - added
+        pSumFileFmamp[ngrid] = NULL;
+        if (iSaveFmamp) {
+            sprintf(fname, "%s.sum.%s%d.loc.fmamp", path_output, typename, ngrid);
+            if ((pSumFileFmamp[ngrid] = fopen(fname, "w"))
+                    == NULL) {
+                nll_puterr2(
+                        "ERROR: opening Fmamp output file",
+                        fname);
+                return (-1);
+            } else {
+                NumFilesOpen++;
+            }
+        }
+
     }
 
 
@@ -9840,8 +10506,13 @@ int CloseSummaryFiles() {
 
         /* Alberto 3D 4 chr sta SIMULPS format */
         if (pSumFileAlberto4[ngrid] != NULL) {
-
             fclose(pSumFileAlberto4[ngrid]);
+            NumFilesOpen--;
+        }
+
+        // fmamp hypocenter-phase format */
+        if (pSumFileFmamp[ngrid] != NULL) {
+            fclose(pSumFileFmamp[ngrid]);
             NumFilesOpen--;
         }
 
@@ -9854,7 +10525,7 @@ int CloseSummaryFiles() {
 
 /** function to write hypocenter and arrivals to file (Alberto 4 SIMULPS) */
 
-int WriteHypoAlberto4(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, char* filename) {
+int WriteHypoAlberto4(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, int narrivals, char* filename) {
 
     int ifile = 0, narr;
     char fname[FILENAME_MAX];
@@ -9904,7 +10575,9 @@ int WriteHypoAlberto4(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, char*
 
     // write arrivals
 
-    for (narr = 0; narr < phypo->nreadings; narr++) {
+    // 20130228 AJL - bug fix
+    // for (narr = 0; narr < phypo->nreadings; narr++) {
+    for (narr = 0; narr < narrivals; narr++) {
         if (narr % 5 == 0)
             fprintf(fpio, "\n");
         parr = parrivals + narr;
@@ -9928,9 +10601,165 @@ int WriteHypoAlberto4(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, char*
 
 }
 
+/** function to write hypocenter summary and arrivals to file (fmamp format)
+ *
+ * 20160920 AJL - created
+ */
+int WriteHypoFmamp(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, int narrivals, char* filename, int write_header) {
+
+
+    // write hypocenter to file
+    int ifile = 0;
+    char fname[FILENAME_MAX];
+    if (fpio == NULL) {
+        sprintf(fname, "%s.loc.fmamp", filename);
+        if ((fpio = fopen(fname, "w")) == NULL) {
+            nll_puterr("ERROR: opening hypocenter output file.");
+            return (-1);
+        } else {
+            NumFilesOpen++;
+        }
+        ifile = 1;
+    }
+
+
+    // write hypocenter parameters
+
+    /* fmamp Hypocenter
+        typedef struct {
+           long unique_id;
+           int year, month, day, hour, min; // origin time
+           double dec_sec;
+           double rms;
+           double lat;
+           double lon;
+           double errh;
+           double depth;
+           double errz;
+           int nassoc_P; // number of picks that contributed with weight > 0 to location
+           double dist_min; // minimum distance of associated phase counted as nassoc_P
+           double dist_max; // maximum distance of associated phase counted as nassoc_P
+           double gap_primary; // maximum azimuth gap
+           double gap_secondary; // secondary azimuth gap - largest azumth gap filled by a single station
+           double ampAttenPower; // attenuation decay power from linear regression fit of P amplitudes to distance
+           double magnitude; // 1/n_stations * distance of sum of vectors from epicenter to stations
+           char mag_type[16];
+           // picks
+           Pick pick_list[MAX_NUM_PICKS];
+           int pick_list_size;
+        } Hypocenter;
+     */
+    if (write_header) {
+        fprintf(fpio,
+                "event_unique_id year month day hour min dec_sec rms lat lon errh depth errz "
+                "nassoc_P dist_min dist_max gap_primary gap_secondary ampAttenPower magnitude mag_type\n");
+        fprintf(fpio,
+                "event_unique_id station location channel network "
+                "phase "
+                "year month day hour min dec_sec " // pick time
+                "pick_error pick_error_type "
+                "residual "
+                "fmpolarity fmquality fmtype "
+                "amplitude "
+                "take_off_angle_az " // degrees CW from N
+                "take_off_angle_inc " // degrees (0/down->180/up)
+                "epicentral_distance " // degrees
+                "epicentral_azimuth " // degrees CW from N
+                "\n");
+    }
+    fprintf(fpio, "\n"); // event separator
+    char event_unique_id[64];
+    sprintf(event_unique_id, "%4.4d%2.2d%2.2d%2.2d%2.2d%5.5d", phypo->year, phypo->month, phypo->day, phypo->hour, phypo->min, (int) (phypo->sec * 1000.0)); // unique_id
+    fprintf(fpio, "%s ", event_unique_id); // unique_id
+    fprintf(fpio, "%4.4d %2.2d %2.2d %2.2d %2.2d %8.4f %f ", phypo->year, phypo->month, phypo->day, phypo->hour, phypo->min, phypo->sec, phypo->rms); // year month day hour min dec_sec rms
+    double errz = -1.0;
+    if (phypo->cov.zz > FLT_MIN) {
+        errz = sqrt(phypo->cov.zz);
+    }
+    fprintf(fpio, "%f %f %f %f %f ", phypo->dlat, phypo->dlong, phypo->ellipse.len2, phypo->depth, errz); // lat lon errh depth errz
+    double dist_max = -1.0;
+    fprintf(fpio, "%d %f %f %f %f ", phypo->associatedPhaseCount, phypo->dist, dist_max, phypo->gap, phypo->gap_secondary); // nassoc_P dist_min dist_max gap_primary gap_secondary
+    double atten = -999.0;
+    double mag = 0.0;
+    char mag_type[] = "NA";
+    if (phypo->amp_mag != MAGNITUDE_NULL) {
+        mag = phypo->amp_mag;
+        strcpy(mag_type, "ML");
+    } else if (phypo->dur_mag != MAGNITUDE_NULL) {
+        mag = phypo->dur_mag;
+        strcpy(mag_type, "MD");
+    }
+    fprintf(fpio, "%f %f %s ", atten, mag, mag_type); // ampAttenPower magnitude mag_type
+    fprintf(fpio, "\n"); // event separator
+
+
+    // write arrival parameters
+
+    int write_arrivals = 1;
+    if (write_arrivals) {
+
+        /* fmamp Pick
+            typedef struct {
+                long event_unique_id;
+                char station[16];
+                char location[16];
+                char channel[16];
+                char network[16];
+                char phase[16];
+                int year, month, day, hour, min; // pick time
+                double dec_sec;
+                char pick_error_type[32];
+                double pick_error;
+                int fmpolarity; // broad-band polarity measure
+                double fmquality; // broad-band polarity measure
+                char fmtype[32];
+                double amplitude; // amplitude
+                double take_off_angle_inc; // degrees (0/down->180/up)
+                double take_off_angle_az; // degrees CW from N
+                double epicentral_distance; // degrees
+                double epicentral_azimuth; // degrees CW from N
+                double residual;
+                double weight; // calculated first motion obs quality weight
+                double take_off_angle_distrib_weight; // calculated take-off angle distribution weight on sphere
+            } Pick;
+         */
+
+        char loc[] = "--";
+        double fmquality = 1.0;
+        char fmtype[] = "F";
+        double amplitude = -1.0;
+        ArrivalDesc* parr;
+        for (int narr = 0; narr < narrivals; narr++) {
+            parr = parrivals + narr;
+            fprintf(fpio, "%s ", event_unique_id); // unique_id
+            fprintf(fpio, "%s %s %s %s%s ", parr->label, loc, parr->network, parr->inst, parr->comp);
+            fprintf(fpio, "%s ", parr->phase);
+            fprintf(fpio, "%4.2d %2.2d %2.2d %2.2d %2.2d %8.4f ", parr->year, parr->month, parr->day, parr->hour, parr->min, parr->sec); // year month day hour min dec_sec
+            fprintf(fpio, "%f %s ", parr->error, parr->error_type);
+            fprintf(fpio, "%f ", parr->residual);
+            fprintf(fpio, "%s %f %s ", parr->first_mot, fmquality, fmtype);
+            fprintf(fpio, "%f ", amplitude);
+            fprintf(fpio, "%f %f ", rect2latlonAngle(0, parr->ray_azim), parr->ray_dip);
+            fprintf(fpio, "%f %f ", rect2latlonAngle(0, parr->azim), parr->dist);
+            fprintf(fpio, "\n");
+        }
+
+    }
+
+
+    if (ifile) {
+
+        fclose(fpio);
+        NumFilesOpen--;
+    }
+
+    return (0);
+
+}
+
 /** function to write hypocenter summary to file (quasi HypoEllipse format) */
 
-int WriteHypoEll(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
+int WriteHypoEll(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, int narrivals,
         char* filename, int write_header, int write_arrivals) {
 
     int ifile = 0, narr;
@@ -10006,7 +10835,9 @@ int WriteHypoEll(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
                 "  STN  DIST AZM AIN PRMK HRMN P-SEC TPOBS TPCAL DLY/H1 P-RES P-WT AMX PRX CALX K XMAG RMK FMP FMAG\n");
         /*"  STN  DIST AZM AIN PRMK HRMN P-SEC TPOBS TPCAL DLY/H1 P-RES P-WT AMX PRX CALX K XMAG RMK FMP FMAG SRMK S-SEC TSOBS S-RES  S-WT    DT\n"); */
 
-        for (narr = 0; narr < phypo->nreadings; narr++) {
+        // 20130228 AJL - bug fix
+        // for (narr = 0; narr < phypo->nreadings; narr++) {
+        for (narr = 0; narr < narrivals; narr++) {
             parr = parrivals + narr;
             tpobs = parr->obs_travel_time > -9.99 ? parr->obs_travel_time : 0.0;
             resid = parr->residual > -99.99 ? parr->residual : -99.99;
@@ -10037,7 +10868,7 @@ int WriteHypoEll(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 
 /** function to write hypocenter summary to file (HYPO71 format) */
 
-int WriteHypo71(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
+int WriteHypo71(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals, int narrivals,
         char* filename, int write_header, int write_arrivals) {
 
     int ifile = 0, narr;
@@ -10145,7 +10976,9 @@ int WriteHypo71(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
         fprintf(fpio,
                 "  STN  DIST AZM AIN PRMK HRMN P-SEC TPOBS TPCAL DLY/H1 P-RES P-WT AMX PRX CALX K XMAG RMK FMP FMAG SRMK S-SEC TSOBS S-RES  S-WT    DT\n");
 
-        for (narr = 0; narr < phypo->nreadings; narr++) {
+        // 20130228 AJL - bug fix
+        // for (narr = 0; narr < phypo->nreadings; narr++) {
+        for (narr = 0; narr < narrivals; narr++) {
             parr = parrivals + narr;
             pha_qual = (parr->quality >= 0 && parr->quality <= 4) ?
                     parr->quality : Err2Qual(parr);
@@ -10827,6 +11660,7 @@ int CalcArrivalCounts(ArrivalDesc *arrival, int num_arrivals, int num_arrivals_r
             usedPhaseCount++;
             if (strcmp((arrival + narr)->label, label_last_used)) {
                 (
+
                         *pusedStationCount)++;
             }
             strcpy(label_last_used, (arrival + narr)->label);
@@ -11286,9 +12120,11 @@ int FreeStaStatTable(int ntable) {
     nnodes = 0;
     for (hashval = 0; hashval < HASHSIZE; hashval++) {
         for (np = hashtab[ntable][hashval]; np != NULL;) {
+
             np_curr = np;
             np = np->next;
             free(np_curr);
+            np_curr = NULL;
             nnodes++;
         }
         hashtab[ntable][hashval] = NULL; // 20101129 AJL Bug fix.
@@ -11311,10 +12147,12 @@ int WriteStaStatTable(int ntable, FILE *fpio,
     double res_temp, res_std_temp;
     StaStatNode *np;
 
-    sprintf(frmt1, "LOCDELAY  %%-%ds %%-%ds %%-8d %%-12lf %%-12lf\n",
+    /* 20160919 AJL  sprintf(frmt1, "LOCDELAY  %%-%ds %%-%ds %%-8d %%-12lf %%-12lf\n",
             ARRIVAL_LABEL_LEN, ARRIVAL_LABEL_LEN);
     sprintf(frmt2, "LOCDELAY  %%-%ds %%-%ds %%-8d %%-12lf %%-12lf %%-12lf %%-12lf %%d\n",
-            ARRIVAL_LABEL_LEN, ARRIVAL_LABEL_LEN);
+            ARRIVAL_LABEL_LEN, ARRIVAL_LABEL_LEN);*/
+    sprintf(frmt1, "LOCDELAY  %%-s %%-s %%-8d %%-12lf %%-12lf\n");
+    sprintf(frmt2, "LOCDELAY  %%-s %%-s %%-8d %%-12lf %%-12lf %%-12lf %%-12lf %%d\n");
 
     if (imode == WRITE_RESIDUALS) {
         fprintf(fpio,
@@ -11555,7 +12393,7 @@ int setStationDistributionWeights(SourceDesc *stations, int numStations, Arrival
             if ((stations + m)->ignored)
                 continue;
             dist = GetEpiDist((stations + m), x, y);
-            weight = exp(-(dist * dist) / cutoff2); // 0.0 for farthest -> 1.0 for same postion
+            weight = exp(-(dist * dist) / cutoff2); // 0.0 for farthest -> 1.0 for same position
             station_weight += weight; // count of number close stations
         }
         nsta++;
@@ -11571,6 +12409,7 @@ int setStationDistributionWeights(SourceDesc *stations, int numStations, Arrival
             arr = arrival + i;
             arr->station_weight /= station_weight_sum;
             if (message_flag >= 2) {
+
                 sprintf(MsgStr, "Station Dist Weight: %s %lf (%lf,%lf,%lf)",
                         arr->label, arr->station_weight, arr->station.x, arr->station.y, arr->station.z);
                 nll_putmsg(2, MsgStr);
@@ -11601,7 +12440,7 @@ int getTravelTimes(ArrivalDesc *arrival, int num_arr_loc, double xval, double yv
         if (fp_model_grid_P != NULL) {
             if (model_grid_P.numx > 2) {
                 // 3D grid
-                slowness_P = (double) ReadAbsInterpGrid3d(fp_model_grid_P, &model_grid_P, xval, yval, zval);
+                slowness_P = (double) ReadAbsInterpGrid3d(fp_model_grid_P, &model_grid_P, xval, yval, zval, 0);
             } else {
                 // 2D grid (1D model)
                 yval_grid = model_grid_P.dy; // aribitrary, small y grid value
@@ -11613,7 +12452,7 @@ int getTravelTimes(ArrivalDesc *arrival, int num_arr_loc, double xval, double yv
         if (fp_model_grid_S != NULL) {
             if (model_grid_S.numx > 2) {
                 // 3D grid
-                slowness_S = (double) ReadAbsInterpGrid3d(fp_model_grid_S, &model_grid_S, xval, yval, zval);
+                slowness_S = (double) ReadAbsInterpGrid3d(fp_model_grid_S, &model_grid_S, xval, yval, zval, 0);
             } else {
                 // 2D grid (1D model)
                 yval_grid = model_grid_S.dy; // aribitrary, small y grid value
@@ -11657,7 +12496,7 @@ int getTravelTimes(ArrivalDesc *arrival, int num_arr_loc, double xval, double yv
                     fp_grid = NULL;
                 }
                 if ((arrival[narr].pred_travel_time = (double) ReadAbsInterpGrid3d(fp_grid, &(arrival[narr].gdesc),
-                        xval, yval, zval)) < 0.0)
+                        xval, yval, zval, 0)) < 0.0)
                     nReject++;
             } else {
                 /* 2D grid (1D model) */
@@ -11696,6 +12535,7 @@ int getTravelTimes(ArrivalDesc *arrival, int num_arr_loc, double xval, double yv
         // set slowness
         if (arrival[narr].isS)
             arrival[narr].slowness = slowness_S;
+
         else
             arrival[narr].slowness = slowness_P;
 
@@ -11741,22 +12581,31 @@ double applyCrustElevCorrection(ArrivalDesc* parrival, double xval, double yval,
 
 int isAboveTopo(double xval, double yval, double zval) {
 
-    double dlong, dlat, elev;
+    double xlon, ylat, elev;
     double topo_elev;
 
     // check topo if available
     if (topo_surface_index >= 0) {
-        // convert xyz to lat/long/elev
-        rect2latlon(0, xval, yval, &dlat, &dlong);
+        if (model_surface[topo_surface_index].is_latlon) {
+            // convert xyz to lat/long/elev
+            rect2latlon(0, xval, yval, &ylat, &xlon);
+        } else {
+            xlon = xval;
+            ylat = yval;
+        }
         if (map_itype[0] != MAP_TRANS_NONE) // 20110105 AJL
             elev = -zval * 1000.0; // elevation in meters
         else
             elev = -zval; // 20110105 AJL
         // get elevation of topo at location
-        topo_elev = get_surface_z(topo_surface_index, dlong, dlat);
-        //printf("xyz %f %f %f  lon/lat/elev %f %f %f  topo_elev %f  above %d\n", xval, yval, zval, dlat, dlong, elev, topo_elev, elev > topo_elev);
-        if (elev > topo_elev)
-            return (1);
+        topo_elev = get_surface_z(topo_surface_index, xlon, ylat);
+        int iabove = elev > topo_elev;
+        /*
+        if (iabove) {
+            printf("xyz %f %f %f  lon/lat/elev %f %f %f  topo_elev %f  above %d\n", xval, yval, zval, ylat, xlon, elev, topo_elev, iabove);
+        }//*/
+
+        return (iabove);
     }
 
     return (0);
@@ -11779,7 +12628,7 @@ Tree3D * InitializeOcttree(GridDesc* ptgrid, OcttreeParams * pParams) {
     void *pdata = NULL;
     double integral;
 
-    // set up octree x, y, z grid
+    // set up oct-tree x, y, z grid
     dx = ptgrid->dx * (double) (ptgrid->numx - 1) / (double) (pParams->init_num_cells_x);
     dy = ptgrid->dy * (double) (ptgrid->numy - 1) / (double) (pParams->init_num_cells_y);
     //dz = ptgrid->dz * (double) (ptgrid->numz - 1) / (double) (pParams->init_num_cells_z);
@@ -11787,12 +12636,14 @@ Tree3D * InitializeOcttree(GridDesc* ptgrid, OcttreeParams * pParams) {
     dz = ptgrid->dz * (double) ptgrid->numz / (double) (pParams->init_num_cells_z);
 
     integral = 0.0;
-    if (LocMethod == METH_OT_STACK && GeometryMode == MODE_GLOBAL) {
+    // 20160927 AJL   if (LocMethod == METH_OT_STACK && GeometryMode == MODE_GLOBAL) {
+    if (GeometryMode == MODE_GLOBAL && !iSaveNLLocOctree) { // 20160927 AJL - bug fix?  octtree.c->writeTree3D() (called if iSaveNLLocOctree) does not yet support spherical trees
         newTree = newTree3D_spherical(ptgrid->type, pParams->init_num_cells_x,
                 pParams->init_num_cells_y, pParams->init_num_cells_z,
                 ptgrid->origx, ptgrid->origy, ptgrid->origz,
                 dx, dy, dz, OCTREE_UNDEF_VALUE, integral, pdata);
     } else {
+
         newTree = newTree3D(ptgrid->type, pParams->init_num_cells_x,
                 pParams->init_num_cells_y, pParams->init_num_cells_z,
                 ptgrid->origx, ptgrid->origy, ptgrid->origz,
@@ -11919,7 +12770,7 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
     nInitial = nSamples;
 
 
-    /* loop over octree nodes */
+    /* loop over oct-tree nodes */
 
     nScatterSaved = 0;
     ipos = 0;
@@ -12166,8 +13017,10 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 
     /* re-calculate solution and arrival statistics for best location */
 
+    //int XX_last = NumAllocations;
     SaveBestLocation(poct_node_best, num_arr_total, num_arr_loc, arrival, ptgrid,
-            gauss_par, phypo, misfit_max, iGridType, cell_diagonal_time_var_best, cell_diagonal_best, cell_volume_best);
+            gauss_par, phypo, misfit_max, iGridType, 0, cell_diagonal_time_var_best, cell_diagonal_best, cell_volume_best);
+    //printf("XXX: SaveBestLocation: NumAllocations %d->%d\n", XX_last, NumAllocations);
 
     return (nScatterSaved);
 
@@ -12175,7 +13028,7 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 
 /** function to perform Octree core solution evaluation */
 
-INLINE long double LocOctree_core(int ngrid, double xval, double yval, double zval,
+long double LocOctree_core(int ngrid, double xval, double yval, double zval,
         int num_arr_loc, ArrivalDesc *arrival,
         OctNode* poct_node,
         int icalc_cell_diagonal_time_var, double *volume_min,
@@ -12196,11 +13049,11 @@ INLINE long double LocOctree_core(int ngrid, double xval, double yval, double zv
     iAboveTopo = isAboveTopo(xval, yval, zval);
     if (!iAboveTopo) {
         nReject = getTravelTimes(arrival, num_arr_loc, xval, yval, zval);
-        if (nReject && GeometryMode != MODE_GLOBAL) {
+        if (message_flag > 3 && nReject && GeometryMode != MODE_GLOBAL) {
             sprintf(MsgStr,
-                    "ERROR: octree sample at (%lf,%lf,%lf) is outside of %d travel time grids.",
+                    "WARNING: oct-tree sample at (%lf,%lf,%lf) is outside of %d travel time grids.",
                     xval, yval, zval, nReject);
-            nll_puterr(MsgStr);
+            nll_putmsg(4, MsgStr);
         }
     }
 
@@ -12209,7 +13062,8 @@ INLINE long double LocOctree_core(int ngrid, double xval, double yval, double zv
     dsy = poct_node->ds.y;
     dsz = poct_node->ds.z;
     if (GeometryMode == MODE_GLOBAL) {
-        depth_corr = (ERAD - poct_node->center.z) / ERAD;
+        //depth_corr = (ERAD - poct_node->center.z) / ERAD;   // NOTE: ERAD is max Earth radius, could use average radius AVG_ERAD, difference should be very minor
+        depth_corr = (AVG_ERAD - poct_node->center.z) / AVG_ERAD; // 20151106 AJL - changed to AVG_ERAD, difference should be very minor
         dsx_global = dsx * DEG2KM * cos(DE2RA * poct_node->center.y) * depth_corr;
         dsy_global = dsy * DEG2KM * depth_corr;
         volume = dsx_global * dsy_global * dsz;
@@ -12274,11 +13128,11 @@ INLINE long double LocOctree_core(int ngrid, double xval, double yval, double zv
     resultTreeRoot = addResult(resultTreeRoot, log_value_volume, volume, poct_node);
 
     /*static int icount_value = 0;
-    if (icount_value < 10 && poct_node->value < -1.0e50) {
-        printf("poct_node->value < -1.0e50 !!! poct_node->value %lg  logStationDensityWeight %lg  logWtMtrxSum %lg  log(volume) %lg\n",
-                poct_node->value, logStationDensityWeight, logWtMtrxSum, log(volume));
-        icount_value++;
-    }*/
+            if (icount_value < 10 && poct_node->value < -1.0e50) {
+                printf("poct_node->value < -1.0e50 !!! poct_node->value %lg  logStationDensityWeight %lg  logWtMtrxSum %lg  log(volume) %lg\n",
+                        poct_node->value, logStationDensityWeight, logWtMtrxSum, log(volume));
+                icount_value++;
+            }*/
 
     return (value);
 

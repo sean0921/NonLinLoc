@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2011 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
+ * Copyright (C) 1999-2015 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Lesser Public License as published by
@@ -19,9 +19,8 @@
 
 /*-----------------------------------------------------------------------
 Anthony Lomax
-Anthony Lomax Scientific Software
-161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
-tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
+ALomax Scientific
+www.alomax.net
 -------------------------------------------------------------------------*/
 
 
@@ -35,9 +34,9 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 #define PACKAGE  "NonLinLoc"
-#define PVER  "6.00.0"
-#define PDATE "18Mar2011"
-/*#define PCOPYRIGHT "\nCopyright (C) 1999-2010 Anthony Lomax\n"*/
+#define PVER  "7.00.00"
+#define PDATE "27Oct2017"
+/*#define PCOPYRIGHT "\nCopyright (C) 1999-2017 Anthony Lomax\n"*/
 #define PCOPYRIGHT "\0"
 
 
@@ -59,7 +58,7 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
  */
 
 #ifdef EXTERN_MODE
-#define	EXTERN_TXT extern
+#define EXTERN_TXT extern
 #else
 #define EXTERN_TXT
 #endif
@@ -74,14 +73,16 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #include "map_project.h"
 #include "octtree/octtree.h"
 
+/*
 // following inline probably does nothing - functions body must be defined in header file
 #ifndef INLINE
 #ifndef __GNUC__
-#define INLINE inline
+#define inline
 #else
-#define INLINE __inline__
+#define __inline__
 #endif
 #endif
+ */
 
 // the following defines needed for old cc version
 #ifndef SEEK_SET
@@ -94,7 +95,7 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 // 20100614 AJL -
 // the following sets globally the float size (float or double) for NLL grids - modify with care!
-// normal NonLinLoc usage currenlty require float type
+// normal NonLinLoc usage currently require float type
 // take-off angle and byte-swapping support requires float type
 #ifdef GRID_FLOAT_TYPE_DOUBLE
 #define GRID_FLOAT_TYPE double
@@ -118,10 +119,9 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #define MAXSTRING 21
 
 //#ifndef FILENAME_MAX
-#undef FILENAME_MAX 	// FILENAME_MAX may be too small: was 14 on ETH HP!
+#undef FILENAME_MAX  // FILENAME_MAX may be too small: was 14 on ETH HP!
 #define FILENAME_MAX 1024
 //#endif
-#define FILENAME_MAX_SMALL (FILENAME_MAX / 4)
 
 
 
@@ -156,8 +156,8 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 // DD
 /* program mode */
-#define MODE_ABSOLUTE  			0
-#define MODE_DIFFERENTIAL  		1
+#define MODE_ABSOLUTE     0
+#define MODE_DIFFERENTIAL    1
 EXTERN_TXT int nll_mode;
 
 
@@ -173,51 +173,55 @@ EXTERN_TXT int nll_mode;
 #define EXIT_ERROR_MISC -100
 
 
-#define GRID_UNDEF		0		/* undefined */
+#define GRID_UNDEF  0  /* undefined */
 
-#define GRID_VELOCITY		1		/* velocity (km/sec) */
-#define GRID_VELOCITY_METERS	11		/* velocity (m/sec) */
-#define GRID_SLOWNESS		2		/* slowness (sec/km) */
-#define GRID_VEL2		3		/* velocity**2 (km/sec)**2 */
-#define GRID_SLOW2		4		/* slowness**2 (sec/km)**2 */
-#define GRID_SLOW2_METERS	44		/* slowness**2 (sec/m)**2 */
-#define GRID_SLOW_LEN		5		/* slowness*length (sec) */
+#define GRID_VELOCITY  1  /* velocity (km/sec) */
+#define GRID_VELOCITY_METERS 11  /* velocity (m/sec) */
+#define GRID_SLOWNESS  2  /* slowness (sec/km) */
+#define GRID_VEL2  3  /* velocity**2 (km/sec)**2 */
+#define GRID_SLOW2  4  /* slowness**2 (sec/km)**2 */
+#define GRID_SLOW2_METERS 44  /* slowness**2 (sec/m)**2 */
+#define GRID_SLOW_LEN  5  /* slowness*length (sec) */
 
-#define GRID_TIME		1000		/* time (sec) 3D grid */
-#define GRID_TIME_2D		1001		/* time (sec)
+#define GRID_TIME  1000  /* time (sec) 3D grid */
+#define GRID_TIME_2D  1001  /* time (sec)
 							2D grid / 1D model */
-#define GRID_PROB_DENSITY	2001		/* probability density (may be confidence levels) */
-#define GRID_MISFIT		2002		/* misfit (sec) */
-#define GRID_LIKELIHOOD		2003		/* relative likelihood normalised 0-1 (may be same as probability density) */
+#define GRID_PROB_DENSITY 2001  /* probability density (may be confidence levels) */
+#define GRID_MISFIT  2002  /* misfit (sec) */
+#define GRID_LIKELIHOOD  2003  /* relative likelihood normalised 0-1 (may be same as probability density) */
 
-#define GRID_ANGLE		3000		/* take-off angles 3D grid */
-#define GRID_ANGLE_2D		3001		/* take-off angles 2D grid / 1D model */
-#define GRID_INCLINATION	3100		/* take-off angles 3D grid */
-#define GRID_INCLINATION_2D	3101		/* take-off angles 2D grid / 1D model */
+#define GRID_ANGLE  3000  /* take-off angles 3D grid */
+#define GRID_ANGLE_2D  3001  /* take-off angles 2D grid / 1D model */
+#define GRID_INCLINATION 3100  /* take-off angles 3D grid */
+#define GRID_INCLINATION_2D 3101  /* take-off angles 2D grid / 1D model */
 
-#define GRID_DEPTH		4000		/* depth (km) 3D grid */
-#define GRID_LENGTH		4001		/* distance or length (km) 3D grid */
+#define GRID_DEPTH  4000  /* depth (km) 3D grid */
+#define GRID_LENGTH  4001  /* distance or length (km) 3D grid */
 
-#define GRID_COULOMB		5000		/* Coulomb */
+#define GRID_COULOMB  5000  /* Coulomb */
 
+#define ANGLE_MODE_NO 0
+#define ANGLE_MODE_YES 1
+#define ANGLE_MODE_INCLINATION 2
+#define ANGLE_MODE_UNDEF -1
 
 /* error codes (-55000) */
-#define OBS_FILE_SKIP_INPUT_LINE 		-55011
-#define OBS_FILE_ARRIVALS_CROSS_YEAR_BOUNDARY 	-55022
-#define OBS_FILE_INVALID_PHASE			-55033
-#define OBS_FILE_INVALID_DATE			-55044
-#define OBS_FILE_END_OF_EVENT			-55055
-#define OBS_FILE_END_OF_INPUT			-55066
-#define OBS_FILE_TWO_ARRIVALS_READ			-55077
-#define OBS_FILE_FORMAT_ERROR		-55099
+#define OBS_FILE_SKIP_INPUT_LINE   -55011
+#define OBS_FILE_ARRIVALS_CROSS_YEAR_BOUNDARY  -55022
+#define OBS_FILE_INVALID_PHASE   -55033
+#define OBS_FILE_INVALID_DATE   -55044
+#define OBS_FILE_END_OF_EVENT   -55055
+#define OBS_FILE_END_OF_INPUT   -55066
+#define OBS_FILE_TWO_ARRIVALS_READ   -55077
+#define OBS_FILE_FORMAT_ERROR  -55099
 
-#define GRID_NOT_INSIDE				-55111
+#define GRID_NOT_INSIDE    -55111
 
 /* SH found comment line in UUSS format; starts with 'c' */
 #define OBS_IS_COMMENT_LINE                     -55222
 
-#define SMALLEST_EVENT_YEAR	1800
-#define LARGEST_EVENT_YEAR	2100
+#define SMALLEST_EVENT_YEAR 1800
+#define LARGEST_EVENT_YEAR 2100
 
 
 /*------------------------------------------------------------/ */
@@ -236,10 +240,30 @@ EXTERN_TXT int nll_mode;
 /* structures */
 /*------------------------------------------------------------/ */
 
+
+/** cascading grid description
+ *
+ * 20161019 AJL - added
+ */
+#define IS_NOT_CASCADING 0
+#define IS_CASCADING -243310898   // want value that is extremely unlikely to be in uninitialized int
+#define MAX_NUM_Z_MERGE_DEPTHS 100 // set very large, should typically be +-3
+
+typedef struct {
+    int num_z_merge_depths; // array of (approx) increasing depths in km at which cells will be oct-merged by factor 2 (8 cells become 1 cell, cell side doubled)
+    double z_merge_depths[MAX_NUM_Z_MERGE_DEPTHS]; // array of (approx) increasing depths in km at which cells will be oct-merged by factor 2 (8 cells become 1 cell)
+    int *zindex; // array (size=numz) of cascading grid z index values for given regular grid z index (0, GridDesc.numz-1))
+    int *xyz_scale; // array (size=numz) of scale values to convert given regular grid x,y index (e.g. 0, GridDesc.numx-1) to cascading grid x,y index;
+    // cascading grid x,y index = regular grid x,y index / (double) xyz_scale
+    //double num_z_cascading; // number of cascading grid z levels
+}
+GridDesc_Cascading;
+
 /* grid  description */
 
 typedef struct {
     void *buffer; /* buffer (contiguous floats) */
+    size_t buffer_size; /* size of buffer in bytes */
     void ***array; /* array access to buffer */
     int numx, numy, numz; /* grid size */
     double origx, origy, origz; /* orig (km) */
@@ -251,16 +275,21 @@ typedef struct {
     double sum; /* sum of grid values */
     int iSwapBytes; /* flag to specify if hi/lo bytes should be swapped when reading grid from disk files */
     char float_type[MAXLINE]; /* 20100616 AJL - char desc of float type: FLOAT or DOUBLE or empty (backwards compatibility for type FLOAT */
+    // 20161019 AJL - added cascading grid description
+    int flagGridCascading; // set to IS_CASCADING to flag that this is a cascading grid
+    GridDesc_Cascading gridDesc_Cascading; // GridDesc_Cascading description, initialized if this grid is a cascading grid (flagGridCascading==IS_CASCADING)
+    // 20161021 AJL - added
+    char mapProjStr[2 * MAXLINE]; // holds map projection description string from grid hdr if present
 }
 GridDesc;
 
 
- // 20101209 AJL#define X_MAX_NUM_STATIONS	500
-#define X_MAX_NUM_STATIONS	5000
-#define X_MAX_NUM_STATIONS_DIFF	40000
-#define MAX_NUM_ARRIVALS_STA	2
-#define X_MAX_NUM_ARRIVALS 	MAX_NUM_ARRIVALS_STA*X_MAX_NUM_STATIONS
-#define ARRIVAL_LABEL_LEN	64  // 20100409 AJL changed from 7 to 64, also changed code in GridLib.c->FindSource()
+// 20101209 AJL#define X_MAX_NUM_STATIONS	500
+#define X_MAX_NUM_STATIONS 5000
+#define X_MAX_NUM_STATIONS_DIFF 500000
+#define MAX_NUM_ARRIVALS_STA 2
+#define X_MAX_NUM_ARRIVALS  MAX_NUM_ARRIVALS_STA*X_MAX_NUM_STATIONS
+#define ARRIVAL_LABEL_LEN 64  // 20100409 AJL changed from 7 to 64, also changed code in GridLib.c->FindSource()
 
 /* phase (sythetic arrival observation) */
 
@@ -277,8 +306,8 @@ PhaseDesc;
 
 /* source or station */
 
-#define MAX_NUM_SOURCES 	20000
-#define SOURCE_LABEL_LEN	ARRIVAL_LABEL_LEN
+#define MAX_NUM_SOURCES  50000
+#define SOURCE_LABEL_LEN ARRIVAL_LABEL_LEN
 
 typedef struct {
     int is_coord_xyz; /* xyz coord flag */
@@ -322,7 +351,7 @@ StationDesc;
 #define INST_LABEL_LEN 32
 #define COMP_LABEL_LEN 32
 //INGV #define PHASE_LABEL_LEN	7
-#define PHASE_LABEL_LEN	32
+#define PHASE_LABEL_LEN 32
 
 typedef struct {
     // 20100506 AJL - added to support preservation of observation index order for calls to NLLoc() function (e.g. from SeisComp3)
@@ -400,7 +429,7 @@ typedef struct {
     double amp_mag; /* amplitude magnitude */
     double dur_mag; /* duration magnitude */
 
-    /* staistical residuals */
+    /* statistical residuals */
     double pdf_residual_sum; /* residual (PDF weighted residual) */
     double pdf_weight_sum; /* cumulative PDF weight */
 
@@ -423,8 +452,8 @@ typedef struct {
 
     // 20101005 AJL - slowness value, for OT_STACK, etc.
     double slowness; // wave slowness at current hypocenter
-    int isP;    // is a P phase
-    int isS;    // is an S phase
+    int isP; // is a P phase
+    int isS; // is an S phase
 
     // DD
     // see hypoDD doc (Open File Report 01-113)
@@ -435,7 +464,6 @@ typedef struct {
 
 }
 ArrivalDesc;
-
 
 /* focal mechanism (taken from FPFIT file fpfit.doc) */
 
@@ -466,8 +494,8 @@ typedef struct {
 
 } FocalMech;
 
-/* hypocenter 
- * 
+/* hypocenter
+ *
  * QML indicates fields added for compatibility with QuakeML OriginQuality attributes (AJL 201005)
 
  */
@@ -514,8 +542,8 @@ typedef struct {
     /* SH 07232004 added */
     double mag_err; /* error in magnitude */
 
-    double probmax; /* probability density at hypo
-							(maximum in grid) */
+    long double probmax; /* probability density at hypo (maximum in grid) */ // 20130314 C Satriano, AJL - changed to long double
+
     double misfit; /* misfitat hypo (minimum in grid) */
     double grid_misfit_max; /* max misfit in loc grid */
 
@@ -537,6 +565,13 @@ typedef struct {
     char signature[6 * MAXLINE]; /* char signature/program/date/etc */
     char searchInfo[2 * MAXLINE]; /* char search type dependent info */
 
+    // 20170811 AJL - added to allow saving of expectation hypocenter results instead of maximum likelihood
+    char type[64]; // char hypocenter type MAXIMUM_LIKELIHOOD, EXPECTATION
+    Vect3D max_like; // maximum likelihood hypocenter
+    double max_like_dlat, max_like_dlong; // lat / long trans of max_like
+    double max_like_sec; // max_like origin time (s)
+
+
     char locStat[32]; /* char location status LOCATED, ABORTED, IGNORED, REJECTED */
     char locStatComm[2 * MAXLINE]; /* char location status comment */
 
@@ -554,10 +589,15 @@ typedef struct {
 }
 HypoDesc;
 
+// hypocenter type constants
+// 20170811 AJL - added to allow saving of expectation hypocenter results instead of maximum likelihood
+#define HYPO_TYPE_MAXIMUM_LIKELIHOOD "MAXIMUM_LIKELIHOOD"
+#define HYPO_TYPE_EXPECTATION "EXPECTATION"
+
 
 /* take-off angles */
 
-#define ANGLE_QUALITY_CUTOFF 5		/* value to determine "bad" angles */
+#define ANGLE_QUALITY_CUTOFF 5  /* value to determine "bad" angles */
 #define ANGLES_OFFSET 16
 
 typedef union {
@@ -569,6 +609,24 @@ typedef union {
     float fval; /* float value (dummy) */
 }
 TakeOffAngles;
+
+
+
+/* Phase Identification */
+// 20161004 AJL - moved here from NLLocLib.c
+
+typedef struct {
+    char phase[ARRIVAL_LABEL_LEN];
+    char id_string[MAXLINE];
+}
+PhaseIdent;
+
+/* phase identification */
+// 20161004 AJL - moved here from NLLocLib.c
+#define MAX_NUM_PHASE_ID 50
+EXTERN_TXT PhaseIdent PhaseID[MAX_NUM_PHASE_ID];
+EXTERN_TXT int NumPhaseID;
+
 
 
 
@@ -596,8 +654,8 @@ EXTERN_TXT int prog_mode_3d;
 EXTERN_TXT int prog_mode_2dto3d;
 
 // mode
-#define MODE_RECT 		0	// rectangular cartesian x(km),y(km),z:depth(km)
-#define MODE_GLOBAL 		1	// spherical x:longitdue(deg),y:latittude(deg),z:depth(km)
+#define MODE_RECT   0 // rectangular cartesian x(km),y(km),z:depth(km)
+#define MODE_GLOBAL   1 // spherical x:longitdue(deg),y:latittude(deg),z:depth(km)
 EXTERN_TXT int GeometryMode;
 
 /* 3D grid description */
@@ -623,13 +681,14 @@ EXTERN_TXT ArrivalDesc* Arrival;
 EXTERN_TXT HypoDesc Hypocenter;
 
 /* geographic transformations (lat/long <=> x/y) */
-#define NUM_PROJ_MAX 		3
-#define MAP_TRANS_UNDEF 	-1
-#define MAP_TRANS_NONE	 	0
-#define MAP_TRANS_GLOBAL 	1
-#define MAP_TRANS_SIMPLE 	2
-#define MAP_TRANS_LAMBERT 	3
-#define MAP_TRANS_SDC 		4
+#define NUM_PROJ_MAX   3
+#define MAP_TRANS_UNDEF  -1
+#define MAP_TRANS_NONE   0
+#define MAP_TRANS_GLOBAL  1
+#define MAP_TRANS_SIMPLE  2
+#define MAP_TRANS_LAMBERT  3
+#define MAP_TRANS_TM     4
+#define MAP_TRANS_SDC   5
 EXTERN_TXT char map_trans_type[NUM_PROJ_MAX][MAXLINE]; /* name of projection */
 EXTERN_TXT int map_itype[NUM_PROJ_MAX]; /* int id of projection */
 EXTERN_TXT char MapProjStr[NUM_PROJ_MAX][2 * MAXLINE]; /* string description of proj params */
@@ -662,8 +721,8 @@ EXTERN_TXT double Quality2Error[MAX_NUM_QUALITY_LEVELS];
 EXTERN_TXT int NumQuality2ErrorLevels;
 
 /* model coordinates */
-#define COORDS_RECT	0
-#define COORDS_LATLON	1
+#define COORDS_RECT 0
+#define COORDS_LATLON 1
 int ModelCoordsMode;
 
 /* */
@@ -691,14 +750,15 @@ int get_path_method(char*);
 int GetNextSource(char*);
 int GetSource(char*, SourceDesc*, int);
 SourceDesc* FindSource(char* label);
+char* projection_str2transform_str(char* trans_str, char* proj_str);
 int get_transform(int, char*);
 
 void get_velfile(char*);
 int convertCoordsRect(int, int, double, double, double *, double *);
-INLINE int latlon2rect(int, double, double, double*, double*);
-INLINE int rect2latlon(int, double, double, double*, double*);
-INLINE double rect2latlonAngle(int, double);
-INLINE double latlon2rectAngle(int, double);
+int latlon2rect(int, double, double, double*, double*);
+int rect2latlon(int, double, double, double*, double*);
+double rect2latlonAngle(int, double);
+double latlon2rectAngle(int, double);
 double getGMTJVAL(int, char*, double, double, double, double, double, double);
 int ConvertSourceLoc(int, SourceDesc *, int, int, int);
 int ConvertASourceLocation(int n_proj, SourceDesc *srce_in, int toXY, int toLatLon);
@@ -712,36 +772,45 @@ void*** CreateGridArray(GridDesc*);
 void DestroyGridArray(GridDesc*);
 void DuplicateGrid(GridDesc*, GridDesc*, char *);
 int CheckGridArray(GridDesc*, double, double, double, double);
-int SumGrids(GridDesc*, GridDesc*, FILE*);
+int SumGrids(GridDesc* pgrid_sum, GridDesc* pgrid_new, FILE* fp_grid_new, double factor);
 int WriteGrid3dBuf(GridDesc*, SourceDesc*, char*, char*);
 int WriteGrid3dHdr(GridDesc*, SourceDesc*, char*, char*);
 int ReadGrid3dBuf(GridDesc*, FILE*);
 int ReadGrid3dHdr(GridDesc*, SourceDesc*, char*, char*);
 int ReadGrid3dHdr_grid_description(FILE *fpio, GridDesc* pgrid);
 int ReadGrid3dBufSheet(GRID_FLOAT_TYPE *, GridDesc*, FILE*, int);
-INLINE GRID_FLOAT_TYPE ReadAbsGrid3dValue(FILE*, GridDesc*, double, double,
+GRID_FLOAT_TYPE ReadAbsGrid3dValue(FILE*, GridDesc*, double, double,
         double, int);
 int SwapBytes(float *buffer, long int bufsize);
 int OpenGrid3dFile(char *, FILE **, FILE **, GridDesc*,
         char*, SourceDesc*, int);
-void CloseGrid3dFile(FILE **, FILE **);
+// 20170207 AJL - GridDesc needed for cleaning up cascading grid header data
+//void CloseGrid3dFile(FILE **, FILE **);
+void CloseGrid3dFile(GridDesc* pgrid, FILE **fp_grid, FILE **fp_hdr); // 20170207 AJL - added
 GRID_FLOAT_TYPE* ReadGridFile(GRID_FLOAT_TYPE* values, char *fname, char* file_type, double* xloc, double* yloc, double* zloc, int nvalues, int iSwapBytes);
-INLINE GRID_FLOAT_TYPE ReadGrid3dValue(FILE *, int, int, int, GridDesc*);
-INLINE DOUBLE InterpCubeLagrange(DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE,
+GRID_FLOAT_TYPE ReadGrid3dValue(FILE *fpgrid, int ix, int iy, int iz, GridDesc * pgrid, int clean_casc_allocs);
+DOUBLE InterpCubeLagrange(DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE,
         DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE);
-INLINE float InterpCubeAngles(DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE,
+float InterpCubeAngles(DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE,
         DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE, DOUBLE);
-INLINE GRID_FLOAT_TYPE ReadAbsInterpGrid3d(FILE *, GridDesc*, double, double,
-        double);
-INLINE DOUBLE InterpSquareLagrange(DOUBLE, DOUBLE,
+GRID_FLOAT_TYPE ReadAbsInterpGrid3d(FILE *, GridDesc*, double, double,
+        double, int clean_casc_allocs);
+DOUBLE InterpSquareLagrange(DOUBLE, DOUBLE,
         DOUBLE, DOUBLE, DOUBLE, DOUBLE);
-INLINE DOUBLE ReadAbsInterpGrid2d(FILE *, GridDesc*,
+DOUBLE ReadAbsInterpGrid2d(FILE *, GridDesc*,
         double, double);
 int isOnGridBoundary(double, double, double, GridDesc*, double, double, int);
 int IsPointInsideGrid(GridDesc*, double, double, double);
 int IsGridInside(GridDesc*, GridDesc*, int);
 int IsGrid2DBigEnough(GridDesc*, GridDesc*, SourceDesc*,
         double, double, double, double);
+
+// cascading grid functions
+// 20161019 AJL - added
+int isCascadingGrid(GridDesc* pgrid);
+void setCascadingGrid(GridDesc* pgrid);
+void* AllocateGrid_Cascading(GridDesc* pgrid, int allocate_buffer);
+void FreeGrid_Cascading(GridDesc * pgrid);
 
 /* statistics functions */
 double GaussDev();
@@ -758,8 +827,7 @@ int WritePhases(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
         int narrivals, char* filename,
         int iWriteArrivals, int iWriteEndLoc, int iWriteMinimal,
         GridDesc* pgrid, int n_proj, int io_arrival_mode);
-int GetHypLoc(FILE*, const char*, HypoDesc*, ArrivalDesc*, int*, int,
-        GridDesc*, int);
+int GetHypLoc(FILE*, const char*, HypoDesc*, ArrivalDesc*, int*, int, GridDesc*, int);
 int ReadArrival(char*, ArrivalDesc*, int);
 int WriteArrival(FILE*, ArrivalDesc*, int);
 int WriteArrivalHypo(FILE*, ArrivalDesc*, int);
@@ -770,6 +838,9 @@ int ReadFocalMech(FILE **pfpio, char* fnroot_in, FocalMech* pfocalMech,
 void Qual2Err(ArrivalDesc *);
 int Err2Qual(ArrivalDesc *);
 int GetQuality2Err(char*);
+int IsPhaseID(char *phase_in, char *phase_check);
+int EvalPhaseID(char *, char *);
+void removeSpace(char *str);
 
 /* strucutre utility functions */
 HypoDesc* cloneHypoDesc(HypoDesc *phypo_orig);
@@ -777,13 +848,13 @@ ArrivalDesc* cloneArrivalDescArray(ArrivalDesc* parrivals_orig, int narrivals);
 GridDesc* cloneGridDesc(GridDesc* pgrid_orig);
 
 /* source/station functions */
-INLINE double GetEpiDist(SourceDesc*, double, double);
+double GetEpiDist(SourceDesc*, double, double);
 double GetEpiAzim(SourceDesc*, double, double);
-INLINE double GetEpiDistSta(StationDesc*, double, double);
+double GetEpiDistSta(StationDesc*, double, double);
 double GetEpiAzimSta(StationDesc*, double, double);
-INLINE double Dist3D(double, double, double, double, double, double);
-INLINE double calcAveInterStationDistance(SourceDesc *stations, int numStations);
-INLINE int stationLocationIsKnown(double x, double y);
+double Dist3D(double, double, double, double, double, double);
+double calcAveInterStationDistance(SourceDesc *stations, int numStations);
+int stationLocationIsKnown(double x, double y);
 
 /* date functions */
 int DayOfYear(int, int, int);
@@ -795,7 +866,7 @@ char* CurrTimeStr(void);
 
 /* file list functions */
 int ExpandWildCards(char*, char[][FILENAME_MAX], int);
-int fnmatch_wrapper(struct dirent* entry);
+int fnmatch_wrapper(const struct dirent* entry);
 EXTERN_TXT char ExpandWildCards_pattern[FILENAME_MAX];
 
 /* string / char functions */
@@ -823,6 +894,12 @@ void SetAnglesFloat(TakeOffAngles*, float);
 int GetTakeOffAngles(TakeOffAngles *, double *, double *, int *);
 int ReadTakeOffAnglesFile(char *, double, double, double,
         double *, double *, int *, double, int);
+int CalcAnglesGradient(GridDesc* ptgrid, GridDesc* pagrid, int angle_mode, int grid_mode);
+TakeOffAngles GetGradientAngles(double vcent, double xlow, double xhigh,
+        double ylow, double yhigh, double zlow, double zhigh,
+        double dx, double dy, double dz, int iflag2D,
+        double *pazim, double *pdip, int *piqual);
+int CalcAnglesQuality(double grad_low, double grad_high);
 
 int SetModelCoordsMode(int);
 

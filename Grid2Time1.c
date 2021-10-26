@@ -47,6 +47,8 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 /*#define EXTERN_MODE 1 */
 
+#include <unistd.h>
+
 #include "GridLib.h"
 
 #define DEBUG_GRID2TIME 0
@@ -57,16 +59,9 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 /* declarations for grid modes */
 /*------------------------------------------------------------/ */
 
-int grid_mode; /* grid mode - GRID_MODE_3D, GRID_MODE_2D */
-#define GRID_MODE_3D	0
-#define GRID_MODE_2D	1
-#define GRID_MODE_UNDEF	-1
+int grid_mode; /* grid mode - GRID_TIME, GRID_TIME_2D */
 
 int angle_mode; /* angle mode - ANGLE_MODE_NO, ANGLE_MODE_YES */
-#define ANGLE_MODE_NO	0
-#define ANGLE_MODE_YES	1
-#define ANGLE_MODE_INCLINATION	2
-#define ANGLE_MODE_UNDEF	-1
 
 
 
@@ -161,7 +156,7 @@ float wvfrnt_dtemps;
 /* globals  */
 
 
-char fn_gt_input[MAXLINE], fn_gt_output[MAXLINE];
+char fn_gt_input[MAXLINE_LONG], fn_gt_output[MAXLINE_LONG];
 int iSwapBytesOnInput;
 
 
@@ -175,12 +170,6 @@ int GenTimeGrid(GridDesc*, SourceDesc*, GridDesc*, char*);
 int GenAngleGrid(GridDesc*, SourceDesc*, GridDesc*, int);
 void InitTimeGrid(GridDesc*, GridDesc*);
 int RunGreen3d(GridDesc*, SourceDesc*, GridDesc*, char*);
-int CalcAnglesGradient(GridDesc*, GridDesc*, int);
-TakeOffAngles GetGradientAngles(double, double, double,
-        double, double, double, double,
-        double, double, double, int,
-        double *pazim, double *pdip, int *piqual);
-int CalcAnglesQuality(double, double);
 
 
 
@@ -197,7 +186,7 @@ int main(int argc, char *argv[]) {
 
     int ix, iy, iz, iymax, izmax, iystep, izstep;
 
-    char fn_model[MAXLINE];
+    char fn_model[MAXLINE_LONG];
     FILE *fp_model_grid, *fp_model_hdr;
 
     GridDesc mod_grid, time_grid, angle_grid;
@@ -246,20 +235,19 @@ int main(int argc, char *argv[]) {
 
     sprintf(fn_model, "%s.mod", fn_gt_input);
     if ((istat = OpenGrid3dFile(fn_model, &fp_model_grid, &fp_model_hdr,
-            &mod_grid, " ", NULL, mod_grid.iSwapBytes)) < 0) {
-        CloseGrid3dFile(&fp_model_grid, &fp_model_hdr);
+            &mod_grid, " ", NULL, iSwapBytesOnInput)) < 0) {
+        CloseGrid3dFile(&mod_grid, &fp_model_grid, &fp_model_hdr);
         nll_puterr2("ERROR: cannot open model grid", fn_model);
         exit(EXIT_ERROR_FILEIO);
     }
-    mod_grid.iSwapBytes = iSwapBytesOnInput;
 
     /* check grid x size */
 
-    if (grid_mode == GRID_MODE_2D && mod_grid.numx != 2) {
+    if (grid_mode == GRID_TIME_2D && mod_grid.numx != 2) {
         nll_puterr(
                 "ERROR: grid xNum must be 2 for gridMode GRID2D");
         exit(EXIT_ERROR_TTIME);
-    } else if (grid_mode == GRID_MODE_3D && mod_grid.numx <= 2) {
+    } else if (grid_mode == GRID_TIME && mod_grid.numx <= 2) {
         sprintf(MsgStr,
                 "WARNING: grid xNum = %d is very small for gridMode GRID3D",
                 mod_grid.numx);
@@ -272,12 +260,12 @@ int main(int argc, char *argv[]) {
     InitTimeGrid(&time_grid, &mod_grid);
 
     if (angle_mode == ANGLE_MODE_YES) {
-        if (grid_mode == GRID_MODE_2D)
+        if (grid_mode == GRID_TIME_2D)
             DuplicateGrid(&angle_grid, &time_grid, "ANGLE2D");
         else
             DuplicateGrid(&angle_grid, &time_grid, "ANGLE");
     } else if (angle_mode == ANGLE_MODE_INCLINATION) {
-        if (grid_mode == GRID_MODE_2D)
+        if (grid_mode == GRID_TIME_2D)
             DuplicateGrid(&angle_grid, &time_grid, "INCLINATION2D");
         else
             DuplicateGrid(&angle_grid, &time_grid, "INCLINATION");
@@ -339,9 +327,20 @@ int main(int argc, char *argv[]) {
 
     // 20101005 AJL - added to allow retrieval of model velocity at a point (for NLL OT_STACK etc.)
     // save copy of model file in time output directory
-    if ((istat = WriteGrid3dBuf(&mod_grid, NULL, fn_gt_output, "mod")) < 0) {
-        nll_puterr2("ERROR: writing slowness grid to disk", fn_gt_output);
-        exit(EXIT_ERROR_IO);
+    char fn_test[MAXLINE_LONG];
+    strcpy(fn_test, fn_gt_output);
+    strcat(fn_test, ".mod.buf");
+    if (access(fn_test, F_OK) == -1) {
+        // file doesn't exist
+        sprintf(MsgStr, "INFO: Saving model file to out directory: %s", fn_test);
+        nll_putmsg(1, MsgStr);
+        if ((istat = WriteGrid3dBuf(&mod_grid, NULL, fn_gt_output, "mod")) < 0) {
+            nll_puterr2("ERROR: writing slowness grid to disk", fn_gt_output);
+            exit(EXIT_ERROR_IO);
+        }
+    } else {
+        sprintf(MsgStr, "INFO: Model file already exists in out directory, will not overwrite: %s", fn_test);
+        nll_putmsg(1, MsgStr);
     }
 
 
@@ -349,12 +348,13 @@ int main(int argc, char *argv[]) {
 
     for (nsrce = 0; nsrce < NumSources; nsrce++) {
         sprintf(MsgStr,
-                "\nCalculating travel times for source: %s  X %.4lf  Y %.4lf  Z %.4lf ...",
+                "\nCalculating travel times for source: %s  X %.4lf  Y %.4lf  Z %.4lf (lat/lon/depth  %f  %f  %f) ...",
                 (Source + nsrce)->label, (Source + nsrce)->x,
-                (Source + nsrce)->y, (Source + nsrce)->z);
+                (Source + nsrce)->y, (Source + nsrce)->z,
+                (Source + nsrce)->dlat, (Source + nsrce)->dlong, (Source + nsrce)->depth
+                );
         nll_putmsg(1, MsgStr);
-        if ((istat = GenTimeGrid(&mod_grid, Source + nsrce,
-                &time_grid, fn_model)) < 0)
+        if ((istat = GenTimeGrid(&mod_grid, Source + nsrce, &time_grid, fn_model)) < 0)
             nll_puterr("ERROR: calculating travel times.");
         else if (angle_mode == ANGLE_MODE_YES) {
             if ((istat = GenAngleGrid(&time_grid, Source + nsrce,
@@ -381,7 +381,7 @@ void InitTimeGrid(GridDesc* ptime_grid, GridDesc* pmod_grid) {
 
 
     /* set grid type */
-    if (grid_mode == GRID_MODE_2D)
+    if (grid_mode == GRID_TIME_2D)
         strcpy(chr_type, "TIME2D");
     else
         strcpy(chr_type, "TIME");
@@ -413,11 +413,10 @@ void InitTimeGrid(GridDesc* ptime_grid, GridDesc* pmod_grid) {
 
 /*** function to generate travel time grid */
 
-int GenTimeGrid(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
-        char* fn_model) {
+int GenTimeGrid(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid, char* fn_model) {
 
     int istat, itemp = 0;
-    char filename[MAXLINE];
+    char filename[MAXLINE_LONG];
     double xsource, ysource, zsource;
     double vel_source;
 
@@ -428,7 +427,7 @@ int GenTimeGrid(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
 
     /* check grid mode, make appropriate adjustments */
 
-    if (grid_mode == GRID_MODE_2D) {
+    if (grid_mode == GRID_TIME_2D) {
         /* set horiz source location to grid origin */
         xsource = ptt_grid->origx;
         ysource = ptt_grid->origy;
@@ -528,7 +527,7 @@ int GenTimeGrid(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
                     "ERROR: Wavefront ray tracing (green3d) algorithm requires VELOCITY_METERS (meters/sec) grid.");
             return (-1);
         }
-        if (grid_mode != GRID_MODE_3D) {
+        if (grid_mode != GRID_TIME) {
             nll_puterr(
                     "ERROR: Wavefront ray tracing (green3d) algorithm requires grid mode GRID3D.");
             return (-1);
@@ -573,21 +572,63 @@ int GenTimeGrid(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
         }
     }
 
+    // output ascii table of grid
+#define WRITE_ASCII_GRID 0
+#define USE_COORDS_LATLON 1
+    if (WRITE_ASCII_GRID) {
+        sprintf(filename, "%s.%s.time.csv", fn_gt_output, psource->label);
+        FILE *fp_ascii_grid = NULL;
+        if ((fp_ascii_grid = fopen(filename, "w")) == NULL) {
+            nll_puterr2("ERROR: opening ascii grid output file: %s", filename);
+        } else {
+            int ix, iy, iz, ixmax, iymax, izmax, ixstep, iystep, izstep;
+            ix = iy = iz = 0;
+            ixmax = ptt_grid->numx - 1;
+            ixstep = 1;
+            iymax = ptt_grid->numy - 1;
+            iystep = 1;
+            izmax = ptt_grid->numz - 1;
+            izstep = 1;
+            double xloc, yloc;
+            double xval = ptt_grid->origx;
+            for (ix = 0; ix < ixmax; ix += ixstep) {
+                double yval = ptt_grid->origy;
+                for (iy = 0; iy < iymax; iy += iystep) {
+                    if (USE_COORDS_LATLON) {
+                        rect2latlon(0, xval, yval, &yloc, &xloc);
+                    } else {
+                        xloc = xval;
+                        yloc = yval;
+                    }
+                    double zloc = ptt_grid->origz;
+                    for (iz = 0; iz < izmax; iz += izstep) {
+                        fprintf(fp_ascii_grid, "%g %g %g %g\n", xloc, yloc, zloc, ((GRID_FLOAT_TYPE ***) ptt_grid->array)[ix][iy][iz]);
+                        zloc += ptt_grid->dz;
+                    }
+                    yval += ptt_grid->dy;
+                }
+                xval += ptt_grid->dx;
+            }
+            fclose(fp_ascii_grid);
+            sprintf(MsgStr, "Ascii grid output written to file: %s", filename);
+            nll_putmsg(1, MsgStr);
+        }
+    }
+
 
     /* save time grid to disk */
 
     sprintf(filename, "%s.%s", fn_gt_output, psource->label);
     sprintf(MsgStr,
-            "Finished calculation, time grid output files: %s.*",
-            filename);
+            "Finished calculation, time grid output files: %s.*", filename);
     nll_putmsg(1, MsgStr);
     /* need only ix=0 sheet for 2D grids */
-    if (grid_mode == GRID_MODE_2D) {
+    if (grid_mode == GRID_TIME_2D) {
         itemp = ptt_grid->numx;
         ptt_grid->numx = 1;
     }
     istat = WriteGrid3dBuf(ptt_grid, psource, filename, "time");
-    if (grid_mode == GRID_MODE_2D)
+    if (grid_mode == GRID_TIME_2D)
         ptt_grid->numx = itemp;
     if (istat < 0) {
         nll_puterr("ERROR: writing slowness grid to disk.");
@@ -612,7 +653,7 @@ int RunGreen3d(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
     char fn_temps[] = "green3d.temps";
     char fn_ampl[] = "green3d.ampl";
 
-    char system_str[MAXLINE];
+    char system_str[MAXLINE_LONG];
 
     double km2m = 1000.0;
     float dxm, dym, dzm;
@@ -962,11 +1003,11 @@ int get_grid_mode(char* line1) {
     nll_putmsg(3, MsgStr);
 
     if (strcmp(str_grid_mode, "GRID3D") == 0)
-        grid_mode = GRID_MODE_3D;
+        grid_mode = GRID_TIME;
     else if (strcmp(str_grid_mode, "GRID2D") == 0)
-        grid_mode = GRID_MODE_2D;
+        grid_mode = GRID_TIME_2D;
     else {
-        grid_mode = GRID_MODE_UNDEF;
+        grid_mode = GRID_UNDEF;
         nll_puterr("ERROR: unrecognized grid mode");
         return (-1);
     }
@@ -1071,7 +1112,7 @@ int get_gt_wavefront(char* line1) {
 int GenAngleGrid(GridDesc* ptgrid, SourceDesc* psource, GridDesc* pagrid, int angle_mode) {
 
     int istat, itemp = 0;
-    char filename[MAXLINE];
+    char filename[MAXLINE_LONG];
 
     double xsource, ysource, zsource;
 
@@ -1079,7 +1120,7 @@ int GenAngleGrid(GridDesc* ptgrid, SourceDesc* psource, GridDesc* pagrid, int an
 
     /* check grid mode, make appropriate adjustments */
 
-    if (grid_mode == GRID_MODE_2D) {
+    if (grid_mode == GRID_TIME_2D) {
         /* set horiz source location to grid origin */
         xsource = pagrid->origx;
         ysource = pagrid->origy;
@@ -1109,7 +1150,7 @@ int GenAngleGrid(GridDesc* ptgrid, SourceDesc* psource, GridDesc* pagrid, int an
         }
 
         /* run gradient take-off angle algorithm */
-        if ((istat = CalcAnglesGradient(ptgrid, pagrid, angle_mode)) < 0)
+        if ((istat = CalcAnglesGradient(ptgrid, pagrid, angle_mode, grid_mode)) < 0)
             return (-1);
 
     }
@@ -1125,7 +1166,7 @@ int GenAngleGrid(GridDesc* ptgrid, SourceDesc* psource, GridDesc* pagrid, int an
             filename);
     nll_putmsg(1, MsgStr);
     /* need only ix=0 sheet for 2D grids */
-    if (grid_mode == GRID_MODE_2D) {
+    if (grid_mode == GRID_TIME_2D) {
         itemp = pagrid->numx;
         pagrid->numx = 1;
     }
@@ -1133,7 +1174,7 @@ int GenAngleGrid(GridDesc* ptgrid, SourceDesc* psource, GridDesc* pagrid, int an
         istat = WriteGrid3dBuf(pagrid, psource, filename, "angle");
     else if (angle_mode == ANGLE_MODE_INCLINATION)
         istat = WriteGrid3dBuf(pagrid, psource, filename, "inclination");
-    if (grid_mode == GRID_MODE_2D)
+    if (grid_mode == GRID_TIME_2D)
         pagrid->numx = itemp;
     if (istat < 0) {
         nll_puterr("ERROR: writing take-off angles grid to disk.");
@@ -1144,199 +1185,6 @@ int GenAngleGrid(GridDesc* ptgrid, SourceDesc* psource, GridDesc* pagrid, int an
     return (0);
 
 }
-
-/** function to generate take-off angles from travel time grid
-                                using a numerical gradient aglorithm */
-
-int CalcAnglesGradient(GridDesc* ptgrid, GridDesc* pagrid, int angle_mode) {
-
-    int ix, iy, iz, edge_flagx = 0, edge_flagy = 0, iflag2D = 0;
-    double origx, origy, origz;
-    double dx, dy, dz, dvol;
-    double xlow = 0.0, xhigh = 0.0;
-    double azim, dip;
-    int iqual;
-
-    TakeOffAngles angles = AnglesNULL;
-
-
-    /* write message */
-    sprintf(MsgStr, "Generating take-off angle grid...");
-    nll_putmsg(1, MsgStr);
-
-
-    if (grid_mode == GRID_MODE_2D) {
-        iflag2D = 1;
-        xlow = xhigh = 0.0;
-    }
-
-    /* estimate take-off angles from numerical gradients */
-
-    origx = pagrid->origx;
-    origy = pagrid->origy;
-    origz = pagrid->origz;
-    dx = pagrid->dx;
-    dy = pagrid->dy;
-    dz = pagrid->dz;
-    dvol = dx * dy * dz;
-
-    for (ix = 0; ix < pagrid->numx; ix++) {
-        /* 2D grids, store angles in ix = 0 sheet */
-        if (ix == 1 && iflag2D)
-            edge_flagx = 1;
-        if ((ix == 0 || ix == pagrid->numx - 1)
-                && grid_mode == GRID_MODE_3D)
-            edge_flagx = 1;
-        for (iy = 0; iy < pagrid->numy; iy++) {
-            if (iy == 0 || iy == pagrid->numy - 1)
-                edge_flagy = 1;
-            for (iz = 0; iz < pagrid->numz; iz++) {
-
-                /* no calculation for edges of grid */
-                if (edge_flagx || edge_flagy
-                        || iz == 0 || iz == pagrid->numz - 1) {
-                    ((GRID_FLOAT_TYPE ***) pagrid->array)[ix][iy][iz] = AnglesNULL.fval;
-                    continue;
-                }
-
-                if (!iflag2D) {
-                    xlow = ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix - 1][iy][iz];
-                    xhigh = ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix + 1][iy][iz];
-                }
-                angles = GetGradientAngles(
-                        ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix][iy][iz],
-                        xlow,
-                        xhigh,
-                        ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix][iy - 1][iz],
-                        ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix][iy + 1][iz],
-                        /* intentional reversal of z
-                                signs to get pos = up */
-                        ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix][iy][iz + 1],
-                        ((GRID_FLOAT_TYPE ***) ptgrid->array)[ix][iy][iz - 1],
-                        dx, dy, dz, iflag2D,
-                        &azim, &dip, &iqual);
-                if (angle_mode == ANGLE_MODE_YES) {
-                    ((GRID_FLOAT_TYPE ***) pagrid->array)[ix][iy][iz] = angles.fval;
-                } else if (angle_mode == ANGLE_MODE_INCLINATION) {
-                    ((GRID_FLOAT_TYPE ***) pagrid->array)[ix][iy][iz] = dip;
-                }
-
-            }
-            edge_flagy = 0;
-        }
-        edge_flagx = 0;
-    }
-
-
-    return (0);
-
-}
-
-/** function to generate take-off angles from time grid node values */
-
-TakeOffAngles GetGradientAngles(double vcent, double xlow, double xhigh,
-        double ylow, double yhigh, double zlow, double zhigh,
-        double dx, double dy, double dz, int iflag2D,
-        double *pazim, double *pdip, int *piqual) {
-
-    double grad_low, grad_high, gradx, grady, gradz, azim, dip;
-    int iqualx, iqualy, iqualz, iqual, iflip;
-    TakeOffAngles angles = AnglesNULL;
-
-
-
-    /* calculate gradient of travel time and quality in Z direction */
-    grad_low = (vcent - zlow) / dz;
-    grad_high = (zhigh - vcent) / dz;
-    iqualz = CalcAnglesQuality(grad_low, grad_high);
-    gradz = (grad_low + grad_high) / 2.0;
-    gradz = -gradz; /* reverse sign to get take-off angle */
-
-    /* calculate gradient of travel time and quality in Y direction */
-    grad_low = (vcent - ylow) / dy;
-    grad_high = (yhigh - vcent) / dy;
-    iqualy = CalcAnglesQuality(grad_low, grad_high);
-    grady = (grad_low + grad_high) / 2.0;
-    grady = -grady; /* reverse sign to get take-off angle */
-
-    /* thats all for 2D grids */
-    if (iflag2D) {
-        /* calculate dip angle (range of 0 (down) to 180 (up)) */
-        dip = atan2(grady, -gradz) / cRPD;
-        iflip = 0;
-        if (dip > 180.0) {
-            dip = dip - 180.0;
-            iflip = 1;
-        } else if (dip < 0.0) {
-            dip = -dip;
-            iflip = 1;
-        }
-        /* calculate azimuth polarity (1 or -1) relative to pos Y dir */
-        azim = iflip ? -1.0 : 1.0;
-        /* find combined quality - weighted average of component qual */
-        iqual = (fabs(grady) * (double) iqualy
-                + fabs(gradz) * (double) iqualz)
-                / (fabs(grady) + fabs(gradz));
-        /* set angles */
-        angles = SetTakeOffAngles(azim, dip, iqual);
-        *pazim = azim;
-        *pdip = dip;
-        *piqual = iqual;
-        return (angles);
-    }
-
-    /* calculate gradient of travel time and quality in X direction */
-    grad_low = (vcent - xlow) / dx;
-    grad_high = (xhigh - vcent) / dx;
-    iqualx = CalcAnglesQuality(grad_low, grad_high);
-    gradx = (grad_low + grad_high) / 2.0;
-    gradx = -gradx; /* reverse sign to get take-off angle */
-
-    /* find combined quality - weighted average of component qual */
-    iqual = (fabs(gradx) * (double) iqualx
-            + fabs(grady) * (double) iqualy
-            + fabs(gradz) * (double) iqualz)
-            / (fabs(gradx) + fabs(grady) + fabs(gradz));
-
-    /* calculate dip angle (range of 0 (down) to 180 (up)) */
-    dip = atan2(sqrt(gradx * gradx + grady * grady), -gradz) / cRPD;
-    /* calculate azimuth angle (0 to 360) */
-    azim = atan2(gradx, grady) / cRPD;
-    if (azim < 0.0)
-        azim += 360.0;
-    angles = SetTakeOffAngles(azim, dip, iqual);
-
-    // return double angles values
-    *pazim = azim;
-    *pdip = dip;
-    *piqual = iqual;
-
-    return (angles);
-
-}
-
-
-
-/** function to estimate quality of take-off angle determination */
-
-/* quality is:	0 if sign of A = grad_low and B = grad_high differ
-                0->10 as (2AB / (AA + BB)) -> 1;
- */
-
-int CalcAnglesQuality(double grad_low, double grad_high) {
-    double ratio;
-
-    /* if both gradients are zero, return highest quality */
-    if (fabs(grad_low) + fabs(grad_high) < SMALL_DOUBLE)
-        return (10);
-
-    /* calculate quality */
-    ratio = 2.0 * grad_low * grad_high /
-            (grad_low * grad_low + grad_high * grad_high);
-    return (ratio > 0.0 ? (int) (10.01 * ratio) : 0);
-
-}
-
 
 /*------------------------------------------------------------/ */
 /* Anthony Lomax           | email: lomax@faille.unice.fr     / */

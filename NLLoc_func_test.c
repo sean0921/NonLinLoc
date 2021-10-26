@@ -120,13 +120,20 @@ int main(int argc, char *argv[]) {
     /** ===========================================================================
      *  Loop over all observation files specified in command line
      */
+    int id_filename = 0;
     int narg;
-    for (narg = 2; narg < argc; narg++) {
+    for (narg = 1; narg < argc; narg++) {
+
+        if (narg == 1 && argc > 2) // observation file(s) specified on command line
+            continue;
 
         // obs file name
         char fn_obs[MAXLINE];
-        strcpy(fn_obs, argv[narg]);
-        sprintf(MsgStr, "========> Running overvatoin file: %d: %s", narg - 1, fn_obs);
+        if (narg == 1) // no observation files specified on command line
+            strcpy(fn_obs, "-");
+        else
+            strcpy(fn_obs, argv[narg]);
+        sprintf(MsgStr, "========> Running observation file: %d: %s", narg - 1, fn_obs);
         nll_putmsg(1, MsgStr);
 
         int n_param_lines = 0;
@@ -206,16 +213,27 @@ int main(int argc, char *argv[]) {
          *  A production program might scan and process these location results entirely in memory.
          */
 
-        int id = 0;
         LocNode* locNode = NULL;
         char frootname[FILENAME_MAX];
         char fname[FILENAME_MAX];
 
         // loop over returned location results
+        int id = 0;
         while ((locNode = getLocationFromLocList(loc_list_head, id)) != NULL) {
 
-            sprintf(frootname, "out/%3.3d", id);
+            sprintf(frootname, "out/%3.3d", id_filename);
             sprintf(fname, "%s.loc.hyp", frootname);
+
+            // NOTE: the angles in locNode->plocation->ellipsoid, ellipse and
+            //    phase/arrival angles in locNode->plocation->parrivals are in NLL internal coordinates
+            //    and must be transformed to geographic directions if there is a non-zero rotAngle in TRANS.
+            //    For example:
+            //          ellipsoid_az1 = rect2latlonAngle(0, phypo->ellipsoid.az1);
+            //          ellipsoid_az2 = rect2latlonAngle(0, phypo->ellipsoid.az2);
+            //    These two transformations ARE NOT applied in WriteLocation() used below!
+            //          sta_azim = rect2latlonAngle(0, parr->azim);
+            //          ray_azim = rect2latlonAngle(0, parr->ray_azim);
+            //    These two transformations ARE applied in WriteLocation() used below.
 
             // write NLLoc Hypocenter-Phase file to disk
             if ((istat = WriteLocation(NULL, locNode->plocation->phypo, locNode->plocation->parrivals,
@@ -259,6 +277,7 @@ int main(int argc, char *argv[]) {
             }
 
             id++;
+            id_filename++;
         }
 
         // clean up
@@ -268,10 +287,12 @@ int main(int argc, char *argv[]) {
         for (i = 0; i < n_param_lines; i++)
             free(param_line_array[i]);
         free(param_line_array);
+        param_line_array = NULL;
         n_param_lines = 0;
         for (i = 0; i < n_obs_lines; i++)
             free(obs_line_array[i]);
         free(obs_line_array);
+        obs_line_array = NULL;
         n_obs_lines = 0;
 
 
@@ -283,7 +304,6 @@ int main(int argc, char *argv[]) {
     return (istat);
 
 }
-
 
 
 

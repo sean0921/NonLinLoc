@@ -142,7 +142,9 @@
 /* Note : do NOT use option -Xs with Sun cc as this option UNDEFINES "sun" ! */
 #include <sunmath.h>
 #endif
+#ifndef INFINITY
 #define INFINITY    (GRID_FLOAT_TYPE)infinity()
+#endif
 #define ISINF(x)    isinf(x)
 #define NINT(x)     nint(x)
 #endif /* NO_IEEE_PROTOCOL */
@@ -363,24 +365,24 @@ int   NX,NY,NZ,MSG;*/
 }
 
 /*---------------------------- Time_3d_(): FORTRAN INTERFACE ---------------*/
- 
+
 int
 time_3d_(HS,T,NZ,NY,NX,ZS,YS,XS,HS_EPS_INIT,MSG)
- 
+
 /* All FORTRAN arguments are pointers. Dimensions X and Z are */
 /* swapped in order to fit FORTRAN mapping conventions.       */
 
 GRID_FLOAT_TYPE *HS,*T,*HS_EPS_INIT,*XS,*YS,*ZS;
 int   *NX,*NY,*NZ,*MSG;
- 
+
 {
     int     signal;
- 
+
     hs_buf=HS;
     t_buf=T;
     nx= *NX;
     ny= *NY;
-    nz= *NZ;   
+    nz= *NZ;
     fxs= *XS;
     fys= *YS;
     fzs= *ZS;
@@ -394,7 +396,7 @@ int   *NX,*NY,*NZ,*MSG;
         messages= -(*MSG);
     }
     else messages= *MSG;
- 
+
     if((signal=pre_init())==NO_ERROR){
         signal=propagate_point(init_point());
         free_ptrs(nx);
@@ -699,7 +701,7 @@ init_point()
         Z1=min(zs+INIT_MIN,nmesh_z);
     } /* otherwise, time_3d() is used recursively   */
       /* on a re-discretized (2*INIT_MIN+1)^3 cube. */
- 
+
     return(signal);
 
 }
@@ -773,10 +775,7 @@ init_nearest()
 /*------------------------------------------------Init_cell()---------------*/
 
 static void
-init_cell(vx, vy, vz, xl, yl, zl)
-
-GRID_FLOAT_TYPE vx, vy, vz;
-int xl, yl, zl;
+init_cell(GRID_FLOAT_TYPE vx, GRID_FLOAT_TYPE vy, GRID_FLOAT_TYPE vz, int xl, int yl, int zl)
 
 /* compute delays between floating source and nodes of current cell     */
 /* xl,yl,zl are current cell coordinates,                               */
@@ -1065,10 +1064,7 @@ int max_x;
 /*----------------------------------------- exact_delay() ------------------- */
 
 static GRID_FLOAT_TYPE
-exact_delay(vx, vy, vz, xm, ym, zm)
-
-GRID_FLOAT_TYPE vx, vy, vz;
-int xm, ym, zm;
+exact_delay(GRID_FLOAT_TYPE vx, GRID_FLOAT_TYPE vy, GRID_FLOAT_TYPE vz, int xm, int ym, int zm)
 
 {
     GRID_FLOAT_TYPE estimate;
@@ -1083,9 +1079,7 @@ int xm, ym, zm;
 
 /*------------------------------------- (Direct arrival from first neighbour) */
 static int
-t_1d(x, y, z, t0, hs0, hs1, hs2, hs3)
-int x, y, z;
-GRID_FLOAT_TYPE t0, hs0, hs1, hs2, hs3;
+t_1d(int x, int y, int z, GRID_FLOAT_TYPE t0, GRID_FLOAT_TYPE hs0, GRID_FLOAT_TYPE hs1, GRID_FLOAT_TYPE hs2, GRID_FLOAT_TYPE hs3)
 {
     GRID_FLOAT_TYPE estimate;
     estimate = t0 + min4(hs0, hs1, hs2, hs3);
@@ -1100,9 +1094,7 @@ GRID_FLOAT_TYPE t0, hs0, hs1, hs2, hs3;
 
 /*------------------------------------ (Direct arrival from second neighbour) */
 static int
-diff_2d(x, y, z, t0, hs0, hs1)
-int x, y, z;
-GRID_FLOAT_TYPE t0, hs0, hs1;
+diff_2d(int x, int y, int z, GRID_FLOAT_TYPE t0, GRID_FLOAT_TYPE hs0, GRID_FLOAT_TYPE hs1)
 {
     GRID_FLOAT_TYPE estimate;
     estimate = t0 + M_SQRT2 * min(hs0, hs1);
@@ -1117,9 +1109,7 @@ GRID_FLOAT_TYPE t0, hs0, hs1;
 
 /*------------------------------------- (Direct arrival from third neighbour) */
 static int
-point_diff(x, y, z, t0, hs0)
-int x, y, z;
-GRID_FLOAT_TYPE t0, hs0;
+point_diff(int x, int y, int z, GRID_FLOAT_TYPE t0, GRID_FLOAT_TYPE hs0)
 {
     GRID_FLOAT_TYPE estimate;
     estimate = t0 + hs0*M_SQRT3;
@@ -1134,9 +1124,7 @@ GRID_FLOAT_TYPE t0, hs0;
 
 /*----------------------------------------- (Arrival from coplanar mesh edge) */
 static int
-t_2d(x, y, z, t0, t1, hs0, hs1)
-int x, y, z;
-GRID_FLOAT_TYPE t0, t1, hs0, hs1;
+t_2d(int x, int y, int z, GRID_FLOAT_TYPE t0, GRID_FLOAT_TYPE t1, GRID_FLOAT_TYPE hs0, GRID_FLOAT_TYPE hs1)
 {
     GRID_FLOAT_TYPE estimate, dt, hsm, test2, u2;
     dt = t1 - t0;
@@ -1159,10 +1147,7 @@ GRID_FLOAT_TYPE t0, t1, hs0, hs1;
 
 /*------------------------------------- (Arrival from non-coplanar mesh edge) */
 static int
-edge_diff(x, y, z, t0, t1, hs0)
-int x, y, z;
-GRID_FLOAT_TYPE t0, t1, hs0;
-
+edge_diff(int x, int y, int z, GRID_FLOAT_TYPE t0, GRID_FLOAT_TYPE t1, GRID_FLOAT_TYPE hs0)
 {
     GRID_FLOAT_TYPE estimate, u2, test2, dt;
     dt = t1 - t0;
@@ -1188,9 +1173,7 @@ GRID_FLOAT_TYPE t0, t1, hs0;
 #define t_3d_part2(x,y,z,a,b,c,d,e)  t_3d_(x,y,z,a,b,c,d,e,1)
 
 static int
-t_3d_(x, y, z, t0, tl, tr, td, hs0, redundant)
-GRID_FLOAT_TYPE t0, tl, tr, td, hs0;
-int x, y, z, redundant;
+t_3d_(int x, int y, int z, GRID_FLOAT_TYPE t0, GRID_FLOAT_TYPE tl, GRID_FLOAT_TYPE tr, GRID_FLOAT_TYPE td, GRID_FLOAT_TYPE hs0, int redundant)
 /* The current point is in diagonal position with respect to t0     */
 /* and it is a first neighbour of td. tl,tr are second neighbours.  */
 /* One of these estimators is redundant during first step of *_side */
@@ -1258,9 +1241,7 @@ int x, y, z, redundant;
 
 /* principle. (See "a-causal" step in *_side() functions; 18/07/91)     */
 static int
-t_3d_part1(x, y, z, t0, tl, tr, hs0)
-int x, y, z;
-GRID_FLOAT_TYPE t0, tl, tr, hs0;
+t_3d_part1(int x, int y, int z, GRID_FLOAT_TYPE t0, GRID_FLOAT_TYPE tl, GRID_FLOAT_TYPE tr, GRID_FLOAT_TYPE hs0)
 /* The current point is a first neighbour of t0; tl,tr are two other */
 /* first neighbours of t0. Transmission through 0-l-r is tested.     */
 {
