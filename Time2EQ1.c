@@ -143,6 +143,7 @@ main(int argc, char *argv[])
 	time2eq_mode = MODE_SRCE_TO_STA;
 	VpVsRatio = -1.0;
 
+	grid0.iSwapBytes = 0;
 
 
 	/* initialize random number generator */
@@ -257,7 +258,7 @@ main(int argc, char *argv[])
 					(Station + nsta)->phs[0].label,
 					(Station + nsta)->label);
 				if ((istat = OpenGrid3dFile(filename, &fp_time_grid,
-						&fp_time_hdr, &grid0, "time", &srce0))
+						&fp_time_hdr, &grid0, "time", &srce0, grid0.iSwapBytes))
 							< 0) {
 					CloseGrid3dFile(&fp_time_grid, &fp_time_hdr);
 					puterr2("ERROR: opening time grid files",
@@ -406,7 +407,7 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid,
 		/* 3D grid */
 		if (ReadTakeOffAnglesFile(filename,
 				pevent->x, pevent->y, pevent->z,
-				&ray_azim, &ray_dip, &ray_qual, -1.0) < 0)
+				&ray_azim, &ray_dip, &ray_qual, -1.0, ptgrid->iSwapBytes) < 0)
 			return(0);
 	} else {
 		/* 2D grid (1D model) */
@@ -414,7 +415,7 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid,
 		azim = GetEpiAzimSta(psta, pevent->x, pevent->y);
 		if (ReadTakeOffAnglesFile(filename,
 				0.0, yval_grid, pevent->z,
-				&ray_azim, &ray_dip, &ray_qual, azim) < 0)
+				&ray_azim, &ray_dip, &ray_qual, azim, ptgrid->iSwapBytes) < 0)
 			return(0);
 	}
 

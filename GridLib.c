@@ -216,6 +216,7 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 	char chr1, chr2, coord_type[MAXLINE];
 	double val1, val1a, val1b, val2, val2a, val2b, val3, val4;
 	double sign;
+	char label[10 * ARRIVAL_LABEL_LEN];
 
 
 	/* initialize some source fields */
@@ -233,10 +234,11 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 	if (strncmp(coord_type, "XYZ", 3) == 0)
 	{
 		istat = sscanf(in_line, "%s %s %lf %lf %lf %lf",
-			srce_in->label,
+			label,
 			coord_type, &val1, &val2, &val3, &val4);
 		if (istat != 6)
 			return(-1);
+		strncpy(srce_in->label, label, ARRIVAL_LABEL_LEN - 1);
 		srce_in->is_coord_xyz = 1;
 		srce_in->x = val1;
 		srce_in->y = val2;
@@ -250,8 +252,9 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 	}
 	else if (strcmp(coord_type, "LATLON") == 0)
 	{
-		istat = sscanf(in_line, "%s %s %lf %lf %lf %lf", srce_in->label,
+		istat = sscanf(in_line, "%s %s %lf %lf %lf %lf", label,
 			coord_type, &val1, &val2, &val3, &val4);
+		strncpy(srce_in->label, label, ARRIVAL_LABEL_LEN - 1);
 		srce_in->dlat = val1;
 		srce_in->dlong = val2;
 		srce_in->depth = val3 - val4;
@@ -276,8 +279,9 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 	{
 		istat = sscanf(in_line,
 				"%s %s %lf %lf %c %lf %lf %c %lf %lf",
-			srce_in->label, coord_type, &val1, &val1a, &chr1,
+			label, coord_type, &val1, &val1a, &chr1,
 			&val2, &val2a, &chr2, &val3, &val4);
+		strncpy(srce_in->label, label, ARRIVAL_LABEL_LEN - 1);
 		if ((toupper(chr1) != 'N' && toupper(chr1) != 'S')
 				|| (toupper(chr2) != 'E' && toupper(chr2) != 'W'))
 			return(-1);
@@ -307,9 +311,10 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 	{
 		istat = sscanf(in_line,
 				"%s %s %lf %lf %lf %c %lf %lf %lf %c %lf %lf",
-			srce_in->label, coord_type,
+			label, coord_type,
 			&val1, &val1a, &val1b, &chr1,
 			&val2, &val2a, &val2b, &chr2, &val3, &val4);
+		strncpy(srce_in->label, label, ARRIVAL_LABEL_LEN - 1);
 		if ((toupper(chr1) != 'N' && toupper(chr1) != 'S')
 				|| (toupper(chr2) != 'E' && toupper(chr2) != 'W'))
 			return(-1);
@@ -349,6 +354,21 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 
 
 
+/** function to find source from label */
+
+SourceDesc* FindSource(char* label)
+{
+	int nsrce;
+
+	for (nsrce = 0; nsrce < NumSources; nsrce++) {
+		if(strncmp((Source + nsrce)->label, label, ARRIVAL_LABEL_LEN) == 0)
+			return(Source + nsrce);
+	}
+	return(NULL);
+}
+
+
+
 /*** function to read map transformation parameters from input line ***/
 
 int get_transform(int n_proj, char* in_line)
@@ -358,12 +378,38 @@ int get_transform(int n_proj, char* in_line)
 
 
 	map_itype[n_proj] = MAP_TRANS_UNDEF;
+	GeometryMode = MODE_RECT;
 
 	/* read transform input line */
 
 	sscanf(in_line, "%s", map_trans_type[n_proj]);
 
-	if (strcmp(map_trans_type[n_proj], "SIMPLE") == 0) {
+	if (strcmp(map_trans_type[n_proj], "GLOBAL") == 0) {
+
+		// mode
+		GeometryMode = MODE_GLOBAL;
+
+		map_itype[n_proj] = MAP_TRANS_GLOBAL;
+		istat = sscanf(in_line, "%s",
+			map_trans_type[n_proj]);
+
+		angle = 0.0;
+		map_cosang[n_proj] = cos(angle);
+		map_sinang[n_proj] = sin(angle);
+
+		sprintf(MapProjStr[n_proj],
+			"TRANSFORM  %s",
+			map_trans_type[n_proj]);
+		putmsg(3, MapProjStr[n_proj]);
+
+		ierr = 0;
+		if (ierr < 0 || istat != 1) {
+			puterr("ERROR: reading GLOBAL transformation parameters");
+			return(-1);
+		}
+
+
+	} else if (strcmp(map_trans_type[n_proj], "SIMPLE") == 0) {
 
 		map_itype[n_proj] = MAP_TRANS_SIMPLE;
 		istat = sscanf(in_line, "%s %lf %lf %lf",
@@ -812,23 +858,23 @@ int SumGrids(GridDesc* pgrid_sum, GridDesc* pgrid_new, FILE* fp_grid_new)
 /* return 1 if within tolerance of boundary, return 0 otherwise */
 
 int isOnGridBoundary(double xloc, double yloc, double zloc, GridDesc* pgrid,
-	double tolerance)
+	double tolerance_xy, double tolerance_z, int i_check_top)
 {
 
-	if (fabs(xloc - pgrid->origx) <= tolerance)
+	if (fabs(xloc - pgrid->origx) <= tolerance_xy)
 		return(1);
 	if (fabs(xloc - (pgrid->origx + (double) (pgrid->numx - 1) * pgrid->dx))
-			<= tolerance)
+			<= tolerance_xy)
 		return(1);
-	if (fabs(yloc - pgrid->origy) <= tolerance)
+	if (fabs(yloc - pgrid->origy) <= tolerance_xy)
 		return(1);
 	if (fabs(yloc - (pgrid->origy + (double) (pgrid->numy - 1) * pgrid->dy))
-			<= tolerance)
+			<= tolerance_xy)
 		return(1);
-	if (fabs(zloc - pgrid->origz) <= tolerance)
+	if (i_check_top && fabs(zloc - pgrid->origz) <= tolerance_z)
 		return(1);
 	if (fabs(zloc - (pgrid->origz + (double) (pgrid->numz - 1) * pgrid->dz))
-			<= tolerance)
+			<= tolerance_z)
 		return(1);
 
 	return(0);
@@ -939,6 +985,12 @@ int IsGrid2DBigEnough(GridDesc* pgrid_3D, GridDesc* pgrid_2D,
 	double ymin, ymax, zmin, zmax;
 
 
+	// GLOBAL
+	if (GeometryMode == MODE_GLOBAL) {
+		return(1);	//INGV do not worry about grid size
+	}
+
+
 	/* check distance from grid location xcent, ycent */
 	if (dist_horiz_max > SMALL_DOUBLE) {
 		if ((distance = GetEpiDist(station, xcent, ycent))
@@ -963,6 +1015,10 @@ int IsGrid2DBigEnough(GridDesc* pgrid_3D, GridDesc* pgrid_2D,
 	zmin_in = pgrid_3D->origz;
 	zmax_in = pgrid_3D->origz +
 		(double) (pgrid_3D->numz - 1) * pgrid_3D->dz;
+
+	// adjust for GLOBAL (grid units = deg, GetEpiDist units = km)
+	if (GeometryMode == MODE_GLOBAL)
+		extent_horiz /= KM2DEG;
 
 	/* check each horizontal corner */
 	if ((distance = GetEpiDist(station, xmin_in, ymin_in)) > extent_horiz)
@@ -990,10 +1046,13 @@ INLINE double GetEpiDist(SourceDesc* psrce, double xval, double yval)
 {
 	double xtmp, ytmp;
 
-	xtmp = xval - psrce->x;
-	ytmp = yval - psrce->y;
-
-	return(sqrt(xtmp * xtmp + ytmp * ytmp));
+	if (GeometryMode == MODE_GLOBAL) {
+		return(GCDistance(yval, xval, psrce->y, psrce->x));
+	} else {
+		xtmp = xval - psrce->x;
+		ytmp = yval - psrce->y;
+		return(sqrt(xtmp * xtmp + ytmp * ytmp));
+	}
 }
 
 
@@ -1005,10 +1064,13 @@ INLINE double GetEpiDistSta(StationDesc* psta, double xval, double yval)
 {
 	double xtmp, ytmp;
 
-	xtmp = xval - psta->x;
-	ytmp = yval - psta->y;
-
-	return(sqrt(xtmp * xtmp + ytmp * ytmp));
+	if (GeometryMode == MODE_GLOBAL) {
+		return(GCDistance(yval, xval, psta->y, psta->x));
+	} else {
+		xtmp = xval - psta->x;
+		ytmp = yval - psta->y;
+		return(sqrt(xtmp * xtmp + ytmp * ytmp));
+	}
 }
 
 
@@ -1020,14 +1082,16 @@ double GetEpiAzim(SourceDesc* psrce, double xval, double yval)
 {
 	double xtmp, ytmp, azim;
 
-	xtmp = psrce->x - xval;
-	ytmp = psrce->y - yval;
-
-	azim = atan2(xtmp, ytmp) / rpd;
-	if (azim < 0.0)
-		azim += 360.0;
-
-	return(azim);
+	if (GeometryMode == MODE_GLOBAL) {
+		return(GCAzimuth(yval, xval, psrce->y, psrce->x));
+	} else {
+		xtmp = psrce->x - xval;
+		ytmp = psrce->y - yval;
+		azim = atan2(xtmp, ytmp) / rpd;
+		if (azim < 0.0)
+			azim += 360.0;
+		return(azim);
+	}
 }
 
 
@@ -1038,14 +1102,16 @@ double GetEpiAzimSta(StationDesc* psta, double xval, double yval)
 {
 	double xtmp, ytmp, azim;
 
-	xtmp = psta->x - xval;
-	ytmp = psta->y - yval;
-
-	azim = atan2(xtmp, ytmp) / rpd;
-	if (azim < 0.0)
-		azim += 360.0;
-
-	return(azim);
+	if (GeometryMode == MODE_GLOBAL) {
+		return(GCAzimuth(yval, xval, psta->y, psta->x));
+	} else {
+		xtmp = psta->x - xval;
+		ytmp = psta->y - yval;
+		azim = atan2(xtmp, ytmp) / rpd;
+		if (azim < 0.0)
+			azim += 360.0;
+		return(azim);
+	}
 }
 
 
@@ -1119,7 +1185,11 @@ int WriteGrid3dHdr(GridDesc* pgrid, SourceDesc* psrce,
 
 	/* write header file */
 
-	sprintf(fname, "%s.%s.hdr", filename, file_type);
+	if (file_type != NULL)
+		sprintf(fname, "%s.%s.hdr", filename, file_type);
+	else
+		sprintf(fname, "%s.hdr", filename);
+
 	if ((fpio = fopen(fname, "w")) == NULL) {
 		puterr("ERROR: opening grid output header file.");
 		return(-1);
@@ -1135,6 +1205,8 @@ int WriteGrid3dHdr(GridDesc* pgrid, SourceDesc* psrce,
 		|| pgrid->type == GRID_ANGLE || pgrid->type == GRID_ANGLE_2D)
 		fprintf(fpio, "%s %lf %lf %lf\n",
 			psrce->label, psrce->x, psrce->y, psrce->z);
+
+	fprintf(fpio, "%s\n", MapProjStr[0]);
 
 
 	fclose(fpio);
@@ -1199,7 +1271,7 @@ int ReadGrid3dBuf(GridDesc* pgrid, FILE* fpio)
 	/* read from grid file to buffer */
 
 	if (fread((char *) pgrid->buffer, readsize, 1, fpio) != 1) {
-		puterr("ERROR: reading grid file.");
+		puterr2("ERROR: reading grid file", pgrid->title);
 		return(-1);
 	}
 
@@ -1303,7 +1375,7 @@ int ReadGrid3dHdr(GridDesc* pgrid, SourceDesc* psrce,
 /*** function to open grid file and read header ***/
 
 int OpenGrid3dFile(char *fname, FILE **fp_grid, FILE **fp_hdr,
-		GridDesc* pgrid, char* file_type, SourceDesc* psrce)
+		GridDesc* pgrid, char* file_type, SourceDesc* psrce, int iSwapBytes)
 {
 
 	char fn_grid[FILENAME_MAX], fn_hdr[FILENAME_MAX];
@@ -1340,11 +1412,15 @@ int OpenGrid3dFile(char *fname, FILE **fp_grid, FILE **fp_hdr,
 
 	/* read header file */
 
-	pgrid->iSwapBytes = 0;
+	pgrid->iSwapBytes = iSwapBytes;
 	fscanf(*fp_hdr, "%d %d %d  %lf %lf %lf  %lf %lf %lf  %s\n",
 		&(pgrid->numx), &(pgrid->numy), &(pgrid->numz),
 		&(pgrid->origx), &(pgrid->origy), &(pgrid->origz),
 		&(pgrid->dx), &(pgrid->dy), &(pgrid->dz), pgrid->chr_type);
+
+	// make sure that dx for 2D grids is non-zero
+	if (pgrid->numx == 1)
+		pgrid->dx = 1.0;
 
 
 	convert_grid_type(pgrid);
@@ -1356,6 +1432,8 @@ int OpenGrid3dFile(char *fname, FILE **fp_grid, FILE **fp_hdr,
 		fscanf(*fp_hdr, "%s %lf %lf %lf\n",
 			psrce->label, &(psrce->x), &(psrce->y), &(psrce->z));
 
+	// save filename as grid identifier
+	strcpy(pgrid->title, fname);
 
 	return(0);
 
@@ -1410,7 +1488,7 @@ INLINE float ReadGrid3dValue(FILE *fpgrid, int ix, int iy, int iz,
 		fseek(fpgrid, offset, SEEK_SET);
 		/* read fvalue */
 		if (fread(&fvalue, sizeof(float), 1, fpgrid) != 1) {
-			puterr("ERROR: reading grid file.");
+			puterr2("ERROR: reading grid file", pgrid->title);
 			return(-VERY_LARGE_FLOAT);
 		}
 		if (pgrid->iSwapBytes)
@@ -1550,14 +1628,20 @@ if (zdiff < 0.0 || zdiff > 1.0)
 
 	/* interpolate values */
 
-	if (pgrid->type == GRID_ANGLE || pgrid->type == GRID_ANGLE_2D)
+	if (pgrid->type == GRID_ANGLE || pgrid->type == GRID_ANGLE_2D) {
 		value = InterpCubeAngles(xdiff, ydiff, zdiff,
 			vval000, vval001, vval010, vval011,
 			vval100, vval101, vval110, vval111);
-	else
+	} else {
+// INGV
+// check for invalid / mask nodes
+if (vval000 < 0.0 || vval010 < 0.0 || vval100 < 0.0 || vval110 < 0.0
+ || vval001 < 0.0 || vval011 < 0.0 || vval101 < 0.0 || vval111 < 0.0)
+	return(-VERY_LARGE_DOUBLE);
 		value = InterpCubeLagrange(xdiff, ydiff, zdiff,
 			vval000, vval001, vval010, vval011,
 			vval100, vval101, vval110, vval111);
+	}
 
 
 	return(value);
@@ -1704,6 +1788,12 @@ INLINE DOUBLE ReadAbsInterpGrid2d(FILE *fpgrid, GridDesc* pgrid,
 	ydiff = yoff - (DOUBLE) iy0;
 	zdiff = zoff - (DOUBLE) iz0;
 
+//INGV
+if (iy0 < 0 || iy1 >= pgrid->numy )
+	return(-VERY_LARGE_DOUBLE);
+if (iz0 < 0 || iz1 >= pgrid->numz )
+	return(-VERY_LARGE_DOUBLE);
+
 if (ydiff < 0.0 || ydiff > 1.0)
 	return(-VERY_LARGE_DOUBLE);
 if (zdiff < 0.0 || zdiff > 1.0)
@@ -1734,6 +1824,11 @@ if (zdiff < 0.0 || zdiff > 1.0)
 		vval10 = pgrid->array[ix0][iy1][iz0];
 		vval11 = pgrid->array[ix0][iy1][iz1];
 	}
+
+// INGV
+// check for invalid / mask nodes
+if (vval00 < 0.0 || vval01 < 0.0 || vval10 < 0.0 || vval11 < 0.0)
+	return(-VERY_LARGE_DOUBLE);
 
 	/* interpolate values */
 
@@ -1773,6 +1868,34 @@ int WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 		int narrivals, char* filename,
 		int iWriteArrivals, int iWriteEndLoc, int iWriteMinimal,
 		GridDesc* pgrid, int n_proj)
+{
+	return(_WriteLocation(fpio, phypo, parrivals,
+		narrivals, filename,
+		iWriteArrivals, iWriteEndLoc,iWriteMinimal,
+		pgrid, n_proj, IO_ARRIVAL_ALL));
+}
+
+
+/*** function to write arrivals to output */
+
+int WritePhases(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
+		int narrivals, char* filename,
+		int iWriteArrivals, int iWriteEndLoc, int iWriteMinimal,
+		GridDesc* pgrid, int n_proj, int io_arrival_mode)
+{
+	return(_WriteLocation(fpio, phypo, parrivals,
+		narrivals, filename,
+		iWriteArrivals, iWriteEndLoc,iWriteMinimal,
+		pgrid, n_proj, io_arrival_mode));
+}
+
+
+/*** function to write hypocenter/arrivals to output */
+
+int _WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
+		int narrivals, char* filename,
+		int iWriteArrivals, int iWriteEndLoc, int iWriteMinimal,
+		GridDesc* pgrid, int n_proj, int io_arrival_mode)
 {
 
 	int istat, ifile = 0, narr;
@@ -1817,7 +1940,8 @@ int WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 		phypo->ix, phypo->iy, phypo->iz);
     }
 	fprintf(fpio,
-"GEOGRAPHIC  OT %4.4d %2.2d %2.2d  %2.2d %2.2d %lf  Lat %lf Long %lf Depth %lf\n",
+"GEOGRAPHIC  OT %4.4d %2.2d %2.2d  %2.2d %2.2d %9.6lf  Lat %lf Long %lf Depth %lf\n",
+//"GEOGRAPHIC  OT %4.4d %2.2d %2.2d  %2.2d %2.2d %lf  Lat %lf Long %lf Depth %lf\n",
 		phypo->year, phypo->month, phypo->day,
 		phypo->hour, phypo->min, (double) phypo->sec,
 		phypo->dlat, phypo->dlong, phypo->depth);
@@ -1868,10 +1992,15 @@ int WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 	if (iWriteArrivals) {
 
 		fprintf(fpio,
-"PHASE ID Ins Cmp On Pha  FM Date     HrMn   Sec     Err  ErrMag    Coda      Amp       Per      >   TTpred    Res       Weight    StaLoc(X  Y         Z)        SDist    SAzim  RAz   RDip  RQual\n");
+"PHASE ID Ins Cmp On Pha  FM Date     HrMn   Sec     Err  ErrMag    Coda      Amp       Per");
+		if (io_arrival_mode == IO_ARRIVAL_ALL)
+			fprintf(fpio,
+"      >   TTpred    Res       Weight    StaLoc(X  Y         Z)        SDist    SAzim  RAz   RDip  RQual\n");
+		else
+			fprintf(fpio, "\n");
 		for (narr = 0; narr < narrivals; narr++) {
 			parr = parrivals + narr;
-			WriteArrival(fpio, parr, IO_ARRIVAL_ALL);
+			WriteArrival(fpio, parr, io_arrival_mode);
 		}
 		fprintf(fpio, "END_PHASE\n");
 	}
@@ -2210,12 +2339,13 @@ int ReadArrival(char* line, ArrivalDesc* parr, int iReadType)
 	int istat;
 	long int idate, ihrmin;
 	char *line_calc;
+	char label[10 * ARRIVAL_LABEL_LEN];
 
 
 	/* read observation part of phase line */
 
 	istat = sscanf(line, "%s %s %s %s %s %s %ld %ld %lf %s %lf %lf %lf %lf",
-				parr->label,
+				label,
 				parr->inst,
 				parr->comp,
 				parr->onset,
@@ -2229,6 +2359,25 @@ int ReadArrival(char* line, ArrivalDesc* parr, int iReadType)
 				&(parr->amplitude),
 				&(parr->period)
 		);
+
+	strncpy(parr->label, label, ARRIVAL_LABEL_LEN - 1);
+/*printf("%s %s %s %s %s %s %ld %ld %lf %s %lf %lf %lf %lf\n",
+	parr->label,
+	parr->inst,
+	parr->comp,
+	parr->onset,
+	parr->phase,
+	parr->first_mot,
+	//&parr->quality,
+	idate, ihrmin,
+	(parr->sec),
+	parr->error_type, &parr->error,
+	(parr->coda_dur),
+	(parr->amplitude),
+	(parr->period)
+);
+*/
+
 	if (istat == EOF)
 		return(istat);
 	if (istat != 14)
@@ -2288,7 +2437,7 @@ int WriteArrival(FILE* fpio, ArrivalDesc* parr, int iWriteType)
 	int istat;
 	long int idate, ihrmin;
 	char *line_calc;
-	double ray_azim;
+	double sta_azim, ray_azim;
 
 
 	/* code data and time integers */
@@ -2322,6 +2471,7 @@ int WriteArrival(FILE* fpio, ArrivalDesc* parr, int iWriteType)
 
 		/* convert ray aziumuth to geographic direction */
 
+		sta_azim = rect2latlonAngle(0, parr->azim);
 		ray_azim = rect2latlonAngle(0, parr->ray_azim);
 
 		/* write calculated part of phase line */
@@ -2332,7 +2482,7 @@ int WriteArrival(FILE* fpio, ArrivalDesc* parr, int iWriteType)
 				parr->weight,
 				parr->station.x, parr->station.y,
 				parr->station.z,
-				parr->dist, parr->azim,
+				parr->dist, sta_azim,
 				ray_azim, parr->ray_dip, parr->ray_qual
 				);
 
@@ -2416,7 +2566,19 @@ double getGMTJVAL(int n_proj, char* jval_string, double xlen, double vxmax, doub
 
 	jval_string[0] = '\0';
 
-	if (map_itype[n_proj] == MAP_TRANS_SIMPLE) {
+	if (map_itype[n_proj] == MAP_TRANS_GLOBAL) {
+
+		/* -Jmscale or -JMwidth (Mercator [C])
+                   Give scale along equator (1:xxxx or inch/degree).
+		*/
+
+		gmt_scale = xlen / (vxmax - vxmin);
+
+		sprintf(jval_string, "-Jm%lf", gmt_scale);
+
+		return(gmt_scale);
+
+	} else if (map_itype[n_proj] == MAP_TRANS_SIMPLE) {
 
 		/* -Jmscale or -JMwidth (Mercator [C])
                    Give scale along equator (1:xxxx or inch/degree).
@@ -2483,7 +2645,12 @@ INLINE int latlon2rect(int n_proj, double dlat, double dlong, double* pxrect, do
 	double xtemp, ytemp;
 
 
-	if (map_itype[n_proj] == MAP_TRANS_SIMPLE) {
+	if (map_itype[n_proj] == MAP_TRANS_GLOBAL) {
+		*pxrect = dlong;
+		*pyrect = dlat;
+		return(0);
+
+	} else if (map_itype[n_proj] == MAP_TRANS_SIMPLE) {
 		xtemp = dlong - map_orig_long[n_proj];
 		if (xtemp > 180.0)
 			xtemp -= 360.0;
@@ -2519,7 +2686,15 @@ INLINE int rect2latlon(int n_proj, double xrect, double yrect, double* pdlat, do
 
 	double xtemp, ytemp;
 
-	if (map_itype[n_proj] == MAP_TRANS_SIMPLE) {
+	if (map_itype[n_proj] == MAP_TRANS_GLOBAL) {
+		xtemp = xrect * map_cosang[n_proj] + yrect * map_sinang[n_proj];
+		ytemp = yrect * map_cosang[n_proj] - xrect * map_sinang[n_proj];
+		*pdlat = yrect;
+		*pdlong = xrect;
+
+		return(0);
+
+	} else if (map_itype[n_proj] == MAP_TRANS_SIMPLE) {
 		xtemp = xrect * map_cosang[n_proj] + yrect * map_sinang[n_proj];
 		ytemp = yrect * map_cosang[n_proj] - xrect * map_sinang[n_proj];
 		*pdlat = map_orig_lat[n_proj] + ytemp / c111;
@@ -2545,9 +2720,16 @@ INLINE int rect2latlon(int n_proj, double xrect, double yrect, double* pdlat, do
 
 INLINE double rect2latlonAngle(int n_proj, double rectAngle)
 {
-	if (map_itype[n_proj] == MAP_TRANS_SIMPLE || map_itype[n_proj] == MAP_TRANS_LAMBERT)
-		return(rectAngle - map_rot[n_proj]);
-	else
+	double angle;
+
+	if (map_itype[n_proj] == MAP_TRANS_SIMPLE || map_itype[n_proj] == MAP_TRANS_LAMBERT) {
+		angle = rectAngle - map_rot[n_proj];
+		if (angle < 0.0)
+			angle += 360.0;
+		else if (angle > 360.0)
+			angle -= 360.0;
+		return(angle);
+	} else
 		return(rectAngle);
 }
 
@@ -2557,9 +2739,16 @@ INLINE double rect2latlonAngle(int n_proj, double rectAngle)
 
 INLINE double latlon2rectAngle(int n_proj, double latlonAngle)
 {
-	if (map_itype[n_proj] == MAP_TRANS_SIMPLE || map_itype[n_proj] == MAP_TRANS_LAMBERT)
-		return(latlonAngle + map_rot[n_proj]);
-	else
+	double angle;
+
+	if (map_itype[n_proj] == MAP_TRANS_SIMPLE || map_itype[n_proj] == MAP_TRANS_LAMBERT) {
+		angle = latlonAngle + map_rot[n_proj];
+		if (angle < 0.0)
+			angle += 360.0;
+		else if (angle > 360.0)
+			angle -= 360.0;
+		return(angle);
+	} else
 		return(latlonAngle);
 }
 
@@ -2620,6 +2809,50 @@ int SetModelCoordsMode(int num_surfaces)
 }
 
 
+
+
+/*** date functions */
+
+
+/*** function to convert character month to integer month */
+
+int Month2Int(char* cmonth)
+{
+	int i;
+
+	for (i = 0; i < strlen(cmonth); i++)
+		cmonth[i] = toupper(cmonth[i]);
+
+	if (strcmp(cmonth, "JAN") == 0)
+		return(1);
+	if (strcmp(cmonth, "FEB") == 0)
+		return(2);
+	if (strcmp(cmonth, "MAR") == 0)
+		return(3);
+	if (strcmp(cmonth, "APR") == 0)
+		return(4);
+	if (strcmp(cmonth, "MAY") == 0)
+		return(5);
+	if (strcmp(cmonth, "JUN") == 0)
+		return(6);
+	if (strcmp(cmonth, "JUL") == 0)
+		return(7);
+	if (strcmp(cmonth, "AUG") == 0)
+		return(8);
+	if (strcmp(cmonth, "SEP") == 0)
+		return(9);
+	if (strcmp(cmonth, "OCT") == 0)
+		return(10);
+	if (strcmp(cmonth, "NOV") == 0)
+		return(11);
+	if (strcmp(cmonth, "DEC") == 0)
+		return(12);
+
+	puterr2("ERROR: unrecognized charcter month", cmonth);
+
+	return(0);
+
+}
 
 
 /*** date functions */
@@ -2873,7 +3106,7 @@ int GetTakeOffAngles(TakeOffAngles *pangles,
 /*** function to read take-off angles from file */
 
 int ReadTakeOffAnglesFile(char *fname, double xloc, double yloc, double zloc,
-		double *pazim, double *pdip, int *piqual, double sta_azim)
+		double *pazim, double *pdip, int *piqual, double sta_azim, int iSwapBytes)
 {
 	int istat;
 	FILE *fp_grid, *fp_hdr;
@@ -2881,10 +3114,9 @@ int ReadTakeOffAnglesFile(char *fname, double xloc, double yloc, double zloc,
 	GridDesc gdesc;
 	TakeOffAngles angles;
 
-
 	/* open angle grid file */
 	if ((istat =  OpenGrid3dFile(fname, &fp_grid, &fp_hdr,
-			&gdesc, "angle", NULL)) < 0) {
+			&gdesc, "angle", NULL, iSwapBytes)) < 0) {
 		putmsg(3,
 "WARNING: cannot open angle grid file, ignoring angles.");
 		angles = SetTakeOffAngles(0.0, 0.0, 0);
@@ -3159,6 +3391,20 @@ Vect3D CalcExpectationSamples(float* fdata, int nSamples)
 Mtrx3D CalcCovarianceSamples(float* fdata, int nSamples, Vect3D* pexpect)
 {
 
+	if (GeometryMode == MODE_GLOBAL)
+		return(CalcCovarianceSamplesGlobal(fdata, nSamples, pexpect));
+	else
+		return(CalcCovarianceSamplesRect(fdata, nSamples, pexpect));
+
+}
+
+
+
+/** function to calculate the covariance of a set of samples */
+
+Mtrx3D CalcCovarianceSamplesRect(float* fdata, int nSamples, Vect3D* pexpect)
+{
+
 	int nsamp, ipos;
 
 	float x, y, z, prob;
@@ -3192,6 +3438,55 @@ Mtrx3D CalcCovarianceSamples(float* fdata, int nSamples, Vect3D* pexpect)
 	cov.yx = cov.xy;
 	cov.yy = cov.yy / (double) nSamples - pexpect->y * pexpect->y;
 	cov.yz = cov.yz / (double) nSamples - pexpect->y * pexpect->z;
+
+	cov.zx = cov.xz;
+	cov.zy = cov.yz;
+	cov.zz = cov.zz / (double) nSamples - pexpect->z * pexpect->z;
+
+
+	return(cov);
+}
+
+
+
+/** function to calculate the covariance of a set of samples in long(deg)/lat(deg)/depth(km) coordinates */
+
+Mtrx3D CalcCovarianceSamplesGlobal(float* fdata, int nSamples, Vect3D* pexpect)
+{
+
+	int nsamp, ipos;
+
+	float x, y, z, prob;
+	Mtrx3D cov = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+
+	/* calculate covariance following eq. (6-12), T & V, 1982 */
+
+	ipos = 0;
+	for (nsamp = 0; nsamp < nSamples; nsamp++) {
+		x = fdata[ipos++] * DEG2KM;
+		y = fdata[ipos++] * DEG2KM;
+		z = fdata[ipos++];
+		prob = fdata[ipos++];
+
+		cov.xx += (double) (x * x);
+		cov.xy += (double) (x * y);
+		cov.xz += (double) (x * z);
+
+		cov.yy += (double) (y * y);
+		cov.yz += (double) (y * z);
+
+		cov.zz += (double) (z * z);
+
+	}
+
+	cov.xx = cov.xx / (double) nSamples - pexpect->x * pexpect->x * DEG2KM * DEG2KM;
+	cov.xy = cov.xy / (double) nSamples - pexpect->x * pexpect->y * DEG2KM * DEG2KM;
+	cov.xz = cov.xz / (double) nSamples - pexpect->x * pexpect->z * DEG2KM;
+
+	cov.yx = cov.xy;
+	cov.yy = cov.yy / (double) nSamples - pexpect->y * pexpect->y * DEG2KM * DEG2KM;
+	cov.yz = cov.yz / (double) nSamples - pexpect->y * pexpect->z * DEG2KM;
 
 	cov.zx = cov.xz;
 	cov.zy = cov.yz;

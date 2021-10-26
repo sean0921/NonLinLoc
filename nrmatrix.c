@@ -178,8 +178,13 @@ void 	DisplayDMatrix(char* name, double** matrix, int num_rows, int num_cols)
 	fprintf(stdout, "\n%s Matrix: %d rows X %d columns\n", 
 		name, num_rows, num_cols);
 	for (nrow = 0; nrow < num_rows; nrow++) {
-		for (ncol = 0; ncol < num_cols; ncol++)
+		for (ncol = 0; ncol < num_cols; ncol++) {
+			if (ncol == nrow)
+				fprintf(stdout, "\\ ", matrix[nrow][ncol]);
 			fprintf(stdout, "%.1e ", matrix[nrow][ncol]);
+			if (ncol == nrow)
+				fprintf(stdout, "\\ ", matrix[nrow][ncol]);
+		}
 		fprintf(stdout, "\n");
 	}
 	fprintf(stdout, "\n");

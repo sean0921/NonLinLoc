@@ -306,13 +306,14 @@ main(int argc, char *argv[])
 		}
 
 		/* open grid file and header file and read header file */
-		if ((istat = OpenGrid3dFile(fnroot_input, &fp_grid, &fp_hdr, &grid0, "", NULL)) < 0)
+		grid0.iSwapBytes = 0;
+//grid0.iSwapBytes = 1;
+		if ((istat = OpenGrid3dFile(fnroot_input, &fp_grid, &fp_hdr, &grid0, "", NULL,
+				grid0.iSwapBytes)) < 0)
 		{
 			puterr2("ERROR opening grid file: ", fnroot_input);
 			exit(EXIT_ERROR_FILEIO);
 		}
-		grid0.iSwapBytes = 0;
-//grid0.iSwapBytes = 1;
 		/* convert lat/long specification of ends to grid index */
 		if (clatlongmode == 'L') {
 			latlon2rect(proj_index_output, vlat1, vlong1, &xrect, &yrect);
@@ -1378,12 +1379,12 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 			  "else\n");
 			if (GMT_VER_3_3_4) {
 				fprintf(fp_gmt,
-			  "   makecpt -T%le/%le/%le > %s.cpt\n",
+			  "   makecpt -T%.1le/%.1le/%.1le > %s.cpt\n",
 				grid_value_min - fabs(grid_value_min) / 10000,
 				grid_value_max + fabs(grid_value_max) / 10000, contour_int, fn_root_output);
 			} else {
 				fprintf(fp_gmt,
-			  "   makecpt -C%le -S%dc -M%f > %s.cpt\n",
+			  "   makecpt -C%.1le -S%dc -M%f > %s.cpt\n",
 				contour_int, nstep + 2, contour_int * (double) ((int)
 					((grid_value_max + grid_value_min)
 						/ (2.0 * contour_int))), fn_root_output);
@@ -1664,10 +1665,8 @@ double CalcAngleValue(double avalue, int iAzAngle, int iDipAngle)
 	double azim, dip;
 	double value;
 	TakeOffAngles angles;
-
 	SetAnglesFloat(&angles, avalue);
-	iqual = GetTakeOffAngles(&angles,
-		&azim, &dip, &iqual);
+	iqual = GetTakeOffAngles(&angles, &azim, &dip, &iqual);
 	if (iDipAngle) {
 		if (iqual < 5)
 			value = 181.0;

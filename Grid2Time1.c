@@ -235,7 +235,7 @@ main(int argc, char *argv[])
 
  	sprintf(fn_model, "%s.mod", fn_gt_input);
 	if ((istat = OpenGrid3dFile(fn_model, &fp_model_grid, &fp_model_hdr,
-			&mod_grid, " ", NULL)) < 0) {
+			&mod_grid, " ", NULL, mod_grid.iSwapBytes)) < 0) {
 		CloseGrid3dFile(&fp_model_grid, &fp_model_hdr);
 		puterr2("ERROR: cannot open model grid", fn_model);
 		exit(EXIT_ERROR_FILEIO);
@@ -403,7 +403,7 @@ int GenTimeGrid(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
 	char filename[MAXLINE];
 	double xsource, ysource, zsource;
 	double vel_source;
-	double 	xsource_igrid, ysource_igrid, zsource_igrid;
+	double xsource_igrid, ysource_igrid, zsource_igrid;
 
 
 	/* check grid mode, make appropriate adjustments */

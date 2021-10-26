@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999-2000 Anthony Lomax <lomax@geoazur.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -274,6 +274,12 @@ ResultTreeNode* addResult(ResultTreeNode* prtree, double value, OctNode* pnode)
 		prtree->value = value;
 		prtree->pnode = pnode;
 		prtree->left = prtree->right = NULL;
+
+	} else if (value == prtree->value)  {	// prevent assymetric tree if multiple identical values
+		if (get_rand_int(-10000, 9999) < 0)
+			prtree->left = addResult(prtree->left, value, pnode);
+		else
+			prtree->right = addResult(prtree->right, value, pnode);
 
 	} else if (value < prtree->value)  {
 		prtree->left = addResult(prtree->left, value, pnode);

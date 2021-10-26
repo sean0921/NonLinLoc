@@ -202,8 +202,9 @@ int AddScatterFiles(int argc, char** argv)
 
 	/* read grid header file and get grid bounds */
 
+	Grid.iSwapBytes = 0;
  	if ((istat = OpenGrid3dFile(fn_root_out, &fp_grid, &fp_hdr,
-			&Grid, "scat", Srce)) < 0) {
+			&Grid, "scat", Srce, Grid.iSwapBytes)) < 0) {
 			sprintf(MsgStr, "%s.hdr", fn_root_out);
 		puterr2("ERROR: open grid header file", MsgStr);
 		return(-1);

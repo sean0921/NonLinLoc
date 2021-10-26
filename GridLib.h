@@ -17,6 +17,14 @@
  */
 
 
+/*-----------------------------------------------------------------------
+Anthony Lomax
+Anthony Lomax Scientific Software
+161 Allée du Micocoulier, 06370 Mouans-Sartoux, France
+tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
+-------------------------------------------------------------------------*/
+
+
 /*  GridLib.h
 
 	include file for grid library functions
@@ -25,15 +33,11 @@
 
 
 
-/*------------------------------------------------------------/ */
-/* Anthony Lomax <anthony@alomax.net www.alomax.net>            */
-/*------------------------------------------------------------/ */
-
 
 #define PACKAGE  "NonLinLoc"
-#define PVER  "2.37"
-#define PDATE "01SEP2003"
-/*#define PCOPYRIGHT "\nCopyright (C) 1999-2000 Anthony Lomax\n"*/
+#define PVER  "3.03.1"
+#define PDATE "04AAPR2004"
+/*#define PCOPYRIGHT "\nCopyright (C) 1999-2004 Anthony Lomax\n"*/
 #define PCOPYRIGHT "\0"
 
 
@@ -53,6 +57,7 @@
 #include "geometry.h"
 #include "nrutil.h"
 #include "util.h"
+#include "geo.h"
 
 #ifndef INLINE
 #define INLINE inline
@@ -163,6 +168,18 @@
 #define GRID_DEPTH		4000		/* depth (km) 3D grid */
 
 
+/* error codes (-55000) */
+#define OBS_FILE_SKIP_INPUT_LINE 		-55011
+#define OBS_FILE_ARRIVALS_CROSS_YEAR_BOUNDARY 	-55022
+#define OBS_FILE_INVALID_PHASE			-55033
+#define OBS_FILE_INVALID_DATE			-55044
+#define OBS_FILE_END_OF_EVENT			-55055
+#define OBS_FILE_END_OF_INPUT			-55066
+#define GRID_NOT_INSIDE				-55111
+
+#define SMALLEST_EVENT_YEAR	1800
+#define LARGEST_EVENT_YEAR	2100
+
 
 /*------------------------------------------------------------/ */
 /* macros */
@@ -222,7 +239,7 @@ PhaseDesc;
 
 /* source */
 
-#define MAX_NUM_SOURCES 	500
+#define MAX_NUM_SOURCES 	20000
 #define SOURCE_LABEL_LEN	7
 
 typedef struct
@@ -259,7 +276,8 @@ StationDesc;
 #define MAG_NULL -9.9
 #define INST_LABEL_LEN 5
 #define COMP_LABEL_LEN 5
-#define PHASE_LABEL_LEN	7
+//INGV #define PHASE_LABEL_LEN	7
+#define PHASE_LABEL_LEN	100
 typedef struct
 {
 	char label[ARRIVAL_LABEL_LEN];  /* char label (i.e. station code) */
@@ -293,6 +311,7 @@ typedef struct
 		/* flags */
 
 	int flag_ignore;		/* do ignore arrival for location */
+	int abs_time;			/* absolute timing flag: 1 = has absolute time, 0 =  no
 
 		/* calculated values */
 
@@ -496,11 +515,17 @@ EXTERN_TXT ArrivalDesc Arrival[MAX_NUM_ARRIVALS];
 /* hypocenter */
 EXTERN_TXT HypoDesc Hypocenter;
 
+// mode
+#define MODE_RECT 		0	// rectangular cartesian x(km),y(km),z:depth(km)
+#define MODE_GLOBAL 		1	// spherical x:longitdue(deg),y:latittude(deg),z:depth(km)
+EXTERN_TXT int GeometryMode;
+
 /* geographic transformations (lat/long <=> x/y) */
 #define NUM_PROJ_MAX 		3
 #define MAP_TRANS_UNDEF 	-1
-#define MAP_TRANS_SIMPLE 	1
-#define MAP_TRANS_LAMBERT 	2
+#define MAP_TRANS_GLOBAL 	1
+#define MAP_TRANS_SIMPLE 	2
+#define MAP_TRANS_LAMBERT 	3
 EXTERN_TXT char map_trans_type[NUM_PROJ_MAX][MAXLINE];	/* name of projection */
 EXTERN_TXT int map_itype[NUM_PROJ_MAX];			/* int id of projection */
 EXTERN_TXT char MapProjStr[NUM_PROJ_MAX][2*MAXLINE];	/* string description of proj params */
@@ -559,6 +584,7 @@ int get_mcsyn(char* );
 int get_path_method(char* );
 int GetNextSource(char* );
 int GetSource(char* , SourceDesc* , int );
+SourceDesc* FindSource(char* label);
 int get_transform(int , char* );
 
 void get_velfile(char* );
@@ -589,7 +615,7 @@ INLINE float ReadAbsGrid3dValue(FILE*, GridDesc* , double , double ,
 		double , int );
 int SwapBytes(float *buffer, long bufsize);
 int OpenGrid3dFile(char *, FILE **, FILE **, GridDesc* ,
-		char* , SourceDesc* );
+		char* , SourceDesc* , int );
 void CloseGrid3dFile(FILE **, FILE **);
 INLINE float ReadGrid3dValue(FILE *, int , int , int , GridDesc* );
 INLINE DOUBLE InterpCubeLagrange(DOUBLE , DOUBLE , DOUBLE , DOUBLE , DOUBLE ,
@@ -602,7 +628,7 @@ INLINE DOUBLE InterpSquareLagrange(DOUBLE , DOUBLE ,
 		DOUBLE , DOUBLE , DOUBLE , DOUBLE );
 INLINE DOUBLE ReadAbsInterpGrid2d(FILE *, GridDesc* ,
 		double , double );
-int isOnGridBoundary(double , double , double , GridDesc* , double );
+int isOnGridBoundary(double , double , double , GridDesc* , double , double , int );
 int IsPointInsideGrid(GridDesc* , double , double, double);
 int IsGridInside(GridDesc* , GridDesc* , int );
 int IsGrid2DBigEnough(GridDesc* , GridDesc* , SourceDesc* ,
@@ -614,11 +640,17 @@ Vect3D CalcExpectation(GridDesc* , FILE* );
 Mtrx3D CalcCovariance(GridDesc* , Vect3D* , FILE* );
 Vect3D CalcExpectationSamples(float* , int );
 Mtrx3D CalcCovarianceSamples(float* , int , Vect3D* );
+Mtrx3D CalcCovarianceSamplesRect(float* fdata, int nSamples, Vect3D* pexpect);
+Mtrx3D CalcCovarianceSamplesGlobal(float* fdata, int nSamples, Vect3D* pexpect);
 Ellipsoid3D CalcErrorEllipsoid(Mtrx3D *, double );
 
 /* hypocenter functions */
 int WriteLocation(FILE* , HypoDesc* , ArrivalDesc* , int, char* ,
 			int , int , int , GridDesc* , int );
+int WritePhases(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
+		int narrivals, char* filename,
+		int iWriteArrivals, int iWriteEndLoc, int iWriteMinimal,
+		GridDesc* pgrid, int n_proj, int io_arrival_mode);
 int GetHypLoc(FILE* , char* , HypoDesc* , ArrivalDesc* , int* , int,
 			GridDesc* , int );
 int ReadArrival(char* , ArrivalDesc* , int );
@@ -673,7 +705,7 @@ TakeOffAngles SetTakeOffAngles(double , double , int );
 void SetAnglesFloat(TakeOffAngles* , float );
 int GetTakeOffAngles(TakeOffAngles *, double *, double *, int *);
 int ReadTakeOffAnglesFile(char *, double , double , double ,
-			double *, double *, int *, double);
+			double *, double *, int *, double, int );
 
 int SetModelCoordsMode(int );
 
