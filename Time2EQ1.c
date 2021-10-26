@@ -61,6 +61,7 @@ char fn_gmt_output[MAXLINE];
 char fn_eq_input[MAXLINE], fn_eq_output[MAXLINE];
 int time2eq_mode;
 double VpVsRatio;
+int NumStations;
 
 /* mechanism */
 #define  MECH_NONE 		0
@@ -80,15 +81,17 @@ SourceDesc *Event;
 
 /* function declarations */
 
+int GetTime2EQ_Mode(char* line1);
+int GetTime2EQ_Event(char* in_line);
+int GetTime2EQ_Stations(char* in_line);
 int GetTime2EQ_Source(char* );
 int ReadTime2EQ_Input(FILE* );
 int GetTime2EQ_Files(char* );
+int get_vp_vs(char* line1);
 double CalcArrivalTime(FILE* , GridDesc* , SourceDesc*,  StationDesc* );
 int CalcFirstMotion(char *, GridDesc* , SourceDesc*  , StationDesc* );
 int WritePhaseArrival(double , int , FILE* , FILE* , FILE* , FILE* , FILE* , SourceDesc*,
 	StationDesc* , int );
-double GaussDev();
-void TestGaussDev();
 int get_mech(char* );
 double calc_rad(double , double , char );
 
@@ -99,7 +102,7 @@ double calc_rad(double , double , char );
 
 #define NARGS 2
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	int istat;
@@ -346,7 +349,6 @@ double CalcArrivalTime(FILE* fpgrid, GridDesc* ptgrid,
 			SourceDesc*  pevent, StationDesc* psta)
 {
 
-	int istat;
 	double arrival_time, yval_grid;
 	double noise = 0.0;
 
@@ -395,7 +397,6 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid,
 			SourceDesc*  pevent, StationDesc* psta)
 {
 
-	int istat;
 	double yval_grid, azim, radamp;
 	int ipolarity = 0;
 	double ray_azim, ray_dip;
@@ -421,7 +422,7 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid,
 
 	/* calc radiation amplitude and polarity */
 
-	radamp = calc_rad(ray_dip * rpd, ray_azim * rpd, 'P');
+	radamp = calc_rad(ray_dip * cRPD, ray_azim * cRPD, 'P');
 
 	ipolarity = radamp < 0.0 ? -1 : 1;
 
@@ -441,12 +442,10 @@ int WritePhaseArrival(double arrival_time, int ipolarity,
 		SourceDesc*  pevent, StationDesc* psta, int num_sta)
 {
 
-	int istat;
 	int iEOL;
 	int nhr = 0, nmin = 0;
 	int nlat = 0, nlon = 0;
 	double osec = 0.0;
-	char label[MAXLINE];
 	ArrivalDesc arr, *parr;
 	double az;
 
@@ -625,89 +624,101 @@ int ReadTime2EQ_Input(FILE* fp_input)
 
 		/* read control params */
 
-		if (strcmp(param, "CONTROL") == 0)
+		if (strcmp(param, "CONTROL") == 0) {
 			if ((istat = get_control(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading control params.");
 			else
 				flag_control = 1;
-
+		}
+		
 
 		/*read transform params */
 
-		if (strcmp(param, "TRANS") == 0)
+		if (strcmp(param, "TRANS") == 0) {
     			if ((istat = get_transform(0, strchr(line, ' '))) < 0)
 			    puterr("ERROR: reading transformation parameters.");
 			else
 				flag_trans = 1;
-
+		}
+		
 
 		/* read file names */
 
-		if (strncmp(param, "EQFILES", 7) == 0)
+		if (strncmp(param, "EQFILES", 7) == 0) {
 			if ((istat = GetTime2EQ_Files(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading output file name.");
 			else
 				flag_outfile = 1;
+		}
 
 
 		/* read grid mode names */
 
-		if (strcmp(param, "EQMODE") == 0)
+		if (strcmp(param, "EQMODE") == 0) {
 			if ((istat = GetTime2EQ_Mode(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading mode.");
 			else
 				flag_mode = 1;
-
+		}
+		
 
 		/* read source params */
 
-		if (strncmp(param, "EQEVENT", 7) == 0)
+		if (strncmp(param, "EQEVENT", 7) == 0) {
 			if ((istat = GetTime2EQ_Event(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading Time2EQ event params.");
 			else
 				flag_event = 1;
-
+		}
+		
+		
 		/* read mechanism params */
 
-		if (strncmp(param, "EQMECH", 6) == 0)
+		if (strncmp(param, "EQMECH", 6) == 0) {
 			if ((istat = get_mech(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading Time2EQ mechanism params.");
 			else
 				flag_mech = 1;
-
+		}
+		
 
 		/* read VpVs params */
 
-		if (strncmp(param, "EQVPVS", 6) == 0)
+		if (strncmp(param, "EQVPVS", 6) == 0) {
 			if ((istat = get_vp_vs(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading Time2EQ Vp/Vs params.");
 			else
 				flag_vp_vs = 1;
-
+		}
+		
 
 		/* read source params */
 
-		if (strcmp(param, "EQSRCE") == 0)
+		if (strcmp(param, "EQSRCE") == 0) {
 			if ((istat = GetNextSource(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading source params.");
 			else
 				flag_source = 1;
+		}
 
 
 		/* read station params */
 
-		if (strncmp(param, "EQSTA", 5) == 0)
+		if (strncmp(param, "EQSTA", 5) == 0) {
 			if ((istat = GetTime2EQ_Stations(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading station params.");
 			else
 				flag_stations = 1;
-
-		if (strcmp(param, "EQQUAL2ERR") == 0)
+		}
+		
+		
+		if (strcmp(param, "EQQUAL2ERR") == 0) {
 			if ((istat = GetQuality2Err(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading quality2error values.");
 			else
 				flag_qual2err = 1;
-
+		}
+		
 
 		/* unrecognized input */
 
@@ -852,8 +863,8 @@ int GetTime2EQ_Stations(char* in_line)
 
 	istat = sscanf(in_line, "%s %s %s %lf %s %lf %lf",
 		sta_in->label, sta_in->phs[0].label,
-		&(sta_in->phs[0].error_type), &(sta_in->phs[0].error),
-		&(sta_in->phs[0].error_report_type),
+		sta_in->phs[0].error_type, &(sta_in->phs[0].error),
+		sta_in->phs[0].error_report_type,
 		&(sta_in->phs[0].error_report), &(sta_in->prob_active));
 
 	sprintf(MsgStr,
@@ -870,77 +881,6 @@ int GetTime2EQ_Stations(char* in_line)
 		return(-1);
 
 	return(0);
-}
-
-
-
-/** function to generate normally distributed deviate with
-					zero mean and unit variance */
-/* modified from Numerical Recipies function gasdev.c */
-
-double GaussDev()
-{
-	static int iset=0;
-	static float gset;
-	double fac,r,v1,v2;
-
-	if  (iset == 0) {
-		do {
-			v1=get_rand_double(-1.0, 1.0);
-			v2=get_rand_double(-1.0, 1.0);
-			r=v1*v1+v2*v2;
-		} while (r >= 1.0);
-		fac=sqrt(-2.0*log(r)/r);
-		gset=v1*fac;
-		iset=1;
-		return v2*fac;
-	} else {
-		iset=0;
-		return gset;
-	}
-}
-
-
-/*** function to test GaussDev function */
-
-#define NUM_BIN 21
-#define WIDTH 3.0
-
-void TestGaussDev()
-{
-	long imax = 21, nmax = 21000;
-	long n, m;
-	long ibin[NUM_BIN];
-	double test;
-	double dbin, binmax[NUM_BIN];
-
-	dbin = 2.0 / (float) NUM_BIN;
-	for (n = 0; n < NUM_BIN; n++) {
-		ibin[n] = 0;
-		binmax[n] = WIDTH * ((double) (n + 1) * dbin  - 1.0);
-	}
-
-
-	for (n = 0; n < nmax; n++) {
-		test = GaussDev();
-		m = 0;
-		while (test > binmax[m] && m < NUM_BIN - 1)
-			m++;
-		ibin[m]++;
-	}
-
-	fprintf(stdout,
-		"\nGaussDev function test (samples= %d)\n", nmax);
-	fprintf(stdout, "  Bin -Inf,%lf  N=%d\n", binmax[0], ibin[0]);
-	for (n = 1; n < NUM_BIN - 1; n++) {
-		fprintf(stdout,
-			"  Bin %lf,%lf  N=%d\n", binmax[n - 1], binmax[n],
-			ibin[n]);
-	}
-	fprintf(stdout,
-			"  Bin %lf,Inf  N=%d\n", binmax[NUM_BIN - 2],
-			ibin[NUM_BIN - 1]);
-
 }
 
 
@@ -1013,9 +953,9 @@ int get_mech(char* line1)
 	/* adjust azimuth  for projection azimuth */
 	mech_phi = latlon2rectAngle(0, mech_phi);
 
-	mech_phi *= rpd;
-	mech_del *= rpd;
-	mech_lam *= rpd;
+	mech_phi *= cRPD;
+	mech_del *= cRPD;
+	mech_lam *= cRPD;
 
 	return(0);
 

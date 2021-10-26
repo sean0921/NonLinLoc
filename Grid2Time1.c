@@ -178,7 +178,7 @@ int CalcAnglesQuality(double , double );
 
 #define NARGS 2
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	int istat;
@@ -287,8 +287,8 @@ main(int argc, char *argv[])
 
 	/* read vel/slowness model grid */
 
-	if (istat =
-		        ReadGrid3dBuf(&mod_grid, fp_model_grid) < 0) {
+	if ((istat =
+		        ReadGrid3dBuf(&mod_grid, fp_model_grid)) < 0) {
 		puterr("ERROR: reading vel/slowness model grid from disk.");
 		exit(EXIT_ERROR_IO);
 	}
@@ -307,10 +307,9 @@ main(int argc, char *argv[])
 				ix, iymax, iystep, izmax, izstep);
 		putmsg(2, MsgStr);
 		for (iz = 0; iz < izmax; iz += izstep) {
-			sprintf(MsgStr, "\0");
+			//sprintf(MsgStr, "\0");
 			for (iy = 0; iy < iymax; iy += iystep)
-				sprintf(MsgStr, "%s %.2e ",
-				MsgStr, mod_grid.array[0][iy][iz]);
+				sprintf(MsgStr, "%s %.2e ", MsgStr, mod_grid.array[0][iy][iz]);
 		putmsg(2, MsgStr);
 	}
 		if ((istat = CheckGridArray(&mod_grid,
@@ -399,7 +398,7 @@ int GenTimeGrid(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
 	char* fn_model)
 {
 
-	int istat, itemp;
+	int istat, itemp = 0;
 	char filename[MAXLINE];
 	double xsource, ysource, zsource;
 	double vel_source;
@@ -687,8 +686,8 @@ int RunGreen3d(GridDesc* pmgrid, SourceDesc* psource, GridDesc* ptt_grid,
 		puterr("ERROR: opening wavefront/ray travel time grid file.");
 		return(-1);
 	}
-	if (istat =
-		ReadGrid3dBuf(ptt_grid, fp_green_io)  < 0) {
+	if ((istat =
+		ReadGrid3dBuf(ptt_grid, fp_green_io))  < 0) {
 		puterr(
 "ERROR: reading wavefront/ray travel time grid from disk.");
 		return(-1);
@@ -760,75 +759,80 @@ int ReadGrid2TimeInput(FILE* fp_input)
 
 		/* read control params */
 
-		if (strcmp(param, "CONTROL") == 0)
+		if (strcmp(param, "CONTROL") == 0) {
 			if ((istat = get_control(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading control params.");
 			else
 				flag_control = 1;
+		}
 
 
 		/* read grid mode names */
 
-		if (strcmp(param, "GTMODE") == 0)
+		if (strcmp(param, "GTMODE") == 0) {
 			if ((istat = get_grid_mode(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading Grid2Time grid mode.");
 			else
 				flag_grid_mode = 1;
-
+		}
 
 		/* read file names */
 
-		if (strcmp(param, "GTFILES") == 0)
+		if (strcmp(param, "GTFILES") == 0) {
 			if ((istat = get_gt_files(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading Grid2Time file names.");
 			else
 				flag_outfile = 1;
-
+		}
 
 		/* read source params */
 
-		if (strcmp(param, "GTSRCE") == 0)
+		if (strcmp(param, "GTSRCE") == 0) {
 			if ((istat = GetNextSource(strchr(line, ' '))) < 0) {
 				puterr("ERROR: reading source params:");
 				puterr(line);
 			} else
 				flag_source = 1;
+		}
+		
 
-
-		if (strcmp(param, "GTGRID") == 0)
+		if (strcmp(param, "GTGRID") == 0) {
     			if ((istat = get_grid(strchr(line, ' '))) < 0)
 				fprintf(stderr,
 					"ERROR: reading grid parameters.");
 			else
 				flag_grid = 1;
-
+		}
+		
 
 		/* read PodLec FD params */
 
-		if (strcmp(param, "GT_PLFD") == 0)
+		if (strcmp(param, "GT_PLFD") == 0) {
 			if ((istat = get_gt_plfd(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading Podvin-Lecomte params.");
 			else
 				flag_plfd = 1;
-
+		}
+		
 
 		/* read Wavefront params */
 
-		if (strcmp(param, "GT_WAVEFRONT_RAY") == 0)
+		if (strcmp(param, "GT_WAVEFRONT_RAY") == 0) {
 			if ((istat = get_gt_wavefront(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading wavefront-ray params.");
 			else
 				flag_wavefront = 1;
-
+		}
+		
 
 		/*read transform params */
 
-		if (strcmp(param, "TRANS") == 0)
+		if (strcmp(param, "TRANS") == 0) {
     			if ((istat = get_transform(0, strchr(line, ' '))) < 0)
 			    puterr("ERROR: reading transformation parameters.");
 			else
 				flag_trans = 1;
-
+		}
 
 
 
@@ -872,7 +876,7 @@ int ReadGrid2TimeInput(FILE* fp_input)
 
 	return (flag_include * flag_control * flag_outfile * flag_grid_mode
 		* flag_source * flag_trans
-		* (flag_plfd || flag_wavefront && flag_grid)
+		* (flag_plfd || (flag_wavefront && flag_grid))
 		 - 1);
 }
 
@@ -1033,7 +1037,7 @@ int get_gt_wavefront(char* line1)
 int GenAngleGrid(GridDesc* ptgrid, SourceDesc* psource, GridDesc* pagrid)
 {
 
-	int istat, itemp;
+	int istat, itemp = 0;
 	char filename[MAXLINE];
 
 	double xsource, ysource, zsource;
@@ -1117,8 +1121,7 @@ int CalcAnglesGradient(GridDesc* ptgrid, GridDesc* pagrid)
 	int ix, iy, iz, edge_flagx = 0, edge_flagy = 0, iflag2D = 0;
 	double origx, origy, origz;
 	double dx, dy, dz, dvol;
-	double xval, yval, zval;
-	double xlow, xhigh;
+	double xlow = 0.0, xhigh = 0.0;
 
 	TakeOffAngles angles = AnglesNULL;
 
@@ -1220,7 +1223,7 @@ TakeOffAngles GetGradientAngles(double vcent, double xlow, double xhigh,
 	/* thats all for 2D grids */
 	if (iflag2D) {
 		/* calculate dip angle (range of 0 (down) to 180 (up)) */
-		dip = atan2(grady, -gradz) / rpd;
+		dip = atan2(grady, -gradz) / cRPD;
 		iflip = 0;
 		if (dip > 180.0) {
 			dip = dip - 180.0;
@@ -1254,9 +1257,9 @@ TakeOffAngles GetGradientAngles(double vcent, double xlow, double xhigh,
 		/ (fabs(gradx) + fabs(grady) + fabs(gradz));
 
 	/* calculate dip angle (range of 0 (down) to 180 (up)) */
-	dip = atan2(sqrt(gradx * gradx + grady * grady), -gradz) / rpd;
+	dip = atan2(sqrt(gradx * gradx + grady * grady), -gradz) / cRPD;
 	/* calculate azimuth angle (0 to 360) */
-	azim = atan2(gradx, grady) / rpd;
+	azim = atan2(gradx, grady) / cRPD;
 	if (azim < 0.0)
 		azim += 360.0;
 	angles = SetTakeOffAngles(azim, dip, iqual);

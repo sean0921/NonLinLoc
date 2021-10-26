@@ -78,15 +78,8 @@
 
 // !!!!!!!!!!! IMPORTANT !!!!!!!!!!!!!!!
 // custom user options
-// choose user
-#define IRSN_OPTIONS	1
-// evaluate user
-#ifdef IRSN_OPTIONS
-#define PLOT_LEGEND_LINE 0
-#else
 // set defaults
 #define PLOT_LEGEND_LINE 1
-#endif
 
 
 
@@ -107,7 +100,7 @@ Vect3D Expectation, MaxLike;
 Ellipsoid3D Ellipsoid;
 /* stations */
 int NumStations;
-SourceDesc Stations[MAX_NUM_ARRIVALS];
+SourceDesc Stations[X_MAX_NUM_ARRIVALS];
 // GMT JVAL, RVAL for lat/long region
 char gmt_JVAL_latlong_string[MAXLINE];
 char gmt_RVAL_latlong_string[MAXLINE];
@@ -131,7 +124,7 @@ int GenGridViewGMT(GridDesc* , char , char , char[][20] , int ,
 	int , int , int , int , int ,
 	double , char *, char* , char* , double * , double * , double * ,
 	double , double , double, double);
-int MapFiles2GMT(double , double , double , double , FILE* , char* , int );
+int MapFiles2GMT(double , double , double , double , FILE* , char* , int , int );
 int MapLines2GMT(int , double , double , double , double , FILE* , char* , int );
 int grd2GMT(int , double , double , double , double , FILE* , char* , int );
 int GenMapFileName(char * , char * , char * , char * , char * , char *);
@@ -149,6 +142,7 @@ void genResidualGMT(FILE* fp_out, char* xtra_args, double resid,
 		double x, double y, double scale);
 SourceDesc *findStaLoc(char *staName, SourceDesc* stalist, int nstations);
 int parseCommandArgument(char* arg, char* pcommandchr, char arg_elements[][20]);
+int ReadStationList(FILE* fpio, SourceDesc *stations, int numStations);
 
 
 
@@ -157,7 +151,7 @@ int parseCommandArgument(char* arg, char* pcommandchr, char arg_elements[][20]);
 #define PNAME  "Grid2GMT"
 
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	int istat, narg, n;
@@ -207,7 +201,7 @@ main(int argc, char *argv[])
 		disp_usage(PNAME,
 		   "<controlfile> <gridroot> <outroot> H [G][S][Ennndx][M][Rphases/scale] iz");
 		disp_usage(PNAME,
-		   "<controlfile> <gridroot> <outroot> L [G][S][Ennndx][M] [ix iy iz]");
+		   "<controlfile> <gridroot> <outroot> L [G][S][Ennndx][M][Rphases/scale] [ix iy iz]");
 		exit(-1);
 	}
 
@@ -354,8 +348,11 @@ main(int argc, char *argv[])
 
 int parseCommandArgument(char* arg, char* pcommandchr, char arg_elements[][20]) {
 
-	int ipos, narg;
+	int narg, n;
 	char* chr;
+
+
+printf("args: <%s>\n", arg);
 
 	// commmand name is first character of program argument
 	*pcommandchr = toupper(arg[0]);
@@ -368,12 +365,13 @@ int parseCommandArgument(char* arg, char* pcommandchr, char arg_elements[][20]) 
 
 	// get remaining argument elements
 	narg = 1;
-printf("narg %d arg <%s>\n", narg, arg_elements[0]);
 	while((chr = strchr(arg_elements[narg - 1], '/')) != NULL) {
 		*chr = '\0';
 		strcpy(arg_elements[narg++], chr + 1);
-printf("narg %d arg <%s>\n", narg, arg_elements[narg - 1]);
 	}
+for (n = 0; n < narg; n++)
+printf("narg %d arg: <%s>\n", n, arg_elements[n]);
+
 
 	return(narg);
 
@@ -388,13 +386,13 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 		int ix1, int iy1, int ix2, int iy2, int izlevel, GridDesc *pgrid0)
 {
 
-	int istat, n, ihypo;
+	int istat, ihypo;
 	char shift_str[MAXLINE], title_str[MAXLINE] = "\0";
 	char signature_str[2*MAXLINE];
 	char cpt_str[MAXLINE], scale_label_str[MAXLINE];
 	double scale, horiz_width, xlen, ylen, xshift, yshift;
 	double xshift_cum = 0.0, yshift_cum = 0.0;
-	double scaleshift, sxshift, syshift, plot_width;
+	double scaleshift = 0.0, sxshift = 0.0, syshift = 0.0, plot_width;
 
 	HypoDesc Hypo, hypoDummy;
 	int iMultEvent;
@@ -406,7 +404,8 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 
 	double res_scale;
 
-	double hypox, hypoy;
+	double xres, yres, xres_shift, res_legend_mag;
+	char res_legend_mag_string[20];
 
 
 	/* open gmt files */
@@ -423,10 +422,13 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 
 	fprintf(fp_gmt, "#!/bin/csh\n#\n#\n\n");
 
+	// gmtdefaults
+	fprintf(fp_gmt, "gmtset  PAGE_ORIENTATION portrait X_ORIGIN 0.5 Y_ORIGIN 0.5 \n\n");
+
 	fprintf(fp_gmt, "set POSTSCRIPT_NAME = %s\n\n", fn_root_output);
 	fprintf(fp_gmt, "unalias rm\n\n");
 	fprintf(fp_gmt, "rm -f $POSTSCRIPT_NAME.ps\n\n");
-	sprintf(fn_ps_output, "$POSTSCRIPT_NAME", fn_root_output);
+	sprintf(fn_ps_output, "$POSTSCRIPT_NAME");
 
 
 	fprintf(fp_gmt,
@@ -541,6 +543,20 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 			sprintf(title_str, "%s__(%s)", fn_root_output, args_str);
 		}
 
+
+		// get residual scale
+		if (cdatatype == 'R') {
+			istat = 0;
+			if (num_arg_elements <= 1)
+				res_scale = 0.5;
+			else
+				istat = sscanf(arg_elements[1], "%lf", &res_scale);
+printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
+			if (istat < 0)
+				puterr("ERROR: Reading 2nd argument of 'R' datatype.");
+
+		}
+
 		if (PLOT_LEGEND_LINE) {
 
 			if (cdatatype == 'E') {
@@ -556,26 +572,14 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
 				PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
 				0.75, 0.96, HYPO_FONT_SIZE,
-				0, TITLE_FONT, 2,
-	"Double-couple focal mechanisms");
+				0, TITLE_FONT, 2, "Double-couple focal mechanisms");
 			}
 			if (cdatatype == 'R') {
 				fprintf(fp_gmt,
-	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
+	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s %s\nEND\n\n",
 				PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
 				0.75, 0.96, HYPO_FONT_SIZE,
-				0, TITLE_FONT, 2,
-	"Station Residuals");
-				istat = 0;
-				if (num_arg_elements <= 1)
-					res_scale = 0.5;
-				else
-					istat = sscanf(arg_elements[1], "%lf", &res_scale);
-	printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
-				if (istat < 0)
-					puterr(
-	"ERROR: Reading 2nd argument of 'R' datatype.");
-
+				0, TITLE_FONT, 2, arg_elements[0], "Residuals");
 			}
 			if (cdatatype == 'S') {
 				fprintf(fp_gmt,
@@ -605,7 +609,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 		xshift = 1.75;
 		yshift = 3.75;
 		sprintf(shift_str, "-X%lf -Y%lf", xshift, yshift);
-if (cdatatype != 'R')
+//if (cdatatype != 'R')
 		GenGridViewGMT(pgrid0, 'L', cdatatype, arg_elements, num_arg_elements,
 			0, Hypo.iy, pgrid0->numx,
 			Hypo.iy, 0,
@@ -628,7 +632,7 @@ if (cdatatype != 'R')
 
 		xshift = xlen + PLOT_WIDTH / 28.0;
 		sprintf(shift_str, "-X%lf -Y%lf", xshift, 0.0);
-if (cdatatype != 'R')
+//if (cdatatype != 'R')
 		GenGridViewGMT(pgrid0, 'L', cdatatype, arg_elements, num_arg_elements,
 			Hypo.ix, 0, Hypo.ix,
 			pgrid0->numy, 0,
@@ -717,6 +721,32 @@ if (cdatatype != 'R')
 		yshift_cum += syshift;
 	}
 
+	if (cdatatype == 'R') {
+
+		// plot legend
+
+		res_legend_mag = 0.4 / res_scale;
+		//yres = vert_min - 35.0 * plot_scale;
+		yres = grid0.origy + (-yshift_cum  + 1.25)  / scale;
+		xres_shift = 2.0 * res_legend_mag * res_scale / scale;
+		// positive residual
+		xres = grid0.origx + (-xshift_cum + PLOT_WIDTH / 2.0) / scale;
+		genResidualGMT(fp_gmt, "-N", res_legend_mag, xres + xres_shift, yres, res_scale);
+		sprintf(res_legend_mag_string, "+%.2f sec", res_legend_mag);
+		fprintf(fp_gmt,
+"pstext $JVAL $RVAL $BVAL -N -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s Residuals      %s\nEND\n\n",
+			fn_ps_output, xres - 0.25, yres,
+			HYPO_FONT_SIZE, 0, STA_FONT, 7, arg_elements[0], res_legend_mag_string);
+		// negative residual
+		xres += (PLOT_WIDTH / 5.0) /  scale;
+		genResidualGMT(fp_gmt, "-N", -res_legend_mag,  xres + xres_shift, yres, res_scale);
+		sprintf(res_legend_mag_string, "%.2f sec", -res_legend_mag);
+		fprintf(fp_gmt,
+"pstext $JVAL $RVAL $BVAL -N -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
+			fn_ps_output, xres - 0.25, yres,
+			HYPO_FONT_SIZE, 0, STA_FONT, 7, res_legend_mag_string);
+
+	}
 
 
 
@@ -767,23 +797,24 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 
 	int istat;
 	int nx, ny, nz;
-	double horiz_min, horiz_max, horiz_dgrid;
-	double vert_min, vert_max, vert_dgrid, yscalefact, zscalefact;
+	double horiz_min = 0.0, horiz_max = 0.0, horiz_dgrid = 0.0;
+	double vert_min = 0.0, vert_max = 0.0, vert_dgrid = 0.0, yscalefact = 0.0, zscalefact = 0.0;
 	char horiz_label[MAXLINE], vert_label[MAXLINE];
 	char horiz_label_deg[MAXLINE], vert_label_deg[MAXLINE];
 	char fnscat[FILENAME_MAX];
 	char file_id;
 	int nstep;
 	double htick_int, vtick_int;
-	double vxmin, vxmax, vymin, vymax, vdummy, vdgridx, vdgridy, vlmean;
+	double vxmin, vxmax, vymin, vymax, vdummy, vdgridx = 0.0, vdgridy = 0.0, vlmean;
 	float value;
 	
-	union
+/*	union
 	{
 		long ival;
 		float fval;
 	}
 	byteval;
+*/
 
 
 	double plot_scale, gmt_scale;
@@ -795,12 +826,11 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 	int doLatLong = 0;
 
 	int iAzAngle = 0, iDipAngle = 0;
-	int iazim, idip, iqual;
 
 	int nsta;
 	SourceDesc* psta;
 
-	FILE *fp_gmtgrd;
+	FILE *fp_gmtgrd = NULL;
 
 	static double contour_int;
 
@@ -818,10 +848,14 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 
 	int nresiduals;
 	char fn_nlloc_stat[FILENAME_MAX];
-	double xres, yres, xres_shift, res_legend_mag;
-	char res_legend_mag_string[20];
 
-	double hypox, hypoy, stax, stay;
+	double stax, stay;
+
+	int plotExpScatter = 0;
+
+	/* set plot expectation, ellipsoid and scater */
+	if (cdatatype == 'M' || cdatatype == 'R')
+		plotExpScatter = 1;
 
 
 	/* set lat long alternate */
@@ -898,7 +932,7 @@ value = 0.0;
 		if (message_flag > 0)
 			fprintf(stdout, "%d rows and %d columns written\n",
 				pgrid->numy, pgrid->numx);
-	    } else if (cdatatype == 'S') {
+	    } else if (cdatatype == 'S' || plotExpScatter) {
 		istat = Scat2GMT(fnroot_input, "XY", 1, fnscat);
 		istat = Scat2GMT(fnroot_input, "XY", 0, fnscat);
 	    }
@@ -948,7 +982,7 @@ value = 0.0;
 		if (message_flag > 0)
 			fprintf(stdout, "%d rows and %d columns written\n",
 				pgrid->numz, iy2 - iy1);
-	    } else if (cdatatype == 'S') {
+	    } else if (cdatatype == 'S' || plotExpScatter) {
 		istat = Scat2GMT(fnroot_input, "ZY", 1, fnscat);
 		istat = Scat2GMT(fnroot_input, "ZY", 0, fnscat);
 	    }
@@ -1005,7 +1039,7 @@ value = 0.0;
 		if (message_flag > 0)
 			fprintf(stdout, "%d rows and %d columns written\n",
 				pgrid->numz, iy2 - iy1);
-	    } else if (cdatatype == 'S') {
+	    } else if (cdatatype == 'S' || plotExpScatter) {
 		istat = Scat2GMT(fnroot_input, "YZ", 1, fnscat);
 		istat = Scat2GMT(fnroot_input, "YZ", 0, fnscat);
 	    }
@@ -1064,7 +1098,7 @@ value = 0.0;
 		if (message_flag > 0)
 			fprintf(stdout, "%d rows and %d columns written\n",
 				pgrid->numz, ix2 - ix1);
-	    } else if (cdatatype == 'S') {
+	    } else if (cdatatype == 'S' || plotExpScatter) {
 		istat = Scat2GMT(fnroot_input, "XZ", 1, fnscat);
 		istat = Scat2GMT(fnroot_input, "XZ", 0, fnscat);
 	    }
@@ -1192,8 +1226,7 @@ value = 0.0;
 	sprintf(fn_stations, "%s.stations", fnroot_input);
 	if ((fp_stations = fopen(fn_stations, "r")) != NULL)
 	{
-		NumStations =
-			ReadStationList(fp_stations, Stations, 0);
+		NumStations = ReadStationList(fp_stations, Stations, 0);
 		fclose(fp_stations);
 	} else {
 		if (message_flag >= 1)
@@ -1287,11 +1320,11 @@ printf("GetContourInterval vtick_int G: ");
 
 
 
-	/* plot geographic features */
+	/* plot GMT_GRID geographic features */
 
 	if (cviewmode == 'H') {
 		MapFiles2GMT(horiz_min, vert_min, horiz_max, vert_max,
-			fp_gmt, fn_ps_output, doLatLong);
+			fp_gmt, fn_ps_output, doLatLong, 1);
 	}
 
 
@@ -1380,8 +1413,8 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 			if (GMT_VER_3_3_4) {
 				fprintf(fp_gmt,
 			  "   makecpt -T%.1le/%.1le/%.1le > %s.cpt\n",
-				grid_value_min - fabs(grid_value_min) / 10000,
-				grid_value_max + fabs(grid_value_max) / 10000, contour_int, fn_root_output);
+				grid_value_min - contour_int,
+				grid_value_max + contour_int, contour_int, fn_root_output);
 			} else {
 				fprintf(fp_gmt,
 			  "   makecpt -C%.1le -S%dc -M%f > %s.cpt\n",
@@ -1395,9 +1428,8 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 			  "endif\n\n");
 		    iFirstPlot = 0;
 		}
-		fprintf(fp_gmt,
-"grdimage %sgmt -C%s.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
-		fn_gmtgrd, fn_root_output, fn_ps_output);
+		fprintf(fp_gmt, "grdimage %sgmt -C%s.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
+			fn_gmtgrd, fn_root_output, fn_ps_output);
 
 		fprintf(fp_gmt,
 "grdcontour %sgmt -A- -C%s.cpt $JVAL $RVAL $BVAL -K -O >> %s.ps\n\n",
@@ -1405,21 +1437,23 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 
 	    }
 
-		NumStations +=
-			addStations(Stations, NumStations, Arrival, NumArrivals);
+		NumStations += addStations(Stations, NumStations, Arrival, NumArrivals);
 
-	} else if (cdatatype == 'S') {
+	}
+
+	if (cdatatype == 'S' || plotExpScatter) {
 
 		/* draw scatter locations */
 
-		fprintf(fp_gmt,
-"psxy %s $JVAL $RVAL -W1/255/0/0 -Sp -M -K -O >> %s.ps\n",
-		fnscat, fn_ps_output);
+		fprintf(fp_gmt, "psxy %s $JVAL $RVAL -W1/255/0/0 -Sp -M -K -O >> %s.ps\n",
+			fnscat, fn_ps_output);
 
 		NumStations +=
 			addStations(Stations, NumStations, Arrival, NumArrivals);
 
-	} else if (cdatatype == 'E') {
+	}
+
+	if (cdatatype == 'E' || plotExpScatter) {
 
 		/* draw "traditional" expectation and error ellipses */
 
@@ -1446,7 +1480,36 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 "PlotTraditionStats: %d events read, %d plotted\n", nevents, nplotted);
 
 
-	} else if (cdatatype == 'M') {
+	}
+
+
+	/* draw lines through maximum likelihood location */
+
+	if (!(cdatatype == 'S' || cdatatype == 'E' || plotExpScatter)
+			&& (pgrid->type == GRID_PROB_DENSITY
+			|| pgrid->type == GRID_MISFIT)) {
+		fprintf(fp_gmt,
+"psxy $JVAL $RVAL -W1/0/0/0/dotted -M -K -O << END >> %s.ps\n",
+		fn_ps_output);
+		fprintf(fp_gmt,
+">\n%lf %lf\n%lf %lf\n>\n%lf %lf\n%lf %lf\nEND\n\n",
+		horiz_min, horiz_line, horiz_max, horiz_line,
+		vert_line, vert_min, vert_line, vert_max);
+	}
+
+
+	/* draw "traditional" expectation and error ellipses */
+
+	if (!(/*cdatatype == 'S' ||*/ cdatatype == 'E' /* || plotExpScatter*/)
+				&& pgrid->type == GRID_PROB_DENSITY) {
+		PlotTraditionStats(file_id,
+			PLOT_WIDTH / 25.0, &MaxLike, &Expectation,
+			&Ellipsoid, fp_gmt, "111", "-W1/0/0/0");
+
+	}
+
+
+	if (cdatatype == 'M') {
 
 		/* draw focal mechanisms */
 
@@ -1456,11 +1519,10 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 				&focalMech, Arrival, &NumArrivals) != EOF) {
 
 			nevents++;
-			NumStations +=
-				addStations(Stations, NumStations, Arrival, NumArrivals);
+			NumStations += addStations(Stations, NumStations, Arrival, NumArrivals);
 			magnitude = 2.0;
 			if ((istat = PlotFocalMechanism(file_id,
-					PLOT_WIDTH / 25.0, magnitude, &focalMech,
+					PLOT_WIDTH / 10.0, magnitude, &focalMech,
 					fp_gmt, arg_elements[0], "-W1/255/0/0", "-G255/0/0",
 					horiz_min, horiz_max, vert_min, vert_max, plot_scale)) < 0)
 				break;
@@ -1471,7 +1533,9 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 "PlotFocalMechanisms: %d events read, %d plotted\n", nevents, nplotted);
 
 
-	} else if (cdatatype == 'R') {
+	}
+
+	if (cdatatype == 'R') {
 
 		/* draw residuals */
 
@@ -1489,66 +1553,9 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 				fprintf(stdout,
 					"PlotResiduals: %d plotted\n", nresiduals);
 
-			// plot legend
-
-			res_legend_mag = 1.0 / res_scale;
-			yres = vert_min - 70.0 * plot_scale;
-			xres_shift = 50.0 * res_legend_mag * res_scale * plot_scale;
-			// positive residual
-			xres = horiz_min + 1.0 * (horiz_max - horiz_min) / 4.0;
-			genResidualGMT(fp_gmt, "-N", res_legend_mag, xres + xres_shift, yres, res_scale);
-			sprintf(res_legend_mag_string, "+%.2f sec", res_legend_mag);
-			fprintf(fp_gmt,
-"pstext $JVAL $RVAL $BVAL -N -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
-				fn_ps_output, xres - 0.25, yres,
-				HYPO_FONT_SIZE, 0, STA_FONT, 7, res_legend_mag_string);
-			// negative residual
-			xres = horiz_min + 3.0 * (horiz_max - horiz_min) / 4.0;
-			genResidualGMT(fp_gmt, "-N", -res_legend_mag,  xres + xres_shift, yres, res_scale);
-			sprintf(res_legend_mag_string, "%.2f sec", -res_legend_mag);
-			fprintf(fp_gmt,
-"pstext $JVAL $RVAL $BVAL -N -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
-				fn_ps_output, xres - 0.25, yres,
-				HYPO_FONT_SIZE, 0, STA_FONT, 7, res_legend_mag_string);
 
 		}
 
-	}
-
-
-
-	/* draw lines through maximum likelihood location */
-
-	if (!(cdatatype == 'S' || cdatatype == 'E' || cdatatype == 'M' || cdatatype == 'R')
-			&& (pgrid->type == GRID_PROB_DENSITY
-			|| pgrid->type == GRID_MISFIT)) {
-		fprintf(fp_gmt,
-"psxy $JVAL $RVAL -W1/0/0/0/dotted -M -K -O << END >> %s.ps\n",
-		fn_ps_output);
-		fprintf(fp_gmt,
-">\n%lf %lf\n%lf %lf\n>\n%lf %lf\n%lf %lf\nEND\n\n",
-		horiz_min, horiz_line, horiz_max, horiz_line,
-		vert_line, vert_min, vert_line, vert_max);
-	}
-
-
-	/* draw "traditional" expectation and error ellipses */
-
-	if (!(/*cdatatype == 'S' ||*/ cdatatype == 'E' || cdatatype == 'M' || cdatatype == 'R')
-				&& pgrid->type == GRID_PROB_DENSITY) {
-		PlotTraditionStats(file_id,
-			PLOT_WIDTH / 25.0, &MaxLike, &Expectation,
-			&Ellipsoid, fp_gmt, "111", "-W1/0/0/0");
-
-			/*
-		fprintf(fp_gmt,
-"psxy $JVAL $RVAL -W1/0/0/0/dotted -M -K -O << END >> %s.ps\n",
-		fn_ps_output);
-		fprintf(fp_gmt,
-">\n%lf %lf\n%lf %lf\n>\n%lf %lf\n%lf %lf\nEND\n\n",
-		horiz_min, horiz_line, horiz_max, horiz_line,
-		vert_line, vert_min, vert_line, vert_max);
-*/
 	}
 
 
@@ -1567,6 +1574,13 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 				stax, stay,
 				STA_FONT_SIZE, 0, STA_FONT, 6, psta->label);
 		}
+	}
+
+	/* plot line geographic features */
+
+	if (cviewmode == 'H') {
+		MapFiles2GMT(horiz_min, vert_min, horiz_max, vert_max,
+			fp_gmt, fn_ps_output, doLatLong, 0);
 	}
 
 
@@ -1663,7 +1677,7 @@ double CalcAngleValue(double avalue, int iAzAngle, int iDipAngle)
 {
 	int iqual;
 	double azim, dip;
-	double value;
+	double value = 0.0;
 	TakeOffAngles angles;
 	SetAnglesFloat(&angles, avalue);
 	iqual = GetTakeOffAngles(&angles, &azim, &dip, &iqual);
@@ -1734,17 +1748,17 @@ int MakeConfCPT(char* fn_in, char* fileout)
 	char conf_lev_str[20][MAXLINE];
 
 	int rgb[11][3] = {
-		255,	0,	0,
-		255,	127,	0,
-		255,	191,	0,
-		255,	223,	0,
-		255,	255,	0,
-		191,	255,	0,
-		0,	255,	0,
-		0,	255,	127,
-		127,	255,	191,
-		254,	254,	254,
-		254,	254,	254,
+		{255,	0,	0},
+		{255,	127,	0},
+		{255,	191,	0},
+		{255,	223,	0},
+		{255,	255,	0},
+		{191,	255,	0},
+		{0,	255,	0},
+		{0,	255,	127},
+		{127,	255,	191},
+		{254,	254,	254},
+		{254,	254,	254}
 	};
 
 
@@ -1804,6 +1818,8 @@ int MakeConfCPT(char* fn_in, char* fileout)
 	fclose(fp_out);
 	fclose(fp_outlevel);
 
+	return(0);
+
 
 }
 
@@ -1815,21 +1831,21 @@ int MakeMisfitCPT(char* fileout, double value_max, double contour_interval)
 {
 	int ndx;
 	char fn_out[FILENAME_MAX];
-	double dcont, contour, cont_low, cont_high;
+	double dcont, cont_low, cont_high;
 	FILE *fp_out;
 
 	int rgb[11][3] = {
-		255,	0,	0,
-		255,	127,	0,
-		255,	191,	0,
-		255,	223,	0,
-		255,	255,	0,
-		191,	255,	0,
-		0,	255,	0,
-		0,	255,	127,
-		127,	255,	191,
-		254,	254,	254,
-		254,	254,	254,
+		{255,	0,	0},
+		{255,	127,	0},
+		{255,	191,	0},
+		{255,	223,	0},
+		{255,	255,	0},
+		{191,	255,	0},
+		{0,	255,	0},
+		{0,	255,	127},
+		{127,	255,	191},
+		{254,	254,	254},
+		{254,	254,	254}
 	};
 
 
@@ -1855,6 +1871,8 @@ int MakeMisfitCPT(char* fileout, double value_max, double contour_interval)
 	}
 
 	fclose(fp_out);
+
+	return(0);
 
 }
 
@@ -1899,6 +1917,8 @@ int MakeTopoCPT(char* fileout)
 
 	fclose(fp_out);
 
+	return(0);
+
 }
 
 
@@ -1937,11 +1957,12 @@ int ReadGrid2GMT_Input(FILE* fp_input)
 
 		/* read control params */
 
-		if (strncmp(param, "CONTROL", 6) == 0)
+		if (strncmp(param, "CONTROL", 6) == 0) {
 			if ((istat = get_control(strchr(line, ' '))) < 0)
 				puterr("Error reading control params.");
 			else
 				flag_control = 1;
+		}
 
 
 		/* check for graphics input */
@@ -1952,32 +1973,35 @@ int ReadGrid2GMT_Input(FILE* fp_input)
 		/*read transform params */
 
 		// output map trans
-		if (strncmp(param, "MAPTRANS", 8) == 0)
+		if (strncmp(param, "MAPTRANS", 8) == 0) {
 			if ((istat = get_transform(1, strchr(line, ' '))) < 0)
 			    puterr("ERROR reading map transformation parameters.");
 			else {
 				flag_trans = 1;
 				proj_index_output = 1;
 			}
+		}
 		// input location trans
-		if (strncmp(param, "TRANS", 5) == 0)
+		if (strncmp(param, "TRANS", 5) == 0) {
 			if ((istat = get_transform(0, strchr(line, ' '))) < 0)
 			    puterr("ERROR reading transformation parameters.");
 			else {
 				flag_trans = 1;
 				proj_index_input = 0;
 			}
+		}
 
 
 		/* read grid params */
 
-		if (strcmp(param, "MAPGRID") == 0)
+		if (strcmp(param, "MAPGRID") == 0) {
     			if ((istat = get_grid(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading grid parameters.");
 			else {
 				flag_grid = 1;
 				mapGridRead = 1;
 			}
+		}
 
 
 
@@ -2006,17 +2030,19 @@ int ReadGrid2GMT_Input(FILE* fp_input)
 /*** function to draw map file data */
 
 int MapFiles2GMT(double xmin0, double ymin0, double xmax0, double ymax0,
-		FILE* fp_gmt, char* fn_ps_output, int doLatLong)
+		FILE* fp_gmt, char* fn_ps_output, int doLatLong, int plotGMT_GRD)
 {
 	int  nmapfile;
 
 	for (nmapfile = 0; nmapfile < gr_num_map_files; nmapfile++) {
 		if (strcmp(mapfile[nmapfile].format,"GMT_GRD") == 0) {
 			/* draw grd file */
-			grd2GMT(nmapfile, xmin0, ymin0, xmax0, ymax0, fp_gmt, fn_ps_output, doLatLong);
+			if (plotGMT_GRD)
+				grd2GMT(nmapfile, xmin0, ymin0, xmax0, ymax0, fp_gmt, fn_ps_output, doLatLong);
 		} else {
 			/* draw map lines */
-			MapLines2GMT(nmapfile, xmin0, ymin0, xmax0, ymax0, fp_gmt, fn_ps_output, doLatLong);
+			if (!plotGMT_GRD)
+				MapLines2GMT(nmapfile, xmin0, ymin0, xmax0, ymax0, fp_gmt, fn_ps_output, doLatLong);
 		}
 	}
 
@@ -2065,7 +2091,7 @@ makecpt -Cgebco > my_gebco.cpt
 	if ((fp_tmp = fopen(fname_int, "r")) != NULL) {
 		sprintf(int_string, " -I%s ", fname_int);
 	} else {
-		sprintf(int_string, "");
+		sprintf(int_string, " ");
 	}
 	if (fp_tmp != NULL)
 		fclose(fp_tmp);
@@ -2106,7 +2132,6 @@ int MapLines2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double 
 {
 	int  inside;
 	int ired, igreen, iblue;
-	char chardummy;
 	char *lstat;
 	char line[MAXLINE], texture[MAXLINE],
 		fn_gmtxy[FILENAME_MAX], fn_gmtxz[FILENAME_MAX],
@@ -2305,7 +2330,6 @@ int MapLines2GMT(int nmapfile, double xmin0, double ymin0, double xmax0, double 
 int GenMapFileName(char *fname_xy, char *fname_xz, char *fname_zy,
 		char *fname_latlon, char *fnoutput, char *mapfile_name)
 {
-	int nFileCode, ncount;
 	char *pstring;
 
 
@@ -2327,7 +2351,7 @@ int GenMapFileName(char *fname_xy, char *fname_xz, char *fname_zy,
 
 int Scat2GMT(char* fnroot_in, char* orientation, int ilonglat, char* fnscat_out)
 {
-	int istat;
+
 	char fnscat_in[FILENAME_MAX];
 	FILE *fp_scat_in, *fp_scat_out;
 	int npt, tot_npoints;
@@ -2410,10 +2434,9 @@ int Scat2GMT(char* fnroot_in, char* orientation, int ilonglat, char* fnscat_out)
 
 int PlotTraditionStats(char view_type, double barlen,
 	Vect3D* pmax_like, Vect3D* pexpect, Ellipsoid3D *pellipsoid,
-	FILE* fp_io, char *plt_code, char *GMTcolor)
+	FILE* fp_io, char *plt_code_in, char *GMTcolor)
 {
 
-	int istat;
 	double dist_cutoff, dist;
 
 	int npts_ellipse;
@@ -2426,15 +2449,20 @@ int PlotTraditionStats(char view_type, double barlen,
 	double expect_x, expect_y, expect_z;
 	double xtmp, ytmp;
 
+	char plt_code[100];
+
+	strcpy(plt_code, plt_code_in);
+
 
 	/* check plot code string */
 
-	if (plt_code[0] != '0' && plt_code[0] != '1'
-			|| plt_code[1] != '0' && plt_code[1] != '1'
-			|| plt_code[2] != '0' && plt_code[2] != '1') {
-		puterr2("ERROR invalid entry in ellipse/statistic plot code",
+	if ((plt_code[0] != '0' && plt_code[0] != '1')
+			|| (plt_code[1] != '0' && plt_code[1] != '1')
+			|| (plt_code[2] != '0' && plt_code[2] != '1')) {
+		puterr2("WARNING invalid entry in ellipse/statistic plot code",
 			plt_code);
-		return(-1);
+		plt_code[0] = '1';
+		plt_code[1] = plt_code[2] = '0';
 	}
 
 
@@ -2639,7 +2667,7 @@ int PlotFocalMechanism(char view_type, double scale, double magnitude, FocalMech
 				scale, "${POSTSCRIPT_NAME}");
 			fprintf(fp_io, "%lf %lf  %lf  %lf %lf %lf  %lf 0.0 0.0\n",
 				hypox, hypoy, pfocMech->depth,
-				pfocMech->dipDir, pfocMech->dipAng, pfocMech->rake,
+				pfocMech->dipDir - 90.0, pfocMech->dipAng, pfocMech->rake,
 				magnitude
 			);
 			fprintf(fp_io, "END\n\n");
@@ -2649,7 +2677,7 @@ int PlotFocalMechanism(char view_type, double scale, double magnitude, FocalMech
 				linecolor, fillcolor, scale, "${POSTSCRIPT_NAME}");
 			fprintf(fp_io, "%lf %lf  %lf  %lf %lf %lf  %lf 0.0 0.0\n",
 				hypox, hypoy, pfocMech->depth,
-				pfocMech->dipDir, pfocMech->dipAng, pfocMech->rake,
+				pfocMech->dipDir - 90.0, pfocMech->dipAng, pfocMech->rake,
 				magnitude
 			);
 			fprintf(fp_io, "END\n\n");
@@ -2687,7 +2715,6 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
 	int c = 0;
 	int ifound_readings;
 	char label[MAXLINE];
-	char fname[MAXLINE];
 	FILE *fp_in;
 
 	char staName[20];
@@ -2708,7 +2735,7 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
 	// find beginning of Total Phase Corrections list
 	do {
 		istat = fscanf(fp_in, "%s", label);
-	} while (istat != EOF && strcmp(label, "Total") != 0);
+	} while (istat != EOF && strstr(label, "Total") == NULL);
 
 
 	/* read residuals */
@@ -2737,8 +2764,7 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
 				if (strstr(phaseID, phase) != NULL) {
 					convertCoordsRect(proj_index_input, proj_index_output,
 						staloc->x, staloc->y, &xsta, &ysta);
-					genResidualGMT(fp_out, "",
-						resid, xsta, ysta, scale);
+					genResidualGMT(fp_out, "", resid, xsta, ysta, scale);
 					nRdg++;
 				}
 				//fprintf(fp_text_out, "%lf %lf 10 0 4 6 %s\n",

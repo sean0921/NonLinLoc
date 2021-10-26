@@ -71,3 +71,4 @@ INLINE double ran1(int* idum);
 
 INLINE double uni(void);
 INLINE void rstart(int i, int j, int k, int l);
+void rinit(int ijkl);

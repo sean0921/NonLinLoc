@@ -47,6 +47,7 @@
 
 #include "geometry.h"
 #include "octtree.h"
+#include "ran1.h"
 
 
 /*** function to create a new OctNode */

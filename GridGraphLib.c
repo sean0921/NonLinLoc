@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -165,7 +165,7 @@ int PlotMapLines()
 				mapfile[nmapfile].name);
     	}
 
-		angle = -rpd * mapfile[nmapfile].map_rot;
+		angle = -cRPD * mapfile[nmapfile].map_rot;
 		cosang = cos(angle);
 		sinang = sin(angle);
 
@@ -183,7 +183,7 @@ int PlotMapLines()
 				}
 				if (npts < MAXLINEPTS) {
 					xtemp = (maplong - mapfile[nmapfile].map_orig_long)
-						* c111 * cos(rpd * maplat);
+						* c111 * cos(cRPD * maplat);
 					ytemp = (maplat - mapfile[nmapfile].map_orig_lat) * c111;
 					xpt[npts] = xtemp * cosang - ytemp * sinang;
 					ypt[npts++] = ytemp * cosang + xtemp * sinang;
@@ -252,8 +252,8 @@ int Text2GMT()
 	for (ntxt = 0; ntxt < gr_num_txt; ntxt++) {
 		set_text_color(txt_array[ntxt].col);
 		reset_char_hgt(txt_array[ntxt].size);
-		gcharup(-sin(rpd * txt_array[ntxt].rot),
-			cos(rpd * txt_array[ntxt].rot));
+		gcharup(-sin(cRPD * txt_array[ntxt].rot),
+			cos(cRPD * txt_array[ntxt].rot));
 		gchar_rot(txt_array[ntxt].rot);
 		if (prog_mode_3d && strncmp(txt_array[ntxt].plot, "MAP", 3) == 0) {
 			set_drawing_window(norm_trans_map);
@@ -431,7 +431,7 @@ Vect2D* Cov2Ellipse(double covxx,  double covyy, double covxy,
 
 	/* generate points defining ellipse */
 
-	dtheta = 2.0 * pi / (double) (npts - 1);
+	dtheta = 2.0 * cPI / (double) (npts - 1);
 	for (n = 0, theta = 0.0; n < npts; n++, theta += dtheta)
 	{
 		/* unrotated ellipse */
@@ -487,15 +487,15 @@ void initEllipsiodAxes(Ellipsoid3D *pellipsoid,
 
 	/* get 3D vector axes */
 
-	cosd1 = cos(rpd * pellipsoid->dip1);
-	paxis1->x = cos(rpd * az1) * cosd1;
-	paxis1->y = sin(rpd * az1) * cosd1;
-	paxis1->z = -sin(rpd * dip1);
+	cosd1 = cos(cRPD * pellipsoid->dip1);
+	paxis1->x = cos(cRPD * az1) * cosd1;
+	paxis1->y = sin(cRPD * az1) * cosd1;
+	paxis1->z = -sin(cRPD * dip1);
 
-	cosd2 = cos(rpd * pellipsoid->dip2);
-	paxis2->x = cos(rpd * az2) * cosd2;
-	paxis2->y = sin(rpd * az2) * cosd2;
-	paxis2->z = -sin(rpd * dip2);
+	cosd2 = cos(cRPD * pellipsoid->dip2);
+	paxis2->x = cos(cRPD * az2) * cosd2;
+	paxis2->y = sin(cRPD * az2) * cosd2;
+	paxis2->z = -sin(cRPD * dip2);
 
 	cross_product_3d(
 		paxis1->x, paxis1->y, paxis1->z, 
@@ -533,7 +533,7 @@ Vect3D* toEllipsoid3D(Vect3D ax1, Vect3D ax2, Vect3D center, int npts)
 
 	ellArray = malloc((size_t) npts * sizeof(Vect3D));
 
-	d_angle = 2.0 * pi / (double) (npts - 1);
+	d_angle = 2.0 * cPI / (double) (npts - 1);
 	angle = 0.0;
 
 	for (n = 0; n < npts; n++) {

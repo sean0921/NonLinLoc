@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -64,6 +64,8 @@ int NumWaveTypes;
 
 int ReadVel2GridInput(FILE* );
 int VelModToGrid3d(GridDesc* , char * );
+int get_vg_outfile(char* );
+int get_vg_type(char* );
 
 
 
@@ -72,7 +74,7 @@ int VelModToGrid3d(GridDesc* , char * );
 
 #define NARGS 2
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	int istat;
@@ -151,17 +153,14 @@ main(int argc, char *argv[])
 
 		/* load vel model to grid */
 
-		if (istat = 
-			VelModToGrid3d(&mod_grid, WaveType[nWaveType]) < 0) {
+		if ((istat = VelModToGrid3d(&mod_grid, WaveType[nWaveType])) < 0) {
 			puterr("ERROR: loading velocity model to grid.");
 			exit(EXIT_ERROR_MODEL);
 		}
 
 		/* save grid to disk */
 
-		if (istat = 
-			WriteGrid3dBuf(&mod_grid, NULL, fn_vg_output, fileRoot)
-				< 0) {
+		if ((istat = WriteGrid3dBuf(&mod_grid, NULL, fn_vg_output, fileRoot)) < 0) {
 			puterr("ERROR: writing slowness grid to disk.");
 			exit(EXIT_ERROR_IO);
 		}
@@ -230,48 +229,53 @@ int ReadVel2GridInput(FILE* fp_input)
 
 		/* read control params */
 
-		if (strcmp(param, "CONTROL") == 0)
+		if (strcmp(param, "CONTROL") == 0) {
 			if ((istat = get_control(strchr(line, ' '))) < 0) 
 				puterr("ERROR: reading control params.");
 			else
 				flag_control = 1;
+		}
 
 
 		/*read transform params */
 
-		if (strcmp(param, "TRANS") == 0)
+		if (strcmp(param, "TRANS") == 0) {
     			if ((istat = get_transform(0, strchr(line, ' '))) < 0)
 			    puterr("ERROR: reading transformation parameters.");
 			else
 				flag_trans = 1;
+		}
 
 
 		/* read output file name (OUTfile) */
 
-		if (strcmp(param, "VGOUT") == 0)
-			if ((istat = get_vg_outfile(strchr(line, ' '))) < 0) 
+		if (strcmp(param, "VGOUT") == 0) {
+			if ((istat = get_vg_outfile(strchr(line, ' '))) < 0)
 				puterr(
 				"ERROR: reading Vel2Grid output file name.");
 			else
 				flag_outfile = 1;
+		}
 
 		/* read grid params */
 
-		if (strcmp(param, "VGGRID") == 0)
+		if (strcmp(param, "VGGRID") == 0) {
     			if ((istat = get_grid(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading grid parameters.");
 			else
 				flag_grid = 1;
+		}
 
 
 
 		/* read grid type (VGTYPE) */
 
-		if (strcmp(param, "VGTYPE") == 0)
-			if ((istat = get_vg_type(strchr(line, ' '))) < 0) 
+		if (strcmp(param, "VGTYPE") == 0) {
+			if ((istat = get_vg_type(strchr(line, ' '))) < 0)
 				puterr("ERROR: reading Vel2Grid grid type.");
 			else
 				flag_type = 1;
+		}
 
 		/* check for velocity model input */
 
@@ -319,7 +323,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 /*** function to read output file name ***/
 
-int get_vg_outfile(char* line1)		     
+int get_vg_outfile(char* line1)
 {
 
 	sscanf(line1, "%s", fn_vg_output);

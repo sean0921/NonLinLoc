@@ -55,15 +55,14 @@ void test_rand_int()
 	}
 
 	fprintf(stdout,
-		"\nRandom function test (val= 0 - %d, samples= %d)\n",
-		imax, nmax);
+		"\nRandom function test (val= 0 - %ld, samples= %ld)\n", imax, nmax);
 	fprintf(stdout,
 		"  RAND_MAX1 is %ld (%le)\n",
 			(long) RAND_MAX1, (double) RAND_MAX1);
-	fprintf(stdout, "  Bin 0-%d  N=%d\n", ibinmax[0], ibin[0]);
+	fprintf(stdout, "  Bin 0-%ld  N=%ld\n", ibinmax[0], ibin[0]);
 	for (n = 1; n < NUM_BIN; n++) {
 		fprintf(stdout,
-			"  Bin %d-%d  N=%d\n", ibinmax[n - 1] + 1, ibinmax[n],
+			"  Bin %ld-%ld  N=%ld\n", ibinmax[n - 1] + 1, ibinmax[n],
 			ibin[n]);
 	}
 

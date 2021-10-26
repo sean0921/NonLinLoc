@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2003 Anthony Lomax <anthony@alomax.net www.alomax.net>
+ * Copyright (C) 1999-2005 Anthony Lomax <anthony@alomax.net www.alomax.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -20,7 +20,7 @@
 /*-----------------------------------------------------------------------
 Anthony Lomax
 Anthony Lomax Scientific Software
-161 Allée du Micocoulier, 06370 Mouans-Sartoux, France
+161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
 tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 -------------------------------------------------------------------------*/
 
@@ -35,9 +35,9 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 #define PACKAGE  "NonLinLoc"
-#define PVER  "3.03.1"
-#define PDATE "04AAPR2004"
-/*#define PCOPYRIGHT "\nCopyright (C) 1999-2004 Anthony Lomax\n"*/
+#define PVER  "4.00.0"
+#define PDATE "02MAY2005"
+/*#define PCOPYRIGHT "\nCopyright (C) 1999-2005 Anthony Lomax\n"*/
 #define PCOPYRIGHT "\0"
 
 
@@ -45,8 +45,11 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #include <stdio.h>
 #include <string.h>
 #include <math.h>
+#include <float.h>
 #include <limits.h>
 #include <time.h>
+/* SH 07222004 added */
+#include <ctype.h>
 
 #ifdef EXTERN_MODE
 #define	EXTERN_TXT extern
@@ -56,23 +59,14 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 #include "geometry.h"
 #include "nrutil.h"
+#include "nrmatrix.h"
 #include "util.h"
 #include "geo.h"
+#include "ran1.h"
+#include "map_project.h"
 
 #ifndef INLINE
 #define INLINE inline
-#endif
-
-/*#define REAL_MIN min_normal()*/
-#ifndef REAL_MIN
-#define REAL_MIN ((double) 1.0e-30)
-#endif
-/*#define REAL_MAX ((double) 1.0e+30)*/
-#ifndef REAL_MAX
-#define REAL_MAX max_normal()
-#endif
-#ifndef REAL_EPSILON
-#define REAL_EPSILON ((double) 1.0e-6)
 #endif
 
 /* the following defines needed for old cc version */
@@ -134,6 +128,15 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 
+/* NLL */
+
+// DD
+/* program mode */
+#define MODE_ABSOLUTE  		0
+#define MODE_DIFFERENTIAL  		1
+EXTERN_TXT int nll_mode;
+
+
 #define EXIT_NORMAL 0
 #define EXIT_ERROR_MEMORY -1
 #define EXIT_ERROR_USAGE -2
@@ -167,6 +170,8 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 							2D grid / 1D model */
 #define GRID_DEPTH		4000		/* depth (km) 3D grid */
 
+#define GRID_COULOMB		5000		/* Coulomb */
+
 
 /* error codes (-55000) */
 #define OBS_FILE_SKIP_INPUT_LINE 		-55011
@@ -175,7 +180,13 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #define OBS_FILE_INVALID_DATE			-55044
 #define OBS_FILE_END_OF_EVENT			-55055
 #define OBS_FILE_END_OF_INPUT			-55066
+#define OBS_FILE_TWO_ARRIVALS_READ			-55077
+#define OBS_FILE_FORMAT_ERROR		-55099
+
 #define GRID_NOT_INSIDE				-55111
+
+/* SH found comment line in UUSS format; starts with 'c' */
+#define OBS_IS_COMMENT_LINE                     -55222
 
 #define SMALLEST_EVENT_YEAR	1800
 #define LARGEST_EVENT_YEAR	2100
@@ -218,9 +229,10 @@ typedef struct
 GridDesc;
 
 
-#define MAX_NUM_STATIONS	500
+#define X_MAX_NUM_STATIONS	500
+#define X_MAX_NUM_STATIONS_DIFF	40000
 #define MAX_NUM_ARRIVALS_STA	2
-#define MAX_NUM_ARRIVALS 	MAX_NUM_ARRIVALS_STA*MAX_NUM_STATIONS
+#define X_MAX_NUM_ARRIVALS 	MAX_NUM_ARRIVALS_STA*X_MAX_NUM_STATIONS
 #define ARRIVAL_LABEL_LEN	7
 
 /* phase (sythetic arrival observation) */
@@ -237,7 +249,7 @@ typedef struct
 PhaseDesc;
 
 
-/* source */
+/* source or station */
 
 #define MAX_NUM_SOURCES 	20000
 #define SOURCE_LABEL_LEN	7
@@ -250,6 +262,8 @@ typedef struct
  	double dlat, dlong, depth; 	/* loc (lat/long (deg), depth (km)) */
  	double otime; 			/* origin time */
  	char label[SOURCE_LABEL_LEN];  	/* char label */
+	int ignored;			/* 1 = ignored - not used for location */
+	double station_weight;		/* station specific weight */
 }
 SourceDesc;
 
@@ -277,7 +291,7 @@ StationDesc;
 #define INST_LABEL_LEN 5
 #define COMP_LABEL_LEN 5
 //INGV #define PHASE_LABEL_LEN	7
-#define PHASE_LABEL_LEN	100
+#define PHASE_LABEL_LEN	32
 typedef struct
 {
 	char label[ARRIVAL_LABEL_LEN];  /* char label (i.e. station code) */
@@ -297,13 +311,20 @@ typedef struct
  	double coda_dur; 		/* coda duration */
  	double amplitude; 		/* amplitude */
  	double period; 			/* period */
+/* SH 07212004 added */
+       int    clipped;       /* 0 = amplitude is ok
+                               1 = don't use amplitude for magnitude calculation
+                              -1 = amplitude is clipped */
+
 
 		/* calculated values */
 
-  	double delay; 			/* time delay (is subtracted from arival
+	double delay; 			/* time delay (is subtracted from arival
+						seconds when phase read */
+	double elev_corr; 		/* elevation correction (is added to arival
 						seconds when phase read */
 	int day_of_year; 		/* day of year (of earliest arrival) */
- 	long double obs_time; 		/* secs from beginning of day of year */
+ 	long double obs_time; 		/* corrected observed time; secs from beginning of day of year */
 
  	double error; 			/* error in arrival time */
  	char error_type[MAXLINE]; 	/* error type */
@@ -311,7 +332,7 @@ typedef struct
 		/* flags */
 
 	int flag_ignore;		/* do ignore arrival for location */
-	int abs_time;			/* absolute timing flag: 1 = has absolute time, 0 =  no
+	int abs_time;			/* absolute timing flag: 1 = has absolute time, 0 =  no */
 
 		/* calculated values */
 
@@ -343,7 +364,9 @@ typedef struct
 
  		/* travel time grid file */
  	int n_companion; 		/* companion phase for time grids
-						= nphase or 0 for none */
+						= nphase or -1 for none */
+ 	int n_time_grid; 		/* existing phase for time grids (DEFAULT 2D grids)
+						= nphase or -1 for none */
  	double tfact; 			/* factor to multiply by time grid values
 						= 1.0 or 1/VpVs */
 	char fileroot[FILENAME_MAX];	/* root name for grid file */
@@ -353,6 +376,17 @@ typedef struct
 	GridDesc sheetdesc;		/* description for dual-sheet in memory */
 
 	SourceDesc station;		/* station description */
+	
+	double station_weight;		/* station specific weight */
+
+
+	// DD
+	// see hypoDD doc (Open File Report 01-113)
+	int xcorr_flag;				/* 1 = xcorr data, 0 = catalog data */
+	long int dd_event_id_1, dd_event_id_2;	/* ID of event 1, event 2 */
+	int dd_event_index_1, dd_event_index_2;	/* HypoDesc index of event 1, event 2 */
+	double dd_dtime;		/* Differential time (s) between event 1 and event 2 at station. DT = T1-T2. */
+
 }
 ArrivalDesc;
 
@@ -413,18 +447,20 @@ typedef struct
  	int year, month, day; 		/* date */
  	int hour, min; 			/* hour/min */
  	double sec; 			/* origin time (s) */
- 	long double time; 		/* secs from beginning of day of year */
+ 	long double time; 		/* secs from beginning of day */
 
  	int nreadings; 			/* number arrivals used in solution */
  	int gap; 			/* largest azimuth separation between
 					stations as seen from epicenter (deg) */
- 	double dist; 			/* epi distance to closest sta (km) */
+ 	double dist; 			/* epi distance to closest sta (km or deg (MODE_GLOBAL)) */
  	double rms; 			/* rms error of arrival times */
 
  	double amp_mag;			/* amplitude magnitude */
  	int num_amp_mag;		/* number of readings */
  	double dur_mag;			/* duration magnitude */
  	int num_dur_mag;		/* number of readings */
+	/* SH 07232004 added */
+	float mag_err;          /* error in magnitude */
 
  	double probmax; 		/* probability density at hypo
 							(maximum in grid) */
@@ -451,6 +487,18 @@ typedef struct
 	char locStat[10]; 	/* char location status
 						LOCATED, ABORTED, IGNORED */
 	char locStatComm[2*MAXLINE]; 	/* char location status comment */
+
+	// DD
+	// see hypoDD doc (Open File Report 01-113)
+	long int event_id;
+	// DD Metropolis
+	int nSamples;
+	int ipos;
+	int nScatterSaved;
+	int numClipped;
+	int flag_ignore;		/* ignore hypocenter for location */
+	double dotime;		/* sec correction to otime */
+	//
 }
 HypoDesc;
 
@@ -496,6 +544,11 @@ EXTERN_TXT int NumAllocations;
 EXTERN_TXT int prog_mode_3d;
 EXTERN_TXT int prog_mode_2dto3d;
 
+// mode
+#define MODE_RECT 		0	// rectangular cartesian x(km),y(km),z:depth(km)
+#define MODE_GLOBAL 		1	// spherical x:longitdue(deg),y:latittude(deg),z:depth(km)
+EXTERN_TXT int GeometryMode;
+
 /* 3D grid description */
 EXTERN_TXT int grid_type;	/* grid type (VELOCITY, SLOWNESS, SLOW2, etc) */
 EXTERN_TXT GridDesc grid_in;
@@ -505,20 +558,17 @@ EXTERN_TXT int NumSources;
 EXTERN_TXT SourceDesc Source[MAX_NUM_SOURCES];
 
 /* stations */
-EXTERN_TXT int NumStations;
+//EXTERN_TXT int NumStations;
 EXTERN_TXT StationDesc Station[MAX_NUM_SOURCES];
 
 /* arrivals */
+EXTERN_TXT int MAX_NUM_STATIONS;
+EXTERN_TXT int MAX_NUM_ARRIVALS;
 EXTERN_TXT int NumArrivals;
-EXTERN_TXT ArrivalDesc Arrival[MAX_NUM_ARRIVALS];
+EXTERN_TXT ArrivalDesc* Arrival;
 
 /* hypocenter */
 EXTERN_TXT HypoDesc Hypocenter;
-
-// mode
-#define MODE_RECT 		0	// rectangular cartesian x(km),y(km),z:depth(km)
-#define MODE_GLOBAL 		1	// spherical x:longitdue(deg),y:latittude(deg),z:depth(km)
-EXTERN_TXT int GeometryMode;
 
 /* geographic transformations (lat/long <=> x/y) */
 #define NUM_PROJ_MAX 		3
@@ -537,7 +587,9 @@ EXTERN_TXT double map_cosang[NUM_PROJ_MAX], map_sinang[NUM_PROJ_MAX];		/* rotati
 EXTERN_TXT double map_lambert_1st_std_paral[NUM_PROJ_MAX], map_lambert_2nd_std_paral[NUM_PROJ_MAX];
 
 /* constants */
-EXTERN_TXT double pi, rpd, c111;
+EXTERN_TXT double cPI;
+EXTERN_TXT double cRPD;
+EXTERN_TXT double c111;
 
 /* include file */
 EXTERN_TXT char fn_include[FILENAME_MAX];
@@ -595,6 +647,7 @@ INLINE double rect2latlonAngle(int , double );
 INLINE double latlon2rectAngle(int , double );
 double getGMTJVAL(int , char* , double , double , double  , double , double , double );
 int ConvertSourceLoc(int , SourceDesc *, int , int , int );
+int ConvertASourceLocation(int n_proj, SourceDesc *srce_in, int toXY, int toLatLon);
 
 
 /* grid functions */
@@ -607,13 +660,13 @@ void DuplicateGrid(GridDesc* , GridDesc* , char *);
 int CheckGridArray(GridDesc* , double , double , double ,double );
 int SumGrids(GridDesc* , GridDesc* , FILE* );
 int WriteGrid3dBuf(GridDesc* , SourceDesc* , char* , char* );
-int WriteGrid3dHdr(GridDesc* , SourceDesc* ,char* , char* );
+int WriteGrid3dHdr(GridDesc* , SourceDesc* , char* , char* );
 int ReadGrid3dBuf(GridDesc* , FILE* );
 int ReadGrid3dHdr(GridDesc* , SourceDesc* , char* , char* );
 int ReadGrid3dBufSheet(float * , GridDesc* , FILE* , int );
 INLINE float ReadAbsGrid3dValue(FILE*, GridDesc* , double , double ,
 		double , int );
-int SwapBytes(float *buffer, long bufsize);
+int SwapBytes(float *buffer, long int bufsize);
 int OpenGrid3dFile(char *, FILE **, FILE **, GridDesc* ,
 		char* , SourceDesc* , int );
 void CloseGrid3dFile(FILE **, FILE **);
@@ -632,9 +685,11 @@ int isOnGridBoundary(double , double , double , GridDesc* , double , double , in
 int IsPointInsideGrid(GridDesc* , double , double, double);
 int IsGridInside(GridDesc* , GridDesc* , int );
 int IsGrid2DBigEnough(GridDesc* , GridDesc* , SourceDesc* ,
-	double , double, double);
+	double , double , double, double);
 
 /* statistics functions */
+double GaussDev();
+void TestGaussDev();
 int GenTraditionStats(GridDesc* , Vect3D* , Mtrx3D* , FILE* );
 Vect3D CalcExpectation(GridDesc* , FILE* );
 Mtrx3D CalcCovariance(GridDesc* , Vect3D* , FILE* );
@@ -674,6 +729,7 @@ INLINE double Dist3D(double , double , double , double, double , double);
 /* date functions */
 int DayOfYear(int , int , int );
 void MonthDay(int , int , int* , int* );
+int Month2Int(char* cmonth);
 
 /* time functions */
 char* CurrTimeStr(void);
@@ -715,6 +771,15 @@ int ReadFortranString(char* , int , int , char* );
 int ReadFortranInt(char* , int , int , int*);
 int ReadFortranReal(char* , int , int , double*);
 
+
+/* misc functions */
+int ReadFpfitSum(FILE *fp_in, HypoDesc *phypo);
+
+// DD
+int ReadHypoDDInitHypo(FILE *fp_in, HypoDesc *phypo, int n_proj);
+int WriteHypoDDInitHypo(FILE *fp_out, HypoDesc *phypo);
+int WriteHypoDDXCorrDiff(FILE *fp_out, int num_arrivals, ArrivalDesc *arrival, HypoDesc *phypo);
+int WriteDiffArrival(FILE* fpio, HypoDesc* hypos, ArrivalDesc* parr, int iWriteType);
 
 
 /* */

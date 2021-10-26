@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <math.h>
+#include "nrmatrix.h"
+#include "nrutil.h"
 
 
 /*  (C) Copr. 1986-92 Numerical Recipes Software */
@@ -16,7 +18,7 @@ float **a,**b;
 int n,m;
 {
 	int *indxc,*indxr,*ipiv;
-	int i,icol,irow,j,k,l,ll,*ivector();
+	int i,icol=-1,irow=-1,j,k,l,ll,*ivector();
 	float big,dum,pivinv;
 	void nrerror(),free_ivector();
 
@@ -38,7 +40,8 @@ int n,m;
 							irow=j;
 							icol=k;
 						}
-					} else if (ipiv[k] > 1) 			return(nrerror_return("GAUSSJ: Singular Matrix-1"));
+					} else if (ipiv[k] > 1)
+			 			return(nrerror_return("GAUSSJ: Singular Matrix-1"));
 				}
 		++(ipiv[icol]);
 		if (irow != icol) {
@@ -82,7 +85,7 @@ double **a,**b;
 int n,m;
 {
 	int *indxc,*indxr,*ipiv;
-	int i,icol,irow,j,k,l,ll,*ivector();
+	int i,icol=-1,irow=-1,j,k,l,ll,*ivector();
 	double big,dum,pivinv;
 	void nrerror(),free_ivector();
 
@@ -180,10 +183,10 @@ void 	DisplayDMatrix(char* name, double** matrix, int num_rows, int num_cols)
 	for (nrow = 0; nrow < num_rows; nrow++) {
 		for (ncol = 0; ncol < num_cols; ncol++) {
 			if (ncol == nrow)
-				fprintf(stdout, "\\ ", matrix[nrow][ncol]);
+				fprintf(stdout, "\\ ");
 			fprintf(stdout, "%.1e ", matrix[nrow][ncol]);
 			if (ncol == nrow)
-				fprintf(stdout, "\\ ", matrix[nrow][ncol]);
+				fprintf(stdout, "\\ ");
 		}
 		fprintf(stdout, "\n");
 	}
@@ -211,7 +214,7 @@ int svdcmp0(a,m,n,w,v)
 float **a,*w,**v;
 int m,n;
 {
-	int flag,i,its,j,jj,k,l,nm;
+	int flag,i,its,j,jj,k,l=-1,nm=-1;
 	float c,f,h,s,x,y,z;
 	float anorm=0.0,g=0.0,scale=0.0;
 	float *rv1,*vector();
@@ -486,7 +489,7 @@ int svdcmp(a,m,n,w,v)
 float **a,*w,**v;
 int m,n;
 {
-	int flag,i,its,j,jj,k,l,nm;
+	int flag,i,its,j,jj,k,l=-1,nm=-1;
 	float c,f,h,s,x,y,z;
 	float anorm=0.0,g=0.0,scale=0.0;
 	float *rv1,*vector();
@@ -674,6 +677,8 @@ int m,n;
 		}
 	}
 	free_vector(rv1,1,n);
+
+	return(0);
 }
 
 #undef SIGN

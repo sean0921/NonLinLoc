@@ -45,6 +45,7 @@
 #define MAX_NUM_INPUT_FILES 4096
 
 #define VERY_LARGE_RESIDUAL 999999.9
+#define TIME_TOLERANCE 0.001
 
 
 /* globals */
@@ -53,8 +54,8 @@
 
 /* functions */
 
-int AddScatterFiles(int argc, char** argv);
-
+int AssociatePhases(int argc, char** argv);
+int CalcObsTravelTimes(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo);
 
 
 /*** program to sum event scatter files */
@@ -126,15 +127,15 @@ int AssociatePhases(int argc, char** argv)
 
 	char fn_loc_grids_list[MAX_NUM_INPUT_FILES][FILENAME_MAX_SMALL];
 
-	char *pchr0, *pchr1, *pchr2;
+	char *pchr0, *pchr1;
 	char tmp_str[FILENAME_MAX];
 	char best_phase_id[PHASE_LABEL_LEN];
 	char orig_phase_id[PHASE_LABEL_LEN];
 
-	FILE *fp_hyp, *fp_loc_grid, *fp_hyp_out;
+	FILE *fp_hyp_out;
 	FILE *fp_grid, *fp_hdr;
 
-	double obs_travel_time, pred_travel_time, best_pred_travel_time;
+	double obs_travel_time, pred_travel_time, best_pred_travel_time = -1.0;
 	double residual, orig_residual, best_residual;
 	double yval_grid;
 
@@ -193,12 +194,16 @@ int AssociatePhases(int argc, char** argv)
 
 		nEventsRead++;
 
-		if (!IsPointInsideGrid(&locgrid, Hypo.x, Hypo.y, Hypo.z) ||
-				isOnGridBoundary(Hypo.x, Hypo.y, Hypo.z, &locgrid, locgrid.dx, locgrid.dz, 0)) {
+		if (!IsPointInsideGrid(&locgrid, Hypo.x, Hypo.y, Hypo.z)) {
 			fprintf(stdout,
 				"Outside grid, ignoring event: %s\n", fn_hyp);
 			nEventsOutside++;
 			continue;
+		}
+
+		if (isOnGridBoundary(Hypo.x, Hypo.y, Hypo.z, &locgrid, locgrid.dx, locgrid.dz, 0)) {
+			fprintf(stdout,
+				"WARNING: Event on grid boundary: %s\n", fn_hyp);
 		}
 
 		if(CalcObsTravelTimes(Arrival, NumArrivals, &Hypo) < 0)
@@ -214,6 +219,16 @@ int AssociatePhases(int argc, char** argv)
 		for (nArr = 0; nArr < NumArrivals; nArr++) {
 
 			//WriteArrival(stdout,  Arrival + nArr, IO_ARRIVAL_ALL);
+
+			// check for fixed phase type (inst begins with '+')
+			// do not change arrival
+			if (Arrival[nArr].inst[0] == '+')
+				continue;
+
+			// check for no absolute timing (inst begins with '*')
+			// do not change arrival
+			if (Arrival[nArr].inst[0] == '*')
+				continue;
 
 			obs_travel_time = Arrival[nArr].obs_travel_time;
 			orig_residual = Arrival[nArr].residual;
@@ -280,7 +295,7 @@ int AssociatePhases(int argc, char** argv)
 				// check if pred time is closest to obs time
 				// iasp91.ScP.DEFAULT.time
 				residual = obs_travel_time - pred_travel_time;
-				if (fabs(residual) < fabs(best_residual) - 0.0001) {
+				if (fabs(residual) < fabs(best_residual) - TIME_TOLERANCE) {
 					best_residual = residual;
 					best_pred_travel_time = pred_travel_time;
 					pchr0 = fn_loc_grids_list[nTimeGrid];
@@ -379,7 +394,6 @@ int CalcObsTravelTimes(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo)
 {
 	int narr;
 	int dofymin = 10000, yearmin = 10000;
-	int monmin = 10000, daymin = 10000;
 
 	double obs_time, obs_travel_time, residual;
 
@@ -436,22 +450,24 @@ arrival[narr].min, (float) arrival[narr].sec);*/
 
 		// calc  observed travel time obs_time - hypo.time from beginning  of day of year;
 		obs_travel_time = arrival[narr].obs_time - (double) phypo->time;
-		arrival[narr].obs_travel_time = arrival[narr].pred_travel_time + arrival[narr].residual;
-		if (fabs(arrival[narr].obs_travel_time) > 0.0001 &&
-			fabs(arrival[narr].obs_travel_time - obs_travel_time) > 0.0001) {
-printf("ERROR: %s %s arrival.obs_travel_time (%f) != obs_travel_time (%f)\n",
+		arrival[narr].obs_travel_time =
+			arrival[narr].pred_travel_time + arrival[narr].residual + arrival[narr].delay;
+		if (fabs(arrival[narr].obs_travel_time) > TIME_TOLERANCE &&
+			fabs(arrival[narr].obs_travel_time - obs_travel_time) > TIME_TOLERANCE) {
+printf("WARNING: %s %s arrival.obs_travel_time (%f) != obs_travel_time (%f)\n",
 arrival[narr].label, arrival[narr].phase, arrival[narr].obs_travel_time, obs_travel_time);
 			arrival[narr].obs_travel_time = obs_travel_time;
 		}
 
 		// calc residual;
-		if (arrival[narr].pred_travel_time < 0.0001) {
+		if (arrival[narr].pred_travel_time < TIME_TOLERANCE) {
 			arrival[narr].residual = VERY_LARGE_RESIDUAL;
 		} else {
-			residual = arrival[narr].obs_travel_time - arrival[narr].pred_travel_time;
-			if (fabs(arrival[narr].residual) > 0.0001 &&
-				fabs(arrival[narr].residual - residual) > 0.0001) {
-printf("ERROR: %s %s arrival.residual (%f) != residual (%f)\n",
+			residual = arrival[narr].obs_travel_time
+				- arrival[narr].pred_travel_time - arrival[narr].delay;
+			if (fabs(arrival[narr].residual) > TIME_TOLERANCE &&
+				fabs(arrival[narr].residual - residual) > TIME_TOLERANCE) {
+printf("WARNING: %s %s arrival.residual (%f) != residual (%f)\n",
 arrival[narr].label, arrival[narr].phase, arrival[narr].residual, residual);
 				arrival[narr].residual = residual;
 			}

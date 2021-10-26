@@ -13,6 +13,9 @@
 double GCDistance(double lat1, double lon1, double lat2, double lon2)
 {
 	double d;
+	
+	if (lat1 == lat2 && lon1 == lon2)
+		return(0.0);
 
 	lat1 *= DE2RA;
 	lon1 *= DE2RA;

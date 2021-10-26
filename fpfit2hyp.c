@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -57,7 +57,6 @@
 /* functions */
 
 int Fpfit2Hyp(int , char **);
-int ReadFpfitSum(FILE *fp_in, HypoDesc *phypo);
 
 
 
@@ -86,7 +85,7 @@ main(int argc, char *argv[])
 
 	if (argc < 3) {
 		puterr("ERROR wrong number of command line arguments.");
-		disp_usage(PNAME, 
+		disp_usage(PNAME,
 "<fpfit_file> <out_hyp_file> [MechMisfitMax [RMSMax [NRdgsMin [GapMax]]]]");
 		exit(-1);
 	}
@@ -152,13 +151,13 @@ int Fpfit2Hyp(int argc, char *argv[])
 	/* open fpfit summary file */
 
 	if ((fp_fpfit_in = fopen(fn_fpfit_in, "r")) == NULL) {
-		puterr("ERROR: opening scatter output file.");
+		puterr("ERROR: opening fpfit summary file.");
 		return(-1);
 	}
 
 	/* open ascii hypocenter output file */
 	if ((fp_hyp_out = fopen(fn_hyp_out, "w")) == NULL) {
-		puterr("ERROR: opening scatter ascii output file.");
+		puterr("ERROR: opening NLL hyp output file.");
 		return(-1);
 	}
 
@@ -258,95 +257,6 @@ int Fpfit2Hyp(int argc, char *argv[])
 }
 
 
-
-/*** function to read fpfit summary record to HypoDesc structure */
-
-int ReadFpfitSum(FILE *fp_in, HypoDesc *phypo)
-{
-
-	int istat;
-	char *cstat;
-	double mag, dtemp;
-
-	double deg, dmin;
-	char strNS[2], strMagType[2];
-
-	static char line[MAXLINE_LONG];
-
-
-	/* read next line */
-	cstat = fgets(line, MAXLINE_LONG, fp_in);
- 	if (cstat == NULL)
-		return(EOF);
-
-	/* read hypocenter parameters */
-
-	istat = 0;
-	istat += ReadFortranInt(line, 1, 2, &phypo->year);
-	if (phypo->year < 100)
-		phypo->year += 1900;
-	istat += ReadFortranInt(line, 3, 2, &phypo->month);
-	istat += ReadFortranInt(line, 5, 2, &phypo->day);    
-	istat += ReadFortranInt(line, 8, 2, &phypo->hour);
-	istat += ReadFortranInt(line, 10, 2, &phypo->min);
-	istat += ReadFortranReal(line, 12, 6, &phypo->sec);
-
-	istat += ReadFortranReal(line, 18, 3, &deg);
-	istat += ReadFortranString(line, 21, 1, strNS);
-	istat += ReadFortranReal(line, 22, 5, &dmin);
-	phypo->dlat = deg + dmin / 60.0;
-	if (strncmp(strNS, "S", 1) == 0)
-		phypo->dlat = -phypo->dlat;
-	istat += ReadFortranReal(line, 27, 4, &deg);
-	istat += ReadFortranString(line, 31, 1, strNS);
-	istat += ReadFortranReal(line, 32, 5, &dmin);
-	phypo->dlong = deg + dmin / 60.0;
-	if (strncmp(strNS, "W", 1) == 0)
-		phypo->dlong = -phypo->dlong;
-
-	istat += ReadFortranReal(line, 37, 7, &phypo->depth);
-
-	istat += ReadFortranReal(line, 46, 5, &mag);
-
-	istat += ReadFortranInt(line, 51, 3, &phypo->nreadings);
-	istat += ReadFortranReal(line, 54, 4, &dtemp);
-	phypo->gap = (int) 0.5 + dtemp;
-	istat += ReadFortranReal(line, 58, 5, &phypo->dist);
-	istat += ReadFortranReal(line, 63, 5, &phypo->rms);
-
-	/* hypoinverse horiz and vertical error are converted to ellipsoid,
-			this is not correct statistically  */
-	istat += ReadFortranReal(line, 68, 5, &(phypo->ellipsoid.len1));
-	phypo->ellipsoid.az1 = 0.0;
-	phypo->ellipsoid.dip1 = 0.0;
-	phypo->ellipsoid.len2 = phypo->ellipsoid.len1;
-	phypo->ellipsoid.az2 = 90.0;
-	phypo->ellipsoid.dip2 = 0.0;
-	istat += ReadFortranReal(line, 73, 5, &(phypo->ellipsoid.len3));
-
-	istat += ReadFortranString(line, 80, 1, strMagType);
-
-	/* focal mechanism parameters */
-
-	istat += ReadFortranReal(line, 82, 3, &phypo->focMech.dipDir);
-	istat += ReadFortranReal(line, 86, 2, &phypo->focMech.dipAng);
-	istat += ReadFortranReal(line, 88, 4, &phypo->focMech.rake);
-	istat += ReadFortranReal(line, 94, 4, &phypo->focMech.misfit);
-	istat += ReadFortranInt(line, 99, 3, &phypo->focMech.nObs);
-	istat += ReadFortranReal(line, 103, 5, &phypo->focMech.misfit90);
-	istat += ReadFortranReal(line, 109, 4, &phypo->focMech.staDist);
-	istat += ReadFortranReal(line, 114, 4, &phypo->focMech.ratioMH);
-	istat += ReadFortranReal(line, 120, 2, &phypo->focMech.conf90strike);
-	istat += ReadFortranReal(line, 123, 2, &phypo->focMech.conf90dip);
-	istat += ReadFortranReal(line, 126, 2, &phypo->focMech.conf90rake);
-	istat += ReadFortranString(line, 128, 1, phypo->focMech.convFlag);
-	istat += ReadFortranString(line, 129, 1, phypo->focMech.multSolFlag);
-
-	return(istat);
-
-
-
-}
 
 
 /*------------------------------------------------------------/ */

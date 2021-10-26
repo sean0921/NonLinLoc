@@ -89,7 +89,10 @@
 
 /*#include "gmt.h"*/
 
+#include <string.h>
 #include <math.h>
+
+#include "map_project.h"
 
 #define PI_2 (2.0 * M_PI)
 #define D2R (M_PI / 180.0)
@@ -190,6 +193,8 @@ int map_setup_proxy (int n_proj, char* ellipsoid_name) {
 	ECC6[n_proj] = ECC2[n_proj] * ECC4[n_proj];
 	ECC[n_proj] = d_sqrt (ECC2[n_proj]);
 
+	return(0);
+
 }
 
 /*END AJL*/
@@ -237,6 +242,8 @@ double rlong0, rlat0, pha, phb; {
 	CentralMeridian[n_proj] = rlong0;
 	LambertConfConic_rho0[n_proj] = EQ_RAD[n_proj] * LambertConfConic_F[n_proj] *
 		pow(t_rlat0,LambertConfConic_N[n_proj]);
+
+	return(0);
 }
 
 
@@ -261,6 +268,8 @@ double lon, lat, *x, *y; {
 
 	*x = rho * sin (theta);
 	*y = LambertConfConic_rho0[n_proj] - rho * cos (theta);
+
+	return(0);
 }
 
 
@@ -289,5 +298,7 @@ double *lon, *lat, x, y; {
 		tphi = phi;
 	}
 	*lat = phi * R2D;
+
+	return(0);
 }
 

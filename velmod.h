@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -37,17 +37,19 @@
 
 #define MAXFILE 200
 
-#define REAL_EPSILON ((double) 1.0e-6)
-
+/*#define REAL_MIN min_normal()*/
 #ifndef REAL_MIN
 #define REAL_MIN ((double) 1.0e-30)
 #endif
 #ifndef REAL_MAX
 #define REAL_MAX ((double) 1.0e+30)
 #endif
+#ifndef REAL_EPSILON
+#define REAL_EPSILON ((double) 1.0e-6)
+#endif
 
 #ifndef LARGE_FLOAT
-#define LARGE_FLOAT 1.0e10
+#define LARGE_FLOAT 1.0e20F
 #endif
 
 /* the following defines needed for some old versions of cc */
@@ -140,7 +142,7 @@ struct surface {
 				   SURF_REF_LOW - use lowest depth on surface */
 	double ref_level;	/* depth from ref point to reference level 
 					for vel/den determination; */
-	double pix_shift;	/* shift in loc to account for 
+	double pix_shift;	/* shift in loc to account for
 							node_offset type */
 	double zmin;	/* minimum z value on surface */
 	double zmax;	/* minimum z value on surface */
@@ -387,7 +389,7 @@ EXTERN_TXT char vfile_name[MAXFILE];	/* vgrid file name */
 
 EXTERN_TXT  double vmodel_vmean;
 
-EXTERN_TXT double pi;			/* PI = 3.14...*/
+EXTERN_TXT double cPI;			/* PI = 3.14...*/
 
 /**************************************************************************/
 /* function prototypes */

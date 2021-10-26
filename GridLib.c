@@ -47,11 +47,24 @@
 
 #include "GridLib.h"
 
+// private funtions
+int _WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
+		int narrivals, char* filename,
+		int iWriteArrivals, int iWriteEndLoc, int iWriteMinimal,
+		GridDesc* pgrid, int n_proj, int io_arrival_mode);
 
 /*** function to set constants */
 
 void SetConstants(void)
 {
+
+	MAX_NUM_STATIONS = X_MAX_NUM_STATIONS;
+	MAX_NUM_ARRIVALS = X_MAX_NUM_ARRIVALS;
+	if ((Arrival = (ArrivalDesc *) malloc(MAX_NUM_ARRIVALS * sizeof(ArrivalDesc))) == NULL) {
+		puterr("ERROR: re-allocating Arrival array.");
+		exit(EXIT_ERROR_MEMORY);
+	}
+
 
 	Ellipsoid3D EllNULL = {-1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0};
 
@@ -61,8 +74,8 @@ void SetConstants(void)
 	strcpy(prog_copyright, PCOPYRIGHT);
 	message_flag = 0;
 
-	pi = 4. * atan(1.);		/* PI */
-	rpd = pi /180.;			/* radians per degree */
+	cPI = 4. * atan(1.);		/* PI */
+	cRPD = cPI /180.;			/* radians per degree */
 	c111 = 10000.0 / 90.0;		/* kilometers per degree */
 
 	fp_include = NULL;		/* set include file ptr */
@@ -92,7 +105,7 @@ int get_control(char* line1)
 {
 	int istat;
 
-	istat = sscanf(line1, "%d", &message_flag, &RandomNumSeed);
+	istat = sscanf(line1, "%d %d", &message_flag, &RandomNumSeed);
 
 	if (istat == 1)
 		RandomNumSeed = 837465;
@@ -190,17 +203,27 @@ void SwapBackIncludeFP(FILE **fp_io)
 int GetNextSource(char* in_line)
 {
 	int istat;
-	SourceDesc *srce_in;
+	SourceDesc *srce_in = NULL;
 
 
 	/* check number of sources */
 	if (NumSources >= MAX_NUM_SOURCES) {
-		puterr("ERROR: to many sources, ignoring source.");
+		puterr2("ERROR: to many sources, ignoring source", srce_in->label);
 		return(0);
 	}
 
 	srce_in = Source + NumSources;
 	istat = GetSource(in_line, srce_in, NumSources);
+	if (istat < 0)
+		return(istat);
+
+	// check if duplicate
+	if (FindSource(srce_in->label) != NULL) {
+		sprintf(MsgStr, "WARNING: duplicated source, ignoring source: %s", srce_in->label);
+		putmsg(2, MsgStr);
+		return(istat);
+	}
+
 	NumSources++;
 
 	return(istat);
@@ -248,7 +271,7 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 "SOURCE: %3d  Name: %s  Loc:  type: %s  X(east) %.2lf  Y(north) %.2lf  Z(pos DOWN) %.2lf",
 			num_sources, srce_in->label,
 			coord_type, srce_in->x, srce_in->y, srce_in->z);
-		putmsg(3, MsgStr);
+		putmsg(5, MsgStr);
 	}
 	else if (strcmp(coord_type, "LATLON") == 0)
 	{
@@ -271,7 +294,7 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 			num_sources, srce_in->label,
 			coord_type, srce_in->dlat, srce_in->dlong,
 			srce_in->depth);
-		putmsg(3, MsgStr);
+		putmsg(5, MsgStr);
 		if (ierr < 0 || istat != 6)
 			return(-1);
 	}
@@ -303,7 +326,7 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 			num_sources, srce_in->label,
 			coord_type, srce_in->dlat, srce_in->dlong,
 			srce_in->depth);
-		putmsg(3, MsgStr);
+		putmsg(5, MsgStr);
 		if (ierr < 0 || istat != 10)
 			return(-1);
 	}
@@ -336,7 +359,7 @@ int GetSource(char* in_line, SourceDesc *srce_in, int num_sources)
 			num_sources, srce_in->label,
 			coord_type, srce_in->dlat, srce_in->dlong,
 			srce_in->depth);
-		putmsg(3, MsgStr);
+		putmsg(5, MsgStr);
 		if (ierr < 0 || istat != 12)
 			return(-1);
 	}
@@ -390,8 +413,7 @@ int get_transform(int n_proj, char* in_line)
 		GeometryMode = MODE_GLOBAL;
 
 		map_itype[n_proj] = MAP_TRANS_GLOBAL;
-		istat = sscanf(in_line, "%s",
-			map_trans_type[n_proj]);
+		istat = sscanf(in_line, "%s", map_trans_type[n_proj]);
 
 		angle = 0.0;
 		map_cosang[n_proj] = cos(angle);
@@ -416,7 +438,7 @@ int get_transform(int n_proj, char* in_line)
 			map_trans_type[n_proj], &map_orig_lat[n_proj], &map_orig_long[n_proj],
 			&map_rot[n_proj]);
 
-		angle = -rpd * map_rot[n_proj];
+		angle = -cRPD * map_rot[n_proj];
 		map_cosang[n_proj] = cos(angle);
 		map_sinang[n_proj] = sin(angle);
 
@@ -468,7 +490,7 @@ int get_transform(int n_proj, char* in_line)
 				"RotCW", map_rot[n_proj], 1, -360.0, 1, 360.0) != 0)
 			ierr = -1;
 
-		angle = -rpd * map_rot[n_proj];
+		angle = -cRPD * map_rot[n_proj];
 		map_cosang[n_proj] = cos(angle);
 		map_sinang[n_proj] = sin(angle);
 
@@ -545,7 +567,6 @@ int get_grid(char* input_line)
 
 int convert_grid_type(GridDesc* pgrid)
 {
-	int istat;
 
 	/* check grid type */
 
@@ -582,6 +603,9 @@ int convert_grid_type(GridDesc* pgrid)
 	else if (strcmp(pgrid->chr_type, "DEPTH") == 0)
 		pgrid->type = GRID_DEPTH;
 
+	else if (strcmp(pgrid->chr_type, "COULOMB") == 0)
+		pgrid->type = GRID_COULOMB;
+
 	else {
 		pgrid->type = GRID_UNDEF;
 		puterr2("WARNING: unrecognized grid type", pgrid->chr_type);
@@ -599,7 +623,6 @@ int convert_grid_type(GridDesc* pgrid)
 
 int display_grid_param(GridDesc* pgrid)
 {
-	int istat;
 
 	fprintf(stdout,
 "GRID: {x, y, z}\n  Num: {%d, %d, %d}\n  Orig: {%.3le, %.3le, %.3le}\n  LenSide: {%.4lf, %.4lf, %.4lf}\n",
@@ -855,27 +878,27 @@ int SumGrids(GridDesc* pgrid_sum, GridDesc* pgrid_new, FILE* fp_grid_new)
 
 /** function to check if a point is on grid boundary */
 
-/* return 1 if within tolerance of boundary, return 0 otherwise */
+/* return 10,11,20,21,30,31 if within tolerance of x,y,z orig/end boundary, return 0 otherwise */
 
 int isOnGridBoundary(double xloc, double yloc, double zloc, GridDesc* pgrid,
 	double tolerance_xy, double tolerance_z, int i_check_top)
 {
 
 	if (fabs(xloc - pgrid->origx) <= tolerance_xy)
-		return(1);
+		return(10);
 	if (fabs(xloc - (pgrid->origx + (double) (pgrid->numx - 1) * pgrid->dx))
 			<= tolerance_xy)
-		return(1);
+		return(11);
 	if (fabs(yloc - pgrid->origy) <= tolerance_xy)
-		return(1);
+		return(20);
 	if (fabs(yloc - (pgrid->origy + (double) (pgrid->numy - 1) * pgrid->dy))
 			<= tolerance_xy)
-		return(1);
+		return(21);
 	if (i_check_top && fabs(zloc - pgrid->origz) <= tolerance_z)
-		return(1);
+		return(30);
 	if (fabs(zloc - (pgrid->origz + (double) (pgrid->numz - 1) * pgrid->dz))
 			<= tolerance_z)
-		return(1);
+		return(31);
 
 	return(0);
 
@@ -969,17 +992,17 @@ int IsGridInside(GridDesc* pgrid_inside, GridDesc* pgrid, int iShiftFlag)
 /** function to check if greatest distance from a station to a 3D grid
 		is less than the horizontal extent of a 2D grid and
 		if depth range of the 3D grid is less than that of the 2D grid
-		and if station is within dist_horiz_max of grid location
+		and if station is within dist_horiz_min -> dist_horiz_max of grid location
 		xcent, ycent */
 
 /* return 1 if yes, return 0 otherwise */
 
 int IsGrid2DBigEnough(GridDesc* pgrid_3D, GridDesc* pgrid_2D,
 		SourceDesc* station,
-		double dist_horiz_max, double xcent, double ycent)
+		double dist_horiz_min, double dist_horiz_max, double xcent, double ycent)
 {
 
-	double extent_horiz, extent_vert, distance;
+	double extent_horiz, distance;
 
 	double xmin_in, xmax_in, ymin_in, ymax_in, zmin_in, zmax_in;
 	double ymin, ymax, zmin, zmax;
@@ -991,11 +1014,24 @@ int IsGrid2DBigEnough(GridDesc* pgrid_3D, GridDesc* pgrid_2D,
 	}
 
 
-	/* check distance from grid location xcent, ycent */
-	if (dist_horiz_max > SMALL_DOUBLE) {
-		if ((distance = GetEpiDist(station, xcent, ycent))
-				> dist_horiz_max)
-			return(-2);
+	/* check distances from grid location xcent, ycent */
+	if (dist_horiz_min < dist_horiz_max) {
+		// check if   dist_horiz_min < DIST < dist_horiz_max
+		if (dist_horiz_min > SMALL_DOUBLE) {
+			if ((distance = GetEpiDist(station, xcent, ycent)) < dist_horiz_min)
+				return(-2);
+		}
+		if (dist_horiz_max > SMALL_DOUBLE) {
+			if ((distance = GetEpiDist(station, xcent, ycent)) > dist_horiz_max)
+				return(-2);
+		}
+	} else {
+		// check if   DIST < dist_horiz_max && DIST > dist_horiz_min
+		if (dist_horiz_min > SMALL_DOUBLE && dist_horiz_max > SMALL_DOUBLE) {
+			distance = GetEpiDist(station, xcent, ycent);
+			if (distance  < dist_horiz_min && distance > dist_horiz_max)
+				return(-2);
+		}
 	}
 
 	/* get extent of 2D grid */
@@ -1087,7 +1123,7 @@ double GetEpiAzim(SourceDesc* psrce, double xval, double yval)
 	} else {
 		xtmp = psrce->x - xval;
 		ytmp = psrce->y - yval;
-		azim = atan2(xtmp, ytmp) / rpd;
+		azim = atan2(xtmp, ytmp) / cRPD;
 		if (azim < 0.0)
 			azim += 360.0;
 		return(azim);
@@ -1107,7 +1143,7 @@ double GetEpiAzimSta(StationDesc* psta, double xval, double yval)
 	} else {
 		xtmp = psta->x - xval;
 		ytmp = psta->y - yval;
-		azim = atan2(xtmp, ytmp) / rpd;
+		azim = atan2(xtmp, ytmp) / cRPD;
 		if (azim < 0.0)
 			azim += 360.0;
 		return(azim);
@@ -1155,7 +1191,7 @@ int WriteGrid3dBuf(GridDesc* pgrid, SourceDesc* psrce,
 	if (fwrite((char *) pgrid->buffer,
 		(pgrid->numx * pgrid->numy * pgrid->numz * sizeof(float)),
 		1, fpio) != 1) {
-		puterr("ERROR: writing grid output file.");
+		puterr("ERROR: writing grid buffer output file.");
 		return(-1);
 	}
 
@@ -1355,7 +1391,7 @@ int ReadGrid3dHdr(GridDesc* pgrid, SourceDesc* psrce,
 	fscanf(fpio, "%d %d %d  %lf %lf %lf  %lf %lf %lf %s\n",
 		&(pgrid->numx), &(pgrid->numy), &(pgrid->numz),
 		&(pgrid->origx), &(pgrid->origy), &(pgrid->origz),
-		&(pgrid->dx), &(pgrid->dy), &(pgrid->dz), &(pgrid->chr_type));
+		&(pgrid->dx), &(pgrid->dy), &(pgrid->dz), pgrid->chr_type);
 
 	if (strncmp(file_type, "time", 4) == 0
 			|| strncmp(file_type, "angle", 4) == 0)
@@ -1387,7 +1423,7 @@ int OpenGrid3dFile(char *fname, FILE **fp_grid, FILE **fp_hdr,
 	putmsg(3, MsgStr);
 	if ((*fp_grid = fopen(fn_grid, "r")) == NULL) {
 		sprintf(MsgStr,
-			    "WARNING: cannot open grid buffer file", fn_grid);
+			    "WARNING: cannot open grid buffer file: %s", fn_grid);
 		putmsg(3, MsgStr);
 		//return(-1);	// sometimes only header is wanted
 	} else {
@@ -1397,7 +1433,7 @@ int OpenGrid3dFile(char *fname, FILE **fp_grid, FILE **fp_hdr,
 	sprintf(fn_hdr, "%s.hdr", fname);
 	if ((*fp_hdr = fopen(fn_hdr, "r")) == NULL) {
 		sprintf(MsgStr,
-			    "WARNING: cannot open grid header file", fn_grid);
+			    "WARNING: cannot open grid header file: %s", fn_grid);
 		putmsg(3, MsgStr);
 		if (*fp_grid != NULL) {
 			fclose(*fp_grid);
@@ -1541,7 +1577,6 @@ INLINE float ReadAbsGrid3dValue(FILE *fpgrid, GridDesc* pgrid,
 INLINE float ReadAbsInterpGrid3d(FILE *fpgrid, GridDesc* pgrid,
 		double xloc, double yloc, double zloc)
 {
-	int nx, ny, nz;
 	int ix0, ix1, iy0, iy1, iz0, iz1;
 	float value;
 	DOUBLE 	vval000, vval001, vval010, vval011,
@@ -1684,7 +1719,7 @@ INLINE float InterpCubeAngles(DOUBLE xdiff, DOUBLE ydiff, DOUBLE zdiff,
 
 	int nx, ny, nz;
 	double azim[2][2][2], dip[2][2][2], azim_interp, dip_interp;
-	int iqual[2][2][2], iqual_interp, iqual_low;
+	int iqual[2][2][2], iqual_low;
 	float value;
 	TakeOffAngles angles;
 
@@ -1764,7 +1799,7 @@ INLINE float InterpCubeAngles(DOUBLE xdiff, DOUBLE ydiff, DOUBLE zdiff,
 INLINE DOUBLE ReadAbsInterpGrid2d(FILE *fpgrid, GridDesc* pgrid,
 		double yloc, double zloc)
 {
-	int nx, ny, nz;
+
 	int ix0, ix1, iy0, iy1, iz0, iz1;
 	DOUBLE value;
 	DOUBLE vval00, vval01, vval10, vval11;
@@ -1788,6 +1823,23 @@ INLINE DOUBLE ReadAbsInterpGrid2d(FILE *fpgrid, GridDesc* pgrid,
 	ydiff = yoff - (DOUBLE) iy0;
 	zdiff = zoff - (DOUBLE) iz0;
 
+// DEBUG
+/*
+printf("%d %d %d  %lf %lf %lf  %lf %lf %lf %s\n",
+	pgrid->numx, pgrid->numy, pgrid->numz,
+	pgrid->origx, pgrid->origy, pgrid->origz,
+	pgrid->dx, pgrid->dy, pgrid->dz, pgrid->chr_type);
+if (iy0 < 0 || iy1 >= pgrid->numy )
+	printf("ERROR: ReadAbsInterpGrid2d: (iy0 < 0 || iy1 >= pgrid->numy )\n");
+if (iz0 < 0 || iz1 >= pgrid->numz )
+	printf("ERROR: ReadAbsInterpGrid2d: (iz0 < 0 || iz1 >= pgrid->numz )\n");
+if (ydiff < 0.0 || ydiff > 1.0)
+	printf("ERROR: ReadAbsInterpGrid2d: (ydiff < 0.0 || ydiff > 1.0 )\n");
+if (zdiff < 0.0 || zdiff > 1.0)
+	printf("ERROR: ReadAbsInterpGrid2d: (zdiff < 0.0 || zdiff > 1.0 )\n");
+*/
+// End - DEBUG
+
 //INGV
 if (iy0 < 0 || iy1 >= pgrid->numy )
 	return(-VERY_LARGE_DOUBLE);
@@ -1803,8 +1855,7 @@ if (zdiff < 0.0 || zdiff > 1.0)
 
 	if (ydiff + zdiff < SMALL_FLOAT) {
 		if (fpgrid != NULL)
-			value = ReadGrid3dValue(fpgrid,
-				ix0, iy0, iz0, pgrid);
+			value = ReadGrid3dValue(fpgrid, ix0, iy0, iz0, pgrid);
 		else
 			value = pgrid->array[ix0][iy0][iz0];
 		return(value);
@@ -1824,6 +1875,13 @@ if (zdiff < 0.0 || zdiff > 1.0)
 		vval10 = pgrid->array[ix0][iy1][iz0];
 		vval11 = pgrid->array[ix0][iy1][iz1];
 	}
+
+// DEBUG
+/*
+if (vval00 < 0.0 || vval01 < 0.0 || vval10 < 0.0 || vval11 < 0.0)
+	printf("ERROR: ReadAbsInterpGrid2d: (vval00 < 0.0 || vval01 < 0.0 || vval10 < 0.0 || vval11 < 0.0)\n");
+*/
+// End - DEBUG
 
 // INGV
 // check for invalid / mask nodes
@@ -1898,9 +1956,8 @@ int _WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 		GridDesc* pgrid, int n_proj, int io_arrival_mode)
 {
 
-	int istat, ifile = 0, narr;
+	int ifile = 0, narr;
 	ArrivalDesc* parr;
-	double stat_dlat, stat_dlong;
 
 
 	/* write hypocenter to file */
@@ -1917,28 +1974,28 @@ int _WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 
 	/* write hypocenter parameters */
 
-    if (iWriteMinimal) {
-	fprintf(fpio, "NLLOC \"%s\" \"%s\" \" \"\n",
-		phypo->fileroot, phypo->locStat);
-    } else {
-	fprintf(fpio, "NLLOC \"%s\" \"%s\" \"%s\"\n",
-		phypo->fileroot, phypo->locStat, phypo->locStatComm);
-	fprintf(fpio, "SIGNATURE \"%s\"\n", phypo->signature);
-	fprintf(fpio, "COMMENT \"%s\"\n", phypo->comment);
-	if (pgrid != NULL )
-		fprintf(fpio, "GRID  %d %d %d  %lf %lf %lf  %lf %lf %lf %s\n",
-			pgrid->numx, pgrid->numy, pgrid->numz,
-			pgrid->origx, pgrid->origy, pgrid->origz,
-			pgrid->dx, pgrid->dy, pgrid->dz, pgrid->chr_type);
-	else
-		fprintf(fpio, "GRID  %d %d %d  %lf %lf %lf  %lf %lf %lf %s\n",
-			-1, -1, -1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "NULLGRID");
-	fprintf(fpio, "SEARCH %s\n", phypo->searchInfo);
-	fprintf(fpio,
-"HYPOCENTER  x %lf y %lf z %lf  OT %lf  ix %d iy %d iz %d\n",
-		phypo->x, phypo->y, phypo->z, (double) phypo->sec,
-		phypo->ix, phypo->iy, phypo->iz);
-    }
+	if (iWriteMinimal) {
+		fprintf(fpio, "NLLOC \"%s\" \"%s\" \" \"\n",
+			phypo->fileroot, phypo->locStat);
+	} else {
+		fprintf(fpio, "NLLOC \"%s\" \"%s\" \"%s\"\n",
+			phypo->fileroot, phypo->locStat, phypo->locStatComm);
+		fprintf(fpio, "SIGNATURE \"%s\"\n", phypo->signature);
+		fprintf(fpio, "COMMENT \"%s\"\n", phypo->comment);
+		if (pgrid != NULL )
+			fprintf(fpio, "GRID  %d %d %d  %lf %lf %lf  %lf %lf %lf %s\n",
+				pgrid->numx, pgrid->numy, pgrid->numz,
+				pgrid->origx, pgrid->origy, pgrid->origz,
+				pgrid->dx, pgrid->dy, pgrid->dz, pgrid->chr_type);
+		else
+			fprintf(fpio, "GRID  %d %d %d  %lf %lf %lf  %lf %lf %lf %s\n",
+				-1, -1, -1, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "NULLGRID");
+		fprintf(fpio, "SEARCH %s\n", phypo->searchInfo);
+		fprintf(fpio,
+	"HYPOCENTER  x %lf y %lf z %lf  OT %lf  ix %d iy %d iz %d\n",
+			phypo->x, phypo->y, phypo->z, (double) phypo->sec,
+			phypo->ix, phypo->iy, phypo->iz);
+	}
 	fprintf(fpio,
 "GEOGRAPHIC  OT %4.4d %2.2d %2.2d  %2.2d %2.2d %9.6lf  Lat %lf Long %lf Depth %lf\n",
 //"GEOGRAPHIC  OT %4.4d %2.2d %2.2d  %2.2d %2.2d %lf  Lat %lf Long %lf Depth %lf\n",
@@ -1982,12 +2039,35 @@ int _WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 		phypo->expect_dlat, phypo->expect_dlong, phypo->expect.z);
 
 	fprintf(fpio, "%s\n", MapProjStr[n_proj]);
+
+
+		/* write mechanism */
+		fprintf(fpio,
+			"FOCALMECH  Hyp  %lf %lf %lf",
+			phypo->dlat, phypo->dlong, phypo->depth);
+		fprintf(fpio,
+			" Mech  %.1lf %.1lf %.1lf",
+			phypo->focMech.dipDir, phypo->focMech.dipAng,
+			phypo->focMech.rake);
+		fprintf(fpio, " mf  %.2lf nObs %d",
+			phypo->focMech.misfit, phypo->focMech.nObs);
+		fprintf(fpio, "\n");
+
+
+		/* write differential loc parameters */
+		if (nll_mode == MODE_DIFFERENTIAL) {
+			fprintf(fpio,
+				"DIFFERENTIAL  Nhyp %ld",
+				phypo->event_id);
+			fprintf(fpio, "\n");
+		}
+
+
     }
 
 
 	/* write arrival parameters */
-	/* !!! Remember to modify the sscanf in function GetHypLoc()
-						when modifying this fprintf */
+	/* !!! Remember to modify the sscanf in function GetHypLoc() when modifying this fprintf */
 
 	if (iWriteArrivals) {
 
@@ -1995,11 +2075,17 @@ int _WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 "PHASE ID Ins Cmp On Pha  FM Date     HrMn   Sec     Err  ErrMag    Coda      Amp       Per");
 		if (io_arrival_mode == IO_ARRIVAL_ALL)
 			fprintf(fpio,
-"      >   TTpred    Res       Weight    StaLoc(X  Y         Z)        SDist    SAzim  RAz   RDip  RQual\n");
+"      >   TTpred    Res       Weight    StaLoc(X  Y         Z)        SDist    SAzim  RAz   RDip  RQual    Tcorr \n");
 		else
 			fprintf(fpio, "\n");
 		for (narr = 0; narr < narrivals; narr++) {
 			parr = parrivals + narr;
+			if (nll_mode == MODE_DIFFERENTIAL) {
+//printf("phypo->event_id %ld  parr->dd_event_id_1 %ld  parr->dd_event_id_2 %ld\n", phypo->event_id, parr->dd_event_id_1, parr->dd_event_id_2);
+				if (parr->flag_ignore || !(phypo->event_id == parr->dd_event_id_1
+						|| phypo->event_id == parr->dd_event_id_2))
+					continue;
+			}
 			WriteArrival(fpio, parr, io_arrival_mode);
 		}
 		fprintf(fpio, "END_PHASE\n");
@@ -2014,6 +2100,8 @@ int _WriteLocation(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 		fclose(fpio);
 		NumFilesOpen--;
 	}
+
+	return(0);
 }
 
 
@@ -2028,7 +2116,7 @@ int GetHypLoc(FILE *fpio, char* filein, HypoDesc* phypo,
 	int istat, ifile = 0;
 	int lineLength;
 	char fn_in[FILENAME_MAX];
-	char line[MAXLINE_LONG], *pstr, *pstr2;
+	char line[MAXLINE_LONG], *pstr, *pstr2 = NULL;
 	double hypo_sec, templat, templong;
 	ArrivalDesc* parr;
 
@@ -2036,10 +2124,14 @@ int GetHypLoc(FILE *fpio, char* filein, HypoDesc* phypo,
 	/* open hypocenter file */
 
 	if (fpio == NULL) {
-		sprintf(fn_in, "%s.hyp", filein);
+		if ((pstr = strstr(filein, ".hyp")) == NULL
+				|| ((pstr - filein) < strlen(filein) - 4))
+			sprintf(fn_in, "%s.hyp", filein);
+		else
+			sprintf(fn_in, "%s", filein);
 		if ((fpio = fopen(fn_in, "r")) == NULL)
 		{
-			puterr("ERROR: opening hypocenter file.");
+			puterr2("ERROR: opening hypocenter file", fn_in);
 			return(-1);
 		}
 		NumFilesOpen++;
@@ -2054,21 +2146,21 @@ int GetHypLoc(FILE *fpio, char* filein, HypoDesc* phypo,
 		if (fgets(line, MAXLINE_LONG, fpio) == NULL)
 			goto eof_exit;
 	} while (strncmp("NLLOC", line, 5));
-	phypo->fileroot[0], '\0';
+	phypo->fileroot[0] = '\0';
 	if ((pstr = strchr(line, '"')) != NULL) {
 		if ((pstr2 = strchr(pstr + 1, '"')) != NULL) {
 			strncpy( phypo->fileroot, pstr + 1, pstr2 - pstr - 1);
 			phypo->fileroot[pstr2 - pstr - 1] = '\0';
 		}
 	}
-	phypo->locStat[0], '\0';
+	phypo->locStat[0] = '\0';
 	if ((pstr = strchr(pstr2 + 1, '"')) != NULL) {
 		if ((pstr2 = strchr(pstr + 1, '"')) != NULL) {
 			strncpy( phypo->locStat, pstr + 1, pstr2 - pstr - 1);
 			phypo->locStat[pstr2 - pstr - 1] = '\0';
 		}
 	}
-	phypo->locStatComm[0], '\0';
+	phypo->locStatComm[0] = '\0';
 	if ((pstr = strchr(pstr2 + 1, '"')) != NULL) {
 		if ((pstr2 = strchr(pstr + 1, '"')) != NULL) {
 			strncpy( phypo->locStatComm, pstr + 1,
@@ -2113,14 +2205,14 @@ int GetHypLoc(FILE *fpio, char* filein, HypoDesc* phypo,
 		else if (strncmp(line, "GRID", 4) == 0) {
 			/* GRID */
 			if (pgrid != NULL ) {
-			if (sscanf(line,
-					"%*s  %d %d %d  %lf %lf %lf  %lf %lf %lf %s",
-					&pgrid->numx, &pgrid->numy, &pgrid->numz,
-					&pgrid->origx, &pgrid->origy, &pgrid->origz,
-					&pgrid->dx, &pgrid->dy, &pgrid->dz,
-					pgrid->chr_type)
-						== EOF)
-				goto eof_exit;
+				if (sscanf(line,
+						"%*s  %d %d %d  %lf %lf %lf  %lf %lf %lf %s",
+						&pgrid->numx, &pgrid->numy, &pgrid->numz,
+						&pgrid->origx, &pgrid->origy, &pgrid->origz,
+						&pgrid->dx, &pgrid->dy, &pgrid->dz,
+						pgrid->chr_type)
+							== EOF)
+					goto eof_exit;
 			}
 		}
 
@@ -2237,8 +2329,18 @@ int GetHypLoc(FILE *fpio, char* filein, HypoDesc* phypo,
 
 		else if (strncmp(line, "TRANSFORM", 9) == 0) {
 			/* TRANSFORM */
-			line[MAXLINE_LONG - 1] = '\0';
-			strcpy(MapProjStr[n_proj], line);
+			if (n_proj >= 0)
+				line[MAXLINE_LONG - 1] = '\0';
+				strcpy(MapProjStr[n_proj], line);
+		}
+
+		else if (strncmp(line, "DIFFERENTIAL", 12) == 0) {
+
+			/* DIFFERENTIAL */
+			/* Nhyp n */
+			if (sscanf(line, "%*s %*s %ld", &phypo->event_id
+				) == EOF)
+					goto eof_exit;
 		}
 
 		else if (strncmp(line, "PHASE", 5) == 0) {
@@ -2247,7 +2349,8 @@ int GetHypLoc(FILE *fpio, char* filein, HypoDesc* phypo,
 			/* !!! Remember to modify this sscanf when modifying
 				fprintf format  in function WriteLocation() */
 
-			*pnarrivals = 0;
+			if (pnarrivals != NULL)
+				*pnarrivals = 0;
 
 			/* if requested to read arrivals */
 			if (iReadArrivals) {
@@ -2264,8 +2367,7 @@ int GetHypLoc(FILE *fpio, char* filein, HypoDesc* phypo,
 						break;
 					}
 					parr = parrivals + *pnarrivals;
-					istat = ReadArrival(line, parr,
-								IO_ARRIVAL_ALL);
+					istat = ReadArrival(line, parr, IO_ARRIVAL_ALL);
 					(*pnarrivals)++;
 				};
 			}
@@ -2359,7 +2461,12 @@ int ReadArrival(char* line, ArrivalDesc* parr, int iReadType)
 				&(parr->amplitude),
 				&(parr->period)
 		);
+		
+// AJL 20050324 $$$ XXX
+// work around for bug in SeisGram2K Cumul_XX uncertainty
+// parr->error /= 2.0;
 
+ 
 	strncpy(parr->label, label, ARRIVAL_LABEL_LEN - 1);
 /*printf("%s %s %s %s %s %s %ld %ld %lf %s %lf %lf %lf %lf\n",
 	parr->label,
@@ -2402,17 +2509,19 @@ int ReadArrival(char* line, ArrivalDesc* parr, int iReadType)
 			return(1);
 
 		istat = sscanf(line_calc + 1,
-"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d",
+"%lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d %lf",
 				&parr->pred_travel_time, &parr->residual,
 				&parr->weight,
 				&parr->station.x, &parr->station.y,
 				&parr->station.z,
 				&parr->dist, &parr->azim,
-				&parr->ray_azim, &parr->ray_dip, &parr->ray_qual
+				&parr->ray_azim, &parr->ray_dip, &parr->ray_qual,
+				&parr->delay
 				);
 		if (istat == EOF)
 			return(istat);
-		if (istat != 11)
+		//if (istat != 11)  // delay added
+		if (istat < 11)
 			return(-1);
 
 		/* convert ray aziumuth to grid coords direction */
@@ -2436,7 +2545,6 @@ int WriteArrival(FILE* fpio, ArrivalDesc* parr, int iWriteType)
 
 	int istat;
 	long int idate, ihrmin;
-	char *line_calc;
 	double sta_azim, ray_azim;
 
 
@@ -2477,13 +2585,14 @@ int WriteArrival(FILE* fpio, ArrivalDesc* parr, int iWriteType)
 		/* write calculated part of phase line */
 
 		istat = fprintf(fpio,
-" > %9.4lf %9.4lf %9.4lf %9.4lf %9.4lf %9.4lf %9.4lf %6.2lf %5.1lf %5.1lf %2d",
+" > %9.4lf %9.4lf %9.4lf %9.4lf %9.4lf %9.4lf %9.4lf %6.2lf %5.1lf %5.1lf %2d  %9.4lf",
 				parr->pred_travel_time, parr->residual,
 				parr->weight,
 				parr->station.x, parr->station.y,
 				parr->station.z,
 				parr->dist, sta_azim,
-				ray_azim, parr->ray_dip, parr->ray_qual
+				ray_azim, parr->ray_dip, parr->ray_qual,
+				parr->delay
 				);
 
 		if (istat < 0)
@@ -2506,7 +2615,7 @@ int WriteArrival(FILE* fpio, ArrivalDesc* parr, int iWriteType)
 int WriteArrivalHypo(FILE* fpio, ArrivalDesc* arrival, int iwriteEOL)
 {
 
-	int istat;
+	int istat = 0;
 	int pha_qual;
 
 
@@ -2631,6 +2740,8 @@ int convertCoordsRect(int proj_index_from, int proj_index_to, double x, double y
 	rect2latlon(proj_index_from, x, y, &dlat, &dlong);
 	latlon2rect(proj_index_to, dlat, dlong, pxnew, pynew);
 
+	return(0);
+
 }
 
 
@@ -2656,7 +2767,7 @@ INLINE int latlon2rect(int n_proj, double dlat, double dlong, double* pxrect, do
 			xtemp -= 360.0;
 		if (xtemp < -180.0)
 			xtemp += 360.0;
-		xtemp = xtemp * c111 * cos(rpd * dlat);
+		xtemp = xtemp * c111 * cos(cRPD * dlat);
 		ytemp = (dlat - map_orig_lat[n_proj]) * c111;
 		*pxrect = xtemp * map_cosang[n_proj] - ytemp * map_sinang[n_proj];
 		*pyrect = ytemp * map_cosang[n_proj] + xtemp * map_sinang[n_proj];
@@ -2698,7 +2809,7 @@ INLINE int rect2latlon(int n_proj, double xrect, double yrect, double* pdlat, do
 		xtemp = xrect * map_cosang[n_proj] + yrect * map_sinang[n_proj];
 		ytemp = yrect * map_cosang[n_proj] - xrect * map_sinang[n_proj];
 		*pdlat = map_orig_lat[n_proj] + ytemp / c111;
-		*pdlong = map_orig_long[n_proj] + xtemp / (c111 * cos(rpd * *pdlat));
+		*pdlong = map_orig_long[n_proj] + xtemp / (c111 * cos(cRPD * *pdlat));
 
 		return(0);
 
@@ -2756,11 +2867,10 @@ INLINE double latlon2rectAngle(int n_proj, double latlonAngle)
 
 /** function to convert source location parameters between coord systems */
 
-int ConvertSourceLoc(int n_proj, SourceDesc *source, int numSources,
-					int toXY, int toLatLon)
+int ConvertSourceLoc(int n_proj, SourceDesc *source, int numSources, int toXY, int toLatLon)
 {
 
-	int istat, nsource;
+	int istat = 0, nsource;
 	SourceDesc *srce_in;
 
 
@@ -2768,18 +2878,34 @@ int ConvertSourceLoc(int n_proj, SourceDesc *source, int numSources,
 
 		srce_in = source + nsource;
 
-		if (toXY && srce_in->is_coord_latlon &&
-						!srce_in->is_coord_xyz) {
-			istat = latlon2rect(n_proj, srce_in->dlat, srce_in->dlong,
-				&(srce_in->x), &(srce_in->y));
-			srce_in->z = srce_in->depth;
-		}
-		if (toLatLon && srce_in->is_coord_xyz &&
-					!srce_in->is_coord_latlon) {
-			istat = rect2latlon(n_proj, srce_in->x, srce_in->y,
-				&(srce_in->dlat), &(srce_in->dlong));
-			srce_in->depth = srce_in->z;
-		}
+		istat = ConvertASourceLocation(n_proj, srce_in,  toXY, toLatLon);
+
+	}
+
+	return(istat);
+
+}
+
+
+
+/** function to convert source location parameters between coord systems */
+
+int ConvertASourceLocation(int n_proj, SourceDesc *srce_in, int toXY, int toLatLon)
+{
+
+	int istat = 0;
+
+	if (toXY && srce_in->is_coord_latlon &&
+					!srce_in->is_coord_xyz) {
+		istat = latlon2rect(n_proj, srce_in->dlat, srce_in->dlong,
+			&(srce_in->x), &(srce_in->y));
+		srce_in->z = srce_in->depth;
+	}
+	if (toLatLon && srce_in->is_coord_xyz &&
+				!srce_in->is_coord_latlon) {
+		istat = rect2latlon(n_proj, srce_in->x, srce_in->y,
+			&(srce_in->dlat), &(srce_in->dlong));
+		srce_in->depth = srce_in->z;
 	}
 
 	return(istat);
@@ -2805,6 +2931,8 @@ int SetModelCoordsMode(int num_surfaces)
 		}
 	} else
 		ModelCoordsMode = COORDS_RECT;
+
+	return(0);
 
 }
 
@@ -2868,7 +2996,7 @@ int DayOfYear(int year, int month, int day)
 {
 	int i, leap;
 
-	leap = year%4 == 0 && year%100 != 0 || year%400 == 0;
+	leap = (year%4 == 0 && year%100 != 0) || year%400 == 0;
 	for (i = 1; i < month; i++)
 		day += daytab[leap][i];
 
@@ -2882,7 +3010,7 @@ void MonthDay(int year, int yearday, int* pmonth, int* pday)
 {
 	int i, leap;
 
-	leap = year%4 == 0 && year%100 != 0 || year%400 == 0;
+	leap = (year%4 == 0 && year%100 != 0) || year%400 == 0;
 	for (i = 1; yearday > daytab[leap][i]; i++)
 		yearday -= daytab[leap][i];
 	*pmonth = i;
@@ -3152,6 +3280,76 @@ int ReadTakeOffAnglesFile(char *fname, double xloc, double yloc, double zloc,
 
 
 
+/** function to generate normally distributed deviate with zero mean and unit variance */
+/* modified from Numerical Recipies function gasdev.c */
+
+double GaussDev()
+{
+	static int iset = 0;
+	static float gset;
+	double fac,r,v1,v2;
+
+	if  (iset == 0) {
+		do {
+			v1=get_rand_double(-1.0, 1.0);
+			v2=get_rand_double(-1.0, 1.0);
+			r=v1*v1+v2*v2;
+		} while (r >= 1.0);
+		fac=sqrt(-2.0*log(r)/r);
+		gset=v1*fac;
+		iset=1;
+		return v2*fac;
+	} else {
+		iset=0;
+		return gset;
+	}
+}
+
+
+/*** function to test GaussDev function */
+
+#define NUM_BIN 21
+#define WIDTH 3.0
+
+void TestGaussDev()
+{
+	long nmax = 21000;
+	long n, m;
+	long ibin[NUM_BIN];
+	double test;
+	double dbin, binmax[NUM_BIN];
+
+	dbin = 2.0 / (float) NUM_BIN;
+	for (n = 0; n < NUM_BIN; n++) {
+		ibin[n] = 0;
+		binmax[n] = WIDTH * ((double) (n + 1) * dbin  - 1.0);
+	}
+
+
+	for (n = 0; n < nmax; n++) {
+		test = GaussDev();
+		m = 0;
+		while (test > binmax[m] && m < NUM_BIN - 1)
+			m++;
+		ibin[m]++;
+	}
+
+	fprintf(stdout,
+		"\nGaussDev function test (samples= %ld)\n", nmax);
+	fprintf(stdout, "  Bin -Inf,%lf  N=%ld\n", binmax[0], ibin[0]);
+	for (n = 1; n < NUM_BIN - 1; n++) {
+		fprintf(stdout,
+			"  Bin %lf,%lf  N=%ld\n", binmax[n - 1], binmax[n],
+			ibin[n]);
+	}
+	fprintf(stdout,
+			"  Bin %lf,Inf  N=%ld\n", binmax[NUM_BIN - 2],
+			ibin[NUM_BIN - 1]);
+
+}
+
+
+
 /** function to generate and display "traditional" statistics from grid file */
 
 int GenTraditionStats(GridDesc *pgrid, Vect3D *pexpect, Mtrx3D *pcov,
@@ -3181,8 +3379,7 @@ int GenTraditionStats(GridDesc *pgrid, Vect3D *pexpect, Mtrx3D *pcov,
 
 	/* read PDF grid */
 
-	if (istat =
-		        ReadGrid3dBuf(pgrid, fpgrid)< 0) {
+	if ((istat = ReadGrid3dBuf(pgrid, fpgrid)) < 0) {
 		puterr("ERROR: reading PDF grid from disk.");
 		exit(EXIT_ERROR_IO);
 	}
@@ -3539,7 +3736,7 @@ Ellipsoid3D CalcErrorEllipsoid(Mtrx3D *pcov, double del_chi_2)
 		return(EllipsoidNULL);
 	}
 
-	/* check
+	/* check */
 	if (W_vector[0] < SMALL_DOUBLE || W_vector[1] < SMALL_DOUBLE
 			|| W_vector[2] < SMALL_DOUBLE) {
 		puterr(
@@ -3577,15 +3774,15 @@ Ellipsoid3D CalcErrorEllipsoid(Mtrx3D *pcov, double del_chi_2)
 		by 1/sqrt(w) since we are using SVD of Cov mtrx and not
 		SVD of A mtrx (compare eqns 2.6.1  & 15.6.10) */
 
-	ell.az1 = atan2(V_matrix[0][0], V_matrix[1][0]) / rpd;
+	ell.az1 = atan2(V_matrix[0][0], V_matrix[1][0]) / cRPD;
 	if (ell.az1 < 0.0)
 		ell.az1 += 360.0;
-	ell.dip1 = asin(V_matrix[2][0]) / rpd;
+	ell.dip1 = asin(V_matrix[2][0]) / cRPD;
 	ell.len1 = sqrt(del_chi_2) / sqrt(1.0 / W_vector[0]);
-	ell.az2 = atan2(V_matrix[0][1], V_matrix[1][1]) / rpd;
+	ell.az2 = atan2(V_matrix[0][1], V_matrix[1][1]) / cRPD;
 	if (ell.az2 < 0.0)
 		ell.az2 += 360.0;
-	ell.dip2 = asin(V_matrix[2][1]) / rpd;
+	ell.dip2 = asin(V_matrix[2][1]) / cRPD;
 	ell.len2 = sqrt(del_chi_2) / sqrt(1.0 / W_vector[1]);
 	ell.len3 = sqrt(del_chi_2) / sqrt(1.0 / W_vector[2]);
 
@@ -3603,7 +3800,7 @@ int ReadHypStatistics(FILE **pfpio, char* fnroot_in,
 			Mtrx3D* pcov, Ellipsoid3D *pellipsoid,
 			ArrivalDesc* parrivals, int *pnarrivals)
 {
-	int idummy;
+
 	char fn_in[FILENAME_MAX];
 	static HypoDesc hypo;
 
@@ -3652,7 +3849,7 @@ int ReadFocalMech(FILE **pfpio, char* fnroot_in,
 			FocalMech* pfocalMech,
 			ArrivalDesc* parrivals, int *pnarrivals)
 {
-	int idummy;
+
 	char fn_in[FILENAME_MAX];
 	static HypoDesc hypo;
 
@@ -3746,7 +3943,6 @@ int LineIsBlank(char *line)
 int ReadFortranString(char* line, int istart, int ilen, char* string_in)
 {
 	char chrtmp[MAXLINE], *chrpos;
-	int istat, n;
 
 
 	/* check for null char before end of read */
@@ -3927,7 +4123,331 @@ int GetQuality2Err(char* line1)
 
 
 
+/*** function to read fpfit summary record to HypoDesc structure */
 
+int ReadFpfitSum(FILE *fp_in, HypoDesc *phypo)
+{
+
+	int istat;
+	char *cstat;
+	double mag, dtemp;
+
+	double deg, dmin;
+	char strNS[2], strMagType[2];
+
+	static char line[MAXLINE_LONG];
+
+
+	/* read next line */
+	cstat = fgets(line, MAXLINE_LONG, fp_in);
+ 	if (cstat == NULL)
+		return(EOF);
+
+	/* read hypocenter parameters */
+
+	istat = 0;
+	istat += ReadFortranInt(line, 1, 2, &phypo->year);
+	if (phypo->year < 20)
+		phypo->year += 2000;
+	if (phypo->year < 100)
+		phypo->year += 1900;
+	istat += ReadFortranInt(line, 3, 2, &phypo->month);
+	istat += ReadFortranInt(line, 5, 2, &phypo->day);
+	istat += ReadFortranInt(line, 8, 2, &phypo->hour);
+	istat += ReadFortranInt(line, 10, 2, &phypo->min);
+	istat += ReadFortranReal(line, 12, 6, &phypo->sec);
+
+	istat += ReadFortranReal(line, 18, 3, &deg);
+	istat += ReadFortranString(line, 21, 1, strNS);
+	istat += ReadFortranReal(line, 22, 5, &dmin);
+	phypo->dlat = deg + dmin / 60.0;
+	if (strncmp(strNS, "S", 1) == 0)
+		phypo->dlat = -phypo->dlat;
+	istat += ReadFortranReal(line, 27, 4, &deg);
+	istat += ReadFortranString(line, 31, 1, strNS);
+	istat += ReadFortranReal(line, 32, 5, &dmin);
+	phypo->dlong = deg + dmin / 60.0;
+	if (strncmp(strNS, "W", 1) == 0)
+		phypo->dlong = -phypo->dlong;
+
+	istat += ReadFortranReal(line, 37, 7, &phypo->depth);
+
+	istat += ReadFortranReal(line, 46, 5, &mag);
+
+	istat += ReadFortranInt(line, 51, 3, &phypo->nreadings);
+	istat += ReadFortranReal(line, 54, 4, &dtemp);
+	phypo->gap = (int) 0.5 + dtemp;
+	istat += ReadFortranReal(line, 58, 5, &phypo->dist);
+	istat += ReadFortranReal(line, 63, 5, &phypo->rms);
+
+	/* hypoinverse horiz and vertical error are converted to ellipsoid,
+			this is not correct statistically  */
+	istat += ReadFortranReal(line, 68, 5, &(phypo->ellipsoid.len1));
+	phypo->ellipsoid.az1 = 0.0;
+	phypo->ellipsoid.dip1 = 0.0;
+	phypo->ellipsoid.len2 = phypo->ellipsoid.len1;
+	phypo->ellipsoid.az2 = 90.0;
+	phypo->ellipsoid.dip2 = 0.0;
+	istat += ReadFortranReal(line, 73, 5, &(phypo->ellipsoid.len3));
+
+	istat += ReadFortranString(line, 80, 1, strMagType);
+
+	/* focal mechanism parameters */
+
+	istat += ReadFortranReal(line, 82, 3, &phypo->focMech.dipDir);
+	istat += ReadFortranReal(line, 86, 2, &phypo->focMech.dipAng);
+	istat += ReadFortranReal(line, 88, 4, &phypo->focMech.rake);
+	istat += ReadFortranReal(line, 94, 4, &phypo->focMech.misfit);
+	istat += ReadFortranInt(line, 99, 3, &phypo->focMech.nObs);
+	istat += ReadFortranReal(line, 103, 5, &phypo->focMech.misfit90);
+	istat += ReadFortranReal(line, 109, 4, &phypo->focMech.staDist);
+	istat += ReadFortranReal(line, 114, 4, &phypo->focMech.ratioMH);
+	istat += ReadFortranReal(line, 120, 2, &phypo->focMech.conf90strike);
+	istat += ReadFortranReal(line, 123, 2, &phypo->focMech.conf90dip);
+	istat += ReadFortranReal(line, 126, 2, &phypo->focMech.conf90rake);
+	istat += ReadFortranString(line, 128, 1, phypo->focMech.convFlag);
+	istat += ReadFortranString(line, 129, 1, phypo->focMech.multSolFlag);
+
+	return(istat);
+
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+//========================================================
+// DD
+// see hypoDD doc (Open File Report 01-113)
+
+/*** function to read hypoDD Initial hypocenter input format to HypoDesc structure */
+
+/* example
+19850124   2195871   37.8832  -122.2415      9.800  1.4    0.15    0.51   0.02      38542
+19911126  14274555   37.8738  -122.2432      9.950  1.4    0.22    0.53   0.09     238298
+*/
+
+/*
+One event per line: DATE, TIME, LAT, LON, DEP, MAG, EH, EV, RMS, ID
+Parameter Description:
+	DATE Concatenated origin date (YYYYMMDD; year, month and day).
+	TIME Concatenated origin time (HHMMSSSS; hour, minute and seconds).
+	LAT, LON, DEP Latitude, longitude, depth (km).
+	MAG Magnitude (set to 0.0 if not available).
+	EH, EV Horizontal and vertical error (km) of original location (set to 0.0 if not available).
+	RMS Residual rms (s) (set to 0.0 is not available).
+	ID Event identification [I9].
+*/
+
+
+int ReadHypoDDInitHypo(FILE *fp_in, HypoDesc *phypo, int n_proj)
+{
+
+	int istat;
+	char *cstat;
+	double err_horiz, err_vert;
+
+	static char line[MAXLINE_LONG];
+
+
+	/* read next line */
+	cstat = fgets(line, MAXLINE_LONG, fp_in);
+ 	if (cstat == NULL)
+		return(EOF);
+
+	/* read hypocenter parameters */
+
+	istat = 0;
+	istat += ReadFortranInt(line, 1, 4, &phypo->year);
+	istat += ReadFortranInt(line, 5, 2, &phypo->month);
+	istat += ReadFortranInt(line, 7, 2, &phypo->day);
+	istat += ReadFortranInt(line, 11, 2, &phypo->hour);
+	istat += ReadFortranInt(line, 13, 2, &phypo->min);
+	istat += ReadFortranReal(line, 15, 4, &phypo->sec);
+	phypo->sec /= 100.0;
+
+	istat += sscanf(line, "%*s %*s %lf %lf %lf %lf %lf %lf %lf %ld",
+		&phypo->dlat, &phypo->dlong, &phypo->depth, &phypo->amp_mag,
+		&err_horiz, &err_vert, &phypo->rms, &phypo->event_id);
+
+//phypo->depth -= 8.0;
+
+	/* hypoDD horiz and vertical error are converted to ellipsoid,
+			this is not correct statistically  */
+	phypo->ellipsoid.az1 = 0.0;
+	phypo->ellipsoid.dip1 = 0.0;
+	phypo->ellipsoid.len1 = phypo->ellipsoid.len2 = err_horiz;
+	phypo->ellipsoid.az2 = 90.0;
+	phypo->ellipsoid.dip2 = 0.0;
+	phypo->ellipsoid.len3 = err_vert;
+
+
+	/* set additional hypocenter fields */
+	latlon2rect(n_proj, phypo->dlat, phypo->dlong, &(phypo->x), &(phypo->y));
+	phypo->z = phypo->depth;
+	phypo->dotime = 0.0;
+
+
+	return(istat == 14 ? 1 : -1);
+
+
+}
+
+
+/*** function to write hypoDD Initial hypocenter input format to out */
+
+/* example
+19850124   2195871   37.8832  -122.2415      9.800  1.4    0.15    0.51   0.02      38542  x y z
+19911126  14274555   37.8738  -122.2432      9.950  1.4    0.22    0.53   0.09     238298
+*/
+
+
+int WriteHypoDDInitHypo(FILE *fp_out, HypoDesc *phypo)
+{
+
+	fprintf(fp_out,
+"%4.4d%2.2d%2.2d  %2.2d%2.2d%4.4d %9.4f %10.4f %10.3f %4.1f %7.2f %7.2f %6.2f %10ld  %10.4f %10.4f %10.4f\n",
+		phypo->year, phypo->month, phypo->day,
+		phypo->hour, phypo->min, (int) (phypo->sec * 100.0 + 0.5),
+		phypo->dlat, phypo->dlong, phypo->depth, phypo->amp_mag,
+		phypo->ellipsoid.len1, phypo->ellipsoid.len3, phypo->rms, phypo->event_id,
+		phypo->x, phypo->y, phypo->z);
+
+	return(0);
+
+
+}
+
+
+
+/*** function to write hypoDD Cross correlation differential time input (e.g. file dt.cc) format to out */
+
+/* example:
+#    28136    46442     -0.174000
+#   402093   402094     -0.009000
+NCCMO        0.000000 -1.994625  ??
+NCCMO    -0.038245201    0.63    P
+NCCRP    -0.062200069    0.78    P
+NCJBG    -0.020649910    0.60    P
+NCJPS    -0.011000156    0.50    P
+*/
+
+int WriteHypoDDXCorrDiff(FILE *fp_out, int num_arrivals, ArrivalDesc *arrival, HypoDesc* hypos)
+{
+
+	int narr;
+	long dd_event_id_1, dd_event_id_2;
+	double dd_otime_corr;
+	ArrivalDesc *parr;
+
+
+	dd_event_id_1 = dd_event_id_2 = -1;
+
+	for (narr = 0; narr < num_arrivals; narr++) {
+
+		parr = arrival + narr;
+
+		if (parr->flag_ignore)
+			continue;
+
+		if (parr->dd_event_id_1 != dd_event_id_1 || parr->dd_event_id_2 != dd_event_id_2) {
+			dd_event_id_1 = parr->dd_event_id_1;
+			dd_event_id_2 = parr->dd_event_id_2;
+			// set new otime corr OTC based on current perturbatios to otimes
+			// original OTC was incorporated into dd_dtime when reading dt file.
+			dd_otime_corr = hypos[parr->dd_event_index_1].dotime
+					- hypos[parr->dd_event_index_2].dotime;
+			fprintf(fp_out, "# %8ld %8ld %13.6lf\n",
+				dd_event_id_1, dd_event_id_2, dd_otime_corr);
+		}
+
+		fprintf(fp_out, "%-8s %12lf %7lf %4s\n",
+			parr->label, parr->dd_dtime, parr->weight, parr->phase);
+
+	}
+
+
+		return(0);
+
+}
+
+
+/*** function to write arrival */
+
+int WriteDiffArrival(FILE* fpio, HypoDesc* hypos, ArrivalDesc* parr, int iWriteType)
+{
+
+	int istat;
+	double sta_azim, ray_azim;
+	double dd_otime_corr;
+
+
+	/* write observation part of phase line */
+
+	// set new otime corr OTC based on current perturbatios to otimes
+	// original OTC was incorporated into dd_dtime when reading dt file.
+	dd_otime_corr = hypos[parr->dd_event_index_1].dotime
+			- hypos[parr->dd_event_index_2].dotime;
+	istat = fprintf(fpio,
+"%-6.6s %-4.4s %-4.4s %-6.6s %8ld %8ld %9.5lf %9.5lf",
+				parr->label,
+				parr->inst,
+				parr->comp,
+				parr->phase,
+				parr->dd_event_id_1, parr->dd_event_id_2,
+				parr->dd_dtime - dd_otime_corr,
+				parr->weight
+		);
+	if (istat < 0)
+		return(-1);
+
+
+	if (iWriteType == IO_ARRIVAL_ALL) {
+
+		/* convert ray aziumuth to geographic direction */
+
+		sta_azim = rect2latlonAngle(0, parr->azim);
+		ray_azim = rect2latlonAngle(0, parr->ray_azim);
+
+		/* write calculated part of phase line */
+
+		istat = fprintf(fpio,
+" > %9.5lf %9.5lf %9.4lf %9.4lf %9.4lf %9.4lf %6.2lf %5.1lf %5.1lf %2d",
+				parr->pred_travel_time, parr->residual,
+				parr->station.x, parr->station.y,
+				parr->station.z,
+				parr->dist, sta_azim,
+				ray_azim, parr->ray_dip, parr->ray_qual
+				);
+
+		if (istat < 0)
+			return(-1);
+
+	}
+
+	istat = fprintf(fpio, "\n");
+	if (istat < 0)
+		return(-1);
+
+	return(0);
+
+}
+
+
+
+
+// END - DD
+//========================================================
 
 
 /*------------------------------------------------------------/ */

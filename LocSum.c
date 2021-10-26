@@ -48,7 +48,7 @@
 
 /* defines */
 
-#define MAX_NUM_INPUT_FILES 4096
+#define MAX_NUM_INPUT_FILES 50000
 
 
 /* globals */
@@ -57,7 +57,7 @@
 
 /* functions */
 
-int AddScatterFiles(int argc, char** argv);
+int SumLocations(int argc, char** argv);
 
 
 
@@ -87,7 +87,7 @@ int main(int argc, char** argv)
 	if (argc < 5) {
 		puterr("ERROR wrong number of command line arguments.");
 		disp_usage(PNAME,
-"<size_gridfile> decim <output_file_root> <add_file_list> [Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax]]]]]");
+"<size_gridfile> decim <output_file_root> <add_file_list> [Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax [latMin,latMax,longMin,longMax]]]]]]");
 		exit(-1);
 	}
 
@@ -96,7 +96,7 @@ int main(int argc, char** argv)
 	DispProgInfo();
 	message_flag = 0;
 
-	if ((istat = AddScatterFiles(argc, argv)) < 0) {
+	if ((istat = SumLocations(argc, argv)) < 0) {
 		puterr("ERROR doing ADD process.");
 		exit(-1);
 	}
@@ -109,20 +109,20 @@ int main(int argc, char** argv)
 
 
 
-int AddScatterFiles(int argc, char** argv)
+int SumLocations(int argc, char** argv)
 {
 
 	int istat;
 	int num_decim;
 	int npt, npoints;
-	int num_points_tot = 0, num_points_read = 0, num_points_written = 0;
+	long num_points_tot = 0L, num_points_read = 0L, num_points_written = 0L;
 
-	char sys_string[MAXLINE];
-	char filename[MAXLINE];
+	char sys_string[FILENAME_MAX];
+	char filename[FILENAME_MAX];
 	char fn_grid_size[FILENAME_MAX];
 	char fn_scatter[FILENAME_MAX];
 	char fn_hyp_scat_out[FILENAME_MAX];
-	char fn_root_out[FILENAME_MAX], fn_scat_in[FILENAME_MAX],
+	char fn_root_out[FILENAME_MAX], fn_hypos_in[FILENAME_MAX],
 		fn_scat_out[FILENAME_MAX];
 	FILE *fp_dummy, *fp_hyp_scat_out, *fp_scat_out,
 		*fp_scat_in, *fp_grid, *fp_hdr;
@@ -139,8 +139,11 @@ int AddScatterFiles(int argc, char** argv)
 	double Len3Mean = 0.0, ProbMean = 0.0, RMSMean = 0.0;
 	double NRdgsMean = 0.0, GapMean = 0.0;
 	int Len3Reject = 0, ProbReject = 0, RMSReject = 0;
-	int NRdgsReject = 0, GapReject = 0;
+	int NRdgsReject = 0, GapReject = 0, CutReject = 0;
 	int iReject;
+
+	double latMin, latMax, longMin, longMax;
+	int icut = 0;
 
 	GridDesc Grid, locgrid;
 	SourceDesc* Srce;
@@ -159,7 +162,7 @@ int AddScatterFiles(int argc, char** argv)
 		fprintf(stdout, "  Decimation: %d\n", num_decim);
 
 	sprintf(fn_root_out, "%s", argv[3]);
-	strcpy(fn_scat_in, argv[4]);
+	strcpy(fn_hypos_in, argv[4]);
 
 	Len3Max = 1.0e6;
 	if (argc > 5) {
@@ -186,6 +189,14 @@ int AddScatterFiles(int argc, char** argv)
 		sscanf(argv[9], "%d", &GapMax);
 	}
 	fprintf(stdout, "  Gap Maximum: %d\n", GapMax);
+	if (argc > 10) {
+		sscanf(argv[10], "%lf,%lf,%lf,%lf", &latMin, &latMax, &longMin, &longMax);
+		icut = 1;
+		fprintf(stdout, "  Geog Cut Limits: Lat: %f -> %f, Long: %f -> %f\n", latMin, latMax, longMin, longMax);
+	} else {
+		icut = 0;
+		fprintf(stdout, "  No Geog Cut\n");
+	}
 
 
 	/* duplicate size grid files to make dummy output grid files */
@@ -240,9 +251,8 @@ int AddScatterFiles(int argc, char** argv)
 	/* sum requested grid files into output grid */
 
 	/* check for wildcards in input file name */
-	strcat(fn_scat_in, test_str);
-	if ((numFiles = ExpandWildCards(fn_scat_in,
-			fn_hyp_in_list, MAX_NUM_INPUT_FILES)) < 1) {
+	strcat(fn_hypos_in, test_str);
+	if ((numFiles = ExpandWildCards(fn_hypos_in, fn_hyp_in_list, MAX_NUM_INPUT_FILES)) < 1) {
 		puterr("ERROR: no matching .hyp files found.");
 		return(-1);
 	}
@@ -307,6 +317,11 @@ int AddScatterFiles(int argc, char** argv)
 			GapReject++;
 			iReject = 1;
 		}
+		if (icut && (Hypo.dlat < latMin || Hypo.dlat > latMax
+				|| Hypo.dlong < longMin || Hypo.dlong > longMax)) {
+			CutReject++;
+			iReject = 1;
+		}
 
 		if (iReject)
 			continue;
@@ -331,10 +346,10 @@ int AddScatterFiles(int argc, char** argv)
 
 
 			/* read header record */
+			fseek(fp_scat_in, 0, SEEK_SET);
 			fread(&npoints, sizeof(int), 1, fp_scat_in);
 
-			fprintf(fp_hyp_scat_out, "SCATTER Nsamples %d\n",
-				npoints / num_decim);
+			fprintf(fp_hyp_scat_out, "SCATTER Nsamples %d\n", npoints / num_decim);
 
 			/* skip header record */
 			fseek(fp_scat_in, 4 * sizeof(float), SEEK_SET);
@@ -369,6 +384,8 @@ int AddScatterFiles(int argc, char** argv)
 
 			}
 
+			num_points_tot += npoints;
+
 			fprintf(fp_hyp_scat_out, "END_SCATTER\n");
 
 			fclose(fp_scat_in);
@@ -378,7 +395,6 @@ int AddScatterFiles(int argc, char** argv)
 		/* write end line and blank line */
 		fprintf(fp_hyp_scat_out, "END_NLLOC\n\n");
 
-		num_points_tot += npoints;
 	}
 
 
@@ -411,13 +427,15 @@ int AddScatterFiles(int argc, char** argv)
 		"Gap Mean: %lf, Reject %d\n",
 		GapMean / (double) nLocAccepted, GapReject);
 	fprintf(stdout,
-		"%d samples total in input scatter files.\n", num_points_tot);
+		"Cut Reject %d\n", CutReject);
 	fprintf(stdout,
-		"%d decimated samples read.\n", num_points_read);
-	fprintf(stdout, "%d samples written to binary sumfile <%s>\n",
+		"%ld samples total in input scatter files.\n", num_points_tot);
+	fprintf(stdout,
+		"%ld decimated samples read.\n", num_points_read);
+	fprintf(stdout, "%ld samples written to binary sumfile <%s>\n",
 		num_points_written, fn_scat_out);
 	fprintf(stdout,
-"%d samples and %d locations written to ascii sumfile <%s>\n",
+"%ld samples and %d locations written to ascii sumfile <%s>\n",
 		num_points_written, nLocWritten, fn_hyp_scat_out);
 
 

@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -30,6 +30,9 @@
 
 #define EXTERN_MODE 1
 #include "velmod.h"
+
+
+int Get2Dto3DTrans(char* input_line);
 
 
 
@@ -86,7 +89,7 @@ int read_vel_mod_input(FILE* fp_input, char* param, char* line, int istat, int i
 		}
 
 		if (strcmp(param, "2DTO3DTRANS") == 0)	/* read 2D to 3D trans */
-			if ((istat = Get2Dto3DTrans(strchr(line, ' '))) < 0) 
+			if ((istat = Get2Dto3DTrans(strchr(line, ' '))) < 0)
 				fprintf(stderr, 
 					"ERROR: reading 2D to 3D tansformation.\n");
 
@@ -677,7 +680,7 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 		*(ps->zdata + npt) = -zval * (ps->hdr)->z_scale_factor + ps->zshift;
 	}
 	if (imessage)
-		printf("%d Z-level data points read.\n", idatasize);
+		printf("%ld Z-level data points read.\n", idatasize);
 	fclose(fp_grd);
 
 
@@ -843,7 +846,7 @@ int read_grd(struct surface *ps, int imessage)
 		*(ps->zdata + npt) = zval * (ps->hdr)->z_scale_factor + ps->zshift;
 	}
 	if (imessage)
-		printf("%d Z-level data points read.\n", idatasize);
+		printf("%ld Z-level data points read.\n", idatasize);
 	fclose(fp_grd);
 
 
@@ -992,7 +995,7 @@ double x;
 
 	for (nsin = 0; nsin < rp->num_sin; nsin++) {
 		z += (rp->amp[nsin] / 2.0) *
-			sin(2.0 * pi * (x - rp->phase[nsin]) / rp->wavelen[nsin]);
+			sin(2.0 * cPI * (x - rp->phase[nsin]) / rp->wavelen[nsin]);
 	}
 
 	return(z);
@@ -1118,7 +1121,7 @@ int get_model_poly(char* input_line, FILE* fp)
 
 	if (prog_mode_3d && !prog_mode_Mod2D3D) {
 		for (nedge = 0;
-			nedge < num_edges, fscanf(fp, "%d", &id_edge); nedge++) ;
+			nedge < num_edges && fscanf(fp, "%d", &id_edge); nedge++) ;
     		return (0);
 	}
 
@@ -1194,7 +1197,7 @@ int get_model_poly_3d(char* input_line, FILE* fp)
 
 	if (! prog_mode_3d) {
 		for (nedge = 0;
-			nedge < num_edges, fscanf(fp, "%d", &id_edge); nedge++) ;
+			nedge < num_edges && fscanf(fp, "%d", &id_edge); nedge++) ;
     	return (0);
 	}
 
@@ -1259,8 +1262,8 @@ int get_model_solid(char* input_line, FILE* fp)
 
 	if (! prog_mode_3d) {
 		for (npoly = 0;
-			npoly < num_poly, fscanf(fp, "%d", &id_poly); npoly++);
-    	return (0);
+			npoly < num_poly && fscanf(fp, "%d", &id_poly); npoly++);
+		return (0);
 	}
 
 	if (num_poly < 4)
@@ -1641,7 +1644,7 @@ int set_solid_normals(struct solid *addr)
 	int nedge_test, nedge_curr;
 	double x1, y1, z1, x2, y2, z2, x3, y3, z3, xtest, ytest, ztest;
 	double a, b, c, d;
-	struct vertex *vaddr1, *vaddr2, *vaddr3, *vaddr_test, *vaddr_curr;
+	struct vertex *vaddr1, *vaddr2, *vaddr3, *vaddr_test = NULL, *vaddr_curr;
 
 		/* allocate space for normal coeff structures */
 
