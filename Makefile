@@ -30,7 +30,7 @@ CC=gcc
 
 
 # Linux, Mac OS X ?
-CCFLAGS_BASIC =  -Wall -std=gnu99 ${GRID_FLOAT}
+CCFLAGS_BASIC =  -Wall -std=gnu99 ${GRID_FLOAT} -fcommon
 # Mac OS X ?
 #CCFLAGS_BASIC =  -Wall -D__APPLE__
 #
