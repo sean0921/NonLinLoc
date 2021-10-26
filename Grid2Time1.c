@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
+ * Copyright (C) 1999-2008 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,18 +17,20 @@
  */
 
 
+
+
 /*   Grid2Time.c
 
 	Program to calculate travel times for 3-D grids
 
 */
 
-/*------------------------------------------------------------/ */
-/* Anthony Lomax           | email: lomax@faille.unice.fr     / */
-/* UMR Geosciences Azur    | web: www-geoazur.unice.fr/~lomax / */
-/* 250 Rue Albert Einstein | tel: 33 (0) 4 93 95 43 25        / */
-/* 06560 Valbonne, FRANCE  | fax: 33 (0) 4 93 65 27 17        / */
-/*------------------------------------------------------------/ */
+/*-----------------------------------------------------------------------
+Anthony Lomax
+Anthony Lomax Scientific Software
+161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
+tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
+-------------------------------------------------------------------------*/
 
 
 /*
@@ -304,20 +306,21 @@ int main(int argc, char *argv[])
 		izstep = izmax / 10;
 		if (izstep < 1) izstep = 1;
 		sprintf(MsgStr, "Sample of Model Grid: X=%d  Y=0,%d,%d  Z=0,%d,%d",
-				ix, iymax, iystep, izmax, izstep);
+			ix, iymax, iystep, izmax, izstep);
 		putmsg(2, MsgStr);
-		for (iz = 0; iz < izmax; iz += izstep) {
-			//sprintf(MsgStr, "\0");
-			for (iy = 0; iy < iymax; iy += iystep)
-				sprintf(MsgStr, "%s %.2e ", MsgStr, mod_grid.array[0][iy][iz]);
-		putmsg(2, MsgStr);
-	}
-		if ((istat = CheckGridArray(&mod_grid,
-				VERY_LARGE_FLOAT, VERY_LARGE_FLOAT,
-				-VERY_LARGE_FLOAT, -VERY_LARGE_FLOAT)) <  0) {
-			puterr("ERROR: invalid vel/slowness model grid.");
-			exit(EXIT_ERROR_MODEL);
+		if (message_flag >= 2) {
+			for (iz = 0; iz < izmax; iz += izstep) {
+				for (iy = 0; iy < iymax; iy += iystep)
+					fprintf(stdout, "%.2e ", MsgStr, mod_grid.array[0][iy][iz]);
+			}
+			fprintf(stdout, "\n");
 		}
+		if ((istat = CheckGridArray(&mod_grid,
+		     VERY_LARGE_FLOAT, VERY_LARGE_FLOAT,
+		     -VERY_LARGE_FLOAT, -VERY_LARGE_FLOAT)) <  0) {
+			     puterr("ERROR: invalid vel/slowness model grid.");
+			     exit(EXIT_ERROR_MODEL);
+		     }
 	}
 
 
@@ -794,7 +797,7 @@ int ReadGrid2TimeInput(FILE* fp_input)
 			} else
 				flag_source = 1;
 		}
-		
+
 
 		if (strcmp(param, "GTGRID") == 0) {
     			if ((istat = get_grid(strchr(line, ' '))) < 0)
@@ -803,7 +806,7 @@ int ReadGrid2TimeInput(FILE* fp_input)
 			else
 				flag_grid = 1;
 		}
-		
+
 
 		/* read PodLec FD params */
 
@@ -813,7 +816,7 @@ int ReadGrid2TimeInput(FILE* fp_input)
 			else
 				flag_plfd = 1;
 		}
-		
+
 
 		/* read Wavefront params */
 
@@ -823,7 +826,7 @@ int ReadGrid2TimeInput(FILE* fp_input)
 			else
 				flag_wavefront = 1;
 		}
-		
+
 
 		/*read transform params */
 

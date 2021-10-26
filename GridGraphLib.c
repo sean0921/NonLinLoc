@@ -62,24 +62,24 @@ int ReadGraphicsInput(FILE* fp_input, char* param, char* line, int istat)
 #if 0
 	/* read station params */
 	if (strncmp(param, "STATION", 7) == 0)
-		if ((istat = get_stations(strchr(line, ' ') + 1, fp_input)) < 0) 
+		if ((istat = get_stations(strchr(line, ' ') + 1, fp_input)) < 0)
 			fprintf(stderr, "Error reading station parameters.\n");
 
 	/* read graph text params */
 	if (strncmp(param, "GTEXT", 5) == 0)
-		if ((istat = get_gtext(strchr(line, ' ') + 1)) < 0) 
+		if ((istat = get_gtext(strchr(line, ' ') + 1)) < 0)
 			fprintf(stderr, "Error reading graphics text parameters.\n");
 
 	/* read graph line params */
 	if (strncmp(param, "GLINE", 5) == 0)
-		if ((istat = get_gline(strchr(line, ' ') + 1, fp_input)) < 0) 
+		if ((istat = get_gline(strchr(line, ' ') + 1, fp_input)) < 0)
 			fprintf(stderr, "Error reading graphics line parameters.\n");
 
 #endif
 
 	/* read mapline params */
 	if (strncmp(param, "MAPLINE", 7) == 0)
-		if ((istat = get_maplines(strchr(line, ' ') + 1)) < 0) 
+		if ((istat = get_maplines(strchr(line, ' ') + 1)) < 0)
 			fprintf(stderr, "Error reading mapline parameters.\n");
 
 	return(istat);
@@ -105,24 +105,24 @@ int get_maplines(char* input_line)
 		/* read mapline input line */
 
 	sscanf(input_line, "%s %s %lf %lf %lf %s",
-		&(mapfile[gr_num_map_files].format), 
-			mapfile[gr_num_map_files].name, 
+		mapfile[gr_num_map_files].format,
+		mapfile[gr_num_map_files].name,
 		&(mapfile[gr_num_map_files].rgb.r),
 		&(mapfile[gr_num_map_files].rgb.g),
 		&(mapfile[gr_num_map_files].rgb.b),
 		mapfile[gr_num_map_files].line_style);
 
 	sprintf(MsgStr, "MAPLINE  fmt %s  `%s' ",
-      		mapfile[gr_num_map_files].format, 
+      		mapfile[gr_num_map_files].format,
 		mapfile[gr_num_map_files].name);
  	putmsg(2, MsgStr);
 	sprintf(MsgStr, "  col r %f g %f b %f   line_style %s",
-       		mapfile[gr_num_map_files].rgb.r, 
-		mapfile[gr_num_map_files].rgb.g, 	
-		mapfile[gr_num_map_files].rgb.b, 
+       		mapfile[gr_num_map_files].rgb.r,
+		mapfile[gr_num_map_files].rgb.g,
+		mapfile[gr_num_map_files].rgb.b,
 		mapfile[gr_num_map_files].line_style);
  	putmsg(2, MsgStr);
-	
+
 	gr_num_map_files++;
 
     return (0);
@@ -147,7 +147,7 @@ int PlotMapLines()
 	if (!prog_mode_3d)
 		return;
 
-	c111 = 10000.0 / 90.0; 
+	c111 = 10000.0 / 90.0;
 
 	      /* draw map lines */
 
@@ -313,7 +313,7 @@ char *get_timestamp()
 {
 	static char timestr[21];
 	time_t tp;
-	struct tm *ltime; 
+	struct tm *ltime;
 
 	(void) time(&tp);
 
@@ -329,7 +329,7 @@ char *get_timestamp()
 
 /** function to write GMT psxy data to draw an error cross */
 
-int Err2GMT(FILE* fp_io, double xcent, double ycent, 
+int Err2GMT(FILE* fp_io, double xcent, double ycent,
 	double xerrlen, double xbarlen, double yerrlen, double ybarlen)
 {
 	double xloc, yloc;
@@ -389,7 +389,7 @@ int Err2GMT(FILE* fp_io, double xcent, double ycent,
 /* from "Bivariate Normal Distribution Web page
 	http://www.cern.ch/Physics/DataAnalysis/BriefBook/AN10pp/node17.html */
 
-Vect2D* Cov2Ellipse(double covxx,  double covyy, double covxy, 
+Vect2D* Cov2Ellipse(double covxx,  double covyy, double covxy,
 		double xcent, double ycent, Vect2D* xyarray, int npts)
 {
 	int n;
@@ -418,10 +418,10 @@ Vect2D* Cov2Ellipse(double covxx,  double covyy, double covxy,
 
 	/* semi-diameters */
 	p1 = sqrt( sigma1_2 * sigma2_2 * (1.0 - rho_2) /
-		(sigma2_2 * cosa_2 - 2.0 * rho * sigma1 * sigma1 * sina * cosa 
+		(sigma2_2 * cosa_2 - 2.0 * rho * sigma1 * sigma1 * sina * cosa
 			+ sigma1_2 * sina_2) );
 	p2 = sqrt( sigma1_2 * sigma2_2 * (1.0 - rho_2) /
-		(sigma2_2 * sina_2 + 2.0 * rho * sigma1 * sigma1 * sina * cosa 
+		(sigma2_2 * sina_2 + 2.0 * rho * sigma1 * sigma1 * sina * cosa
 			+ sigma1_2 * cosa_2) );
 
 	/* prob inside ellipse is ~39%, multiply by 2 to get ~??% */
@@ -470,7 +470,7 @@ int Vect2DArray2GMT(FILE* fp_io, Vect2D* array, int npts)
 
 /* converted from method init in Java class Ellipsoid3D (04DEC1998) */
 
-void initEllipsiodAxes(Ellipsoid3D *pellipsoid, 
+void initEllipsiodAxes(Ellipsoid3D *pellipsoid,
 			Vect3D *paxis1, Vect3D *paxis2, Vect3D *paxis3)
 {
 
@@ -498,8 +498,8 @@ void initEllipsiodAxes(Ellipsoid3D *pellipsoid,
 	paxis2->z = -sin(cRPD * dip2);
 
 	cross_product_3d(
-		paxis1->x, paxis1->y, paxis1->z, 
-		paxis2->x, paxis2->y, paxis2->z, 
+		paxis1->x, paxis1->y, paxis1->z,
+		paxis2->x, paxis2->y, paxis2->z,
 		&paxis3->x, &paxis3->y, &paxis3->z);
 
 	paxis1->x *= pellipsoid->len1;
@@ -515,13 +515,13 @@ void initEllipsiodAxes(Ellipsoid3D *pellipsoid,
 }
 
 
-/** method to convert 2 semi-axis in 3D to an array of points 
+/** method to convert 2 semi-axis in 3D to an array of points
 		defining  an error ellipse (covariance ellipse) */
 
 /* converted from method toEllipsoid3D in Java class Ellipsoid3D (04DEC1998) */
 
 /* !!! remember to free ellArray */
-	
+
 Vect3D* toEllipsoid3D(Vect3D ax1, Vect3D ax2, Vect3D center, int npts)
 {
 	Vect3D *ellArray;
@@ -540,11 +540,11 @@ Vect3D* toEllipsoid3D(Vect3D ax1, Vect3D ax2, Vect3D center, int npts)
 
 		cosang = cos(angle);
 		sinang = sin(angle);
-		ellArray[n].x = center.x 
+		ellArray[n].x = center.x
 			+ ax1.x * cosang + ax2.x * sinang;
-		ellArray[n].y = center.y 
+		ellArray[n].y = center.y
 			+ ax1.y * cosang + ax2.y * sinang;
-		ellArray[n].z = center.z 
+		ellArray[n].z = center.z
 			+ ax1.z * cosang + ax2.z * sinang;
 			angle += d_angle;
 	}

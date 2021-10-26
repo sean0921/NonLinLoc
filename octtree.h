@@ -92,6 +92,7 @@ typedef struct
 	int numx, numy, numz;		/* grid size */
  	Vect3D orig; 	/* orig (km) */
 	Vect3D ds;		/* len side (km) */
+	double integral;
 }
 Tree3D;
 
@@ -130,9 +131,9 @@ typedef struct resultTreeNode {
 /* function declarations */
 /*------------------------------------------------------------/ */
 
-Tree3D* newTree3D(int data_code, int numx, int numy, int numz, 
+Tree3D* newTree3D(int data_code, int numx, int numy, int numz,
 	double origx, double origy, double origz,
-	double dx,  double dy,  double dz, double value, void *pdata);
+	double dx,  double dy,  double dz, double value, double integral, void *pdata);
 OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value, void *pdata);
 void subdivide(OctNode* parent, double value, void *pdata);
 void freeTree3D(Tree3D* tree, int freeDataPointer);

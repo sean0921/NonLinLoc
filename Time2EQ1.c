@@ -56,7 +56,7 @@
 #define MODE_UNDEF		-1
 
 /* globals  */
-char EventStr[MAXLINE], fn_hypo_output[MAXLINE], fn_simulps_output[MAXLINE];
+char EventStr[MAXLINE], fn_hypo_output[MAXLINE], fn_simulps_output[MAXLINE], fn_invc_output[MAXLINE];
 char fn_gmt_output[MAXLINE];
 char fn_eq_input[MAXLINE], fn_eq_output[MAXLINE];
 int time2eq_mode;
@@ -89,8 +89,9 @@ int ReadTime2EQ_Input(FILE* );
 int GetTime2EQ_Files(char* );
 int get_vp_vs(char* line1);
 double CalcArrivalTime(FILE* , GridDesc* , SourceDesc*,  StationDesc* );
+double AddNoise(double arrival_time, StationDesc* psta);
 int CalcFirstMotion(char *, GridDesc* , SourceDesc*  , StationDesc* );
-int WritePhaseArrival(double , int , FILE* , FILE* , FILE* , FILE* , FILE* , SourceDesc*,
+int WritePhaseArrival(double , int , FILE* , FILE* , FILE* , FILE* , FILE* , FILE* , SourceDesc*,
 	StationDesc* , int );
 int get_mech(char* );
 double calc_rad(double , double , char );
@@ -112,7 +113,7 @@ int main(int argc, char *argv[])
 	int nsta_written;
 
 	char filename[MAXLINE], filename_angle[MAXLINE];
-	FILE *fp_eq_output, *fp_hypo_output, *fp_simulps_output;
+	FILE *fp_eq_output, *fp_hypo_output, *fp_simulps_output, *fp_invc_output;
 	FILE *fp_gmt_output, *fp_gmt_output_az;
 	FILE *fp_time_grid, *fp_time_hdr;
 
@@ -149,15 +150,6 @@ int main(int argc, char *argv[])
 	grid0.iSwapBytes = 0;
 
 
-	/* initialize random number generator */
-
-	SRAND_FUNC(RandomNumSeed);
-	if (message_flag >= 3)
-		 test_rand_int();
-	if (message_flag >= 3)
-		TestGaussDev();
-
-
 	/* read control file */
 
 	strcpy(fn_control, argv[1]);
@@ -169,6 +161,15 @@ int main(int argc, char *argv[])
 	if ((istat = ReadTime2EQ_Input(fp_control)) < 0) {
 		exit(EXIT_ERROR_FILEIO);
 	}
+
+	/* initialize random number generator */
+
+	SRAND_FUNC(RandomNumSeed);
+	if (message_flag >= 3)
+		 test_rand_int();
+	if (message_flag >= 3)
+		TestGaussDev();
+
 
 
 	/* convert source location coordinates  */
@@ -195,6 +196,14 @@ int main(int argc, char *argv[])
 		puterr("ERROR: opening eq times SIMULPS (Alberto) output file.");
 		exit(EXIT_ERROR_FILEIO);
 	}
+
+
+	sprintf(fn_invc_output, "%s.invc", fn_eq_output);
+	if ((fp_invc_output = fopen(fn_invc_output, "w")) == NULL) {
+		puterr("ERROR: opening eq times INVCOUCHE output file.");
+		exit(EXIT_ERROR_FILEIO);
+	}
+
 
 	sprintf(fn_gmt_output, "%s.gmtxy", fn_eq_output);
 	if ((fp_gmt_output = fopen(fn_gmt_output, "w")) == NULL) {
@@ -228,6 +237,9 @@ int main(int argc, char *argv[])
 "EQEVENT:  Label: %s  Loc:  X %.2lf  Y %.2lf  Z %.2lf  OT %.2lf",
 		Event->label, Event->x, Event->y, Event->z, Event->otime);
 		fprintf(fp_eq_output, "# %s\n", EventStr);
+		// INVCOUCHE
+		// T5  864979  177041  230   0.1490
+		fprintf(fp_invc_output, "%s  %f %f elevation_toit-%f  %f", Event->label, 1000.0 * Event->x, 1000.0 * Event->y, 1000.0 * Event->z, Event->otime);
 
 		/* generate arrival times for each station */
 
@@ -236,7 +248,7 @@ int main(int argc, char *argv[])
 
 			// check if active
 			if ((Station + nsta)->prob_active < 1.0) {
-				if (get_rand_double(0.0, 1.0) 
+				if (get_rand_double(0.0, 1.0)
 						> (Station + nsta)->prob_active)
 					continue;
 			}
@@ -247,8 +259,7 @@ int main(int argc, char *argv[])
 					&& strcmp(last_phs_label, "P") == 0
 					&& VpVsRatio > 0.0 && last_arrival_time > 0.0)
 			{
-				arrival_time = Event->otime +
-					VpVsRatio * (last_arrival_time - Event->otime);
+				arrival_time = Event->otime + VpVsRatio * (last_arrival_time - Event->otime);
 
 				sprintf(MsgStr_sta,
 "Calculating travel time for station / S phase: %s  %s",
@@ -264,8 +275,7 @@ int main(int argc, char *argv[])
 						&fp_time_hdr, &grid0, "time", &srce0, grid0.iSwapBytes))
 							< 0) {
 					CloseGrid3dFile(&fp_time_grid, &fp_time_hdr);
-					puterr2("ERROR: opening time grid files",
-						filename);
+					puterr2("ERROR: opening time grid files", filename);
 					continue;
 				}
 				sprintf(filename_angle, "%s.%s.%s.angle", fn_eq_input,
@@ -275,8 +285,7 @@ int main(int argc, char *argv[])
 				(Station + nsta)->y = srce0.y;
 				(Station + nsta)->z = srce0.z;
 
-				arrival_time = CalcArrivalTime(fp_time_grid,
-							&grid0, Event, Station + nsta);
+				arrival_time = CalcArrivalTime(fp_time_grid, &grid0, Event, Station + nsta);
 				CloseGrid3dFile(&fp_time_grid, &fp_time_hdr);
 				sprintf(MsgStr_sta,
 "Calculating travel time for station / phase: %s  %s  X %.2lf  Y %.2lf  Z %.2lf",
@@ -315,8 +324,10 @@ int main(int argc, char *argv[])
 			else if (imech == MECH_ISOTROPIC) {
 				ipolarity =  1;
 			}
+			// AJL 20070731 - bug fix: new function AddNoise treats S with VpVs correctly
+			arrival_time = AddNoise(arrival_time, Station + nsta);
 			if ((istat = WritePhaseArrival(arrival_time, ipolarity,
-					fp_eq_output, fp_hypo_output, fp_simulps_output,
+			     fp_eq_output, fp_hypo_output, fp_simulps_output, fp_invc_output,
 					fp_gmt_output, fp_gmt_output_az,
 					Event, Station + nsta, nsta_written++)) < 0)
 				puterr("ERROR: writing phase arrival.");
@@ -324,6 +335,7 @@ int main(int argc, char *argv[])
 		}
 		fprintf(fp_eq_output, "#\n");
 		fprintf(fp_hypo_output, "\n                 10\n");
+		fprintf(fp_invc_output, "\n  END_STA\n\n");
 		fprintf(fp_simulps_output, "\n0\n");
 	}
 
@@ -333,6 +345,7 @@ int main(int argc, char *argv[])
 	fclose(fp_eq_output);
 
 	fclose(fp_hypo_output);
+	fclose(fp_invc_output);
 	fclose(fp_simulps_output);
 	fclose(fp_gmt_output);
 	fclose(fp_gmt_output_az);
@@ -345,12 +358,10 @@ int main(int argc, char *argv[])
 
 /*** function to calc arrival time from time grid file and add noise */
 
-double CalcArrivalTime(FILE* fpgrid, GridDesc* ptgrid,
-			SourceDesc*  pevent, StationDesc* psta)
+double CalcArrivalTime(FILE* fpgrid, GridDesc* ptgrid, SourceDesc*  pevent, StationDesc* psta)
 {
 
 	double arrival_time, yval_grid;
-	double noise = 0.0;
 
 
 	/* get travel time */
@@ -359,14 +370,26 @@ double CalcArrivalTime(FILE* fpgrid, GridDesc* ptgrid,
 	if (ptgrid->type == GRID_TIME) {
 		/* 3D grid */
 		arrival_time = pevent->otime +
-			ReadAbsInterpGrid3d(fpgrid, ptgrid,
-			pevent->x, pevent->y, pevent->z);
+			ReadAbsInterpGrid3d(fpgrid, ptgrid, pevent->x, pevent->y, pevent->z);
 	} else {
 		/* 2D grid (1D model) */
 		yval_grid = GetEpiDistSta(psta, pevent->x, pevent->y);
-		arrival_time = pevent->otime +
-			ReadAbsInterpGrid2d(fpgrid, ptgrid, yval_grid, pevent->z);
+		//printf("CalcArrivalTime: xyz= %f %f %f  yval_grid=%f\n", pevent->x, pevent->y, pevent->z, yval_grid);
+		arrival_time = pevent->otime + ReadAbsInterpGrid2d(fpgrid, ptgrid, yval_grid, pevent->z);
+		//printf("CalcArrivalTime: arrival_time=%f  dist=%f %f\n", arrival_time, sqrt(yval_grid * yval_grid + (pevent->z - psta->z) * (pevent->z - psta->z)), sqrt((pevent->x - psta->x) * (pevent->x- psta->x)+ (pevent->y - psta->y) * (pevent->y - psta->y) + (pevent->z - psta->z) * (pevent->z - psta->z)));
 	}
+
+	return(arrival_time);
+
+}
+
+
+/*** function to calc arrival time from time grid file and add noise */
+
+double AddNoise(double arrival_time, StationDesc* psta)
+{
+
+	double noise = 0.0;
 
 
 	/* add noise */
@@ -374,19 +397,19 @@ double CalcArrivalTime(FILE* fpgrid, GridDesc* ptgrid,
 	if (strcmp(psta->phs[0].error_type, "GAU") == 0)
 		noise =  psta->phs[0].error * GaussDev();
 	else if (strcmp(psta->phs[0].error_type, "BOX") == 0)
-		noise = get_rand_double(-(psta->phs[0].error),
-							psta->phs[0].error);
+		noise = get_rand_double(-(psta->phs[0].error), psta->phs[0].error);
 	else if (strcmp(psta->phs[0].error_type, "FIX") == 0)
 		noise = psta->phs[0].error;
 	else if (strcmp(psta->phs[0].error_type, "NONE") == 0)
 		noise = 0.0;
 	else
-		puterr2("ERROR: unrecognized error type:",
-					psta->phs[0].error_type);
+		puterr2("ERROR: unrecognized error type:", psta->phs[0].error_type);
 
-	arrival_time += noise;
+	sprintf(MsgStr, "Station %s  Phase %s  Error Type %s  Error %f  ->  Noise %f + ArrivalTime %f = Sum %f", psta->label, psta->phs[0].label, psta->phs[0].error_type, psta->phs[0].error, noise, arrival_time, noise + arrival_time
+	       );
+	putmsg(2, MsgStr);
 
-	return(arrival_time);
+	return(arrival_time + noise);
 
 }
 
@@ -437,7 +460,7 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid,
 /*** function to calc arrival time from grid file and save to event file */
 
 int WritePhaseArrival(double arrival_time, int ipolarity,
-		FILE* fpout, FILE* fpout_hypo, FILE* fpout_simulps,
+		      FILE* fpout, FILE* fpout_hypo, FILE* fpout_simulps, FILE* fpout_invc,
 		FILE* fpout_gmt, FILE* fpout_gmt_az,
 		SourceDesc*  pevent, StationDesc* psta, int num_sta)
 {
@@ -493,13 +516,19 @@ int WritePhaseArrival(double arrival_time, int ipolarity,
 		return(-1);
 	}
 
+	/* write arrival time to INVCOUCHE output file */
+
+	if (fpout_invc != NULL) {
+		fprintf(fpout_invc, "\n   %-20.20s %f", parr->label, arrival_time);
+	}
+
 	/* write arrival time to HYPO output file */
 
 	if (fpout_hypo != NULL) {
 		iEOL = 1;
 		if (strcmp(lastarr.label, parr->label) == 0
-			&& strcmp(lastarr.phase, "P") == 0
-					&& strcmp(parr->phase, "S") == 0)
+				  && strcmp(lastarr.phase, "P") == 0
+				  && strcmp(parr->phase, "S") == 0)
 			iEOL = 0;
 		if (WriteArrivalHypo(fpout_hypo, parr, iEOL) < 0) {
 			puterr("ERROR: writing hypo71 arrival time to disk.\n");
@@ -541,7 +570,7 @@ int WritePhaseArrival(double arrival_time, int ipolarity,
 			);
 	}
 
-	/* write arrival time to GMT output file */
+	/* write dist/az to GMT output file */
 
 	if (fpout_gmt != NULL) {
 		if ((az = GetEpiAzimSta(psta, pevent->x, pevent->y)) < 90.0
@@ -630,7 +659,7 @@ int ReadTime2EQ_Input(FILE* fp_input)
 			else
 				flag_control = 1;
 		}
-		
+
 
 		/*read transform params */
 
@@ -640,7 +669,7 @@ int ReadTime2EQ_Input(FILE* fp_input)
 			else
 				flag_trans = 1;
 		}
-		
+
 
 		/* read file names */
 
@@ -660,7 +689,7 @@ int ReadTime2EQ_Input(FILE* fp_input)
 			else
 				flag_mode = 1;
 		}
-		
+
 
 		/* read source params */
 
@@ -670,8 +699,8 @@ int ReadTime2EQ_Input(FILE* fp_input)
 			else
 				flag_event = 1;
 		}
-		
-		
+
+
 		/* read mechanism params */
 
 		if (strncmp(param, "EQMECH", 6) == 0) {
@@ -680,7 +709,7 @@ int ReadTime2EQ_Input(FILE* fp_input)
 			else
 				flag_mech = 1;
 		}
-		
+
 
 		/* read VpVs params */
 
@@ -690,7 +719,7 @@ int ReadTime2EQ_Input(FILE* fp_input)
 			else
 				flag_vp_vs = 1;
 		}
-		
+
 
 		/* read source params */
 
@@ -710,15 +739,15 @@ int ReadTime2EQ_Input(FILE* fp_input)
 			else
 				flag_stations = 1;
 		}
-		
-		
+
+
 		if (strcmp(param, "EQQUAL2ERR") == 0) {
 			if ((istat = GetQuality2Err(strchr(line, ' '))) < 0)
 			  puterr("ERROR: reading quality2error values.");
 			else
 				flag_qual2err = 1;
 		}
-		
+
 
 		/* unrecognized input */
 
@@ -858,7 +887,7 @@ int GetTime2EQ_Stations(char* in_line)
 
 
 	/* read source input line */
-	
+
 	sta_in->prob_active = 1.0;
 
 	istat = sscanf(in_line, "%s %s %s %lf %s %lf %lf",
@@ -968,7 +997,7 @@ int get_mech(char* line1)
 
 double calc_rad(double ray_vert_ang, double ray_horiz_ang, char orig_wave)
 {
-	double radamp;
+	double radamp = 1.0;
 
 		/* cal radiation pattern (from Aki & Richards eqs. 4.84 - 4.86) */
 

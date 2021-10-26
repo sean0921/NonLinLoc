@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2000 Anthony Lomax <lomax@geoazur.unice.fr>
+ * Copyright (C) 1999-2008 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -17,6 +17,8 @@
  */
 
 
+
+
 /*   Grid2GMT.c
 
 	Program to extract cross sections from 3D grid files
@@ -25,12 +27,12 @@
 
 */
 
-/*------------------------------------------------------------/ */
-/* Anthony Lomax           | email: lomax@faille.unice.fr     / */
-/* UMR Geosciences Azur    | web: www-geoazur.unice.fr/~lomax / */
-/* 250 Rue Albert Einstein | tel: 33 (0) 4 93 95 43 25        / */
-/* 06560 Valbonne, FRANCE  | fax: 33 (0) 4 93 65 27 17        / */
-/*------------------------------------------------------------/ */
+/*-----------------------------------------------------------------------
+Anthony Lomax
+Anthony Lomax Scientific Software
+161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
+tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
+-------------------------------------------------------------------------*/
 
 
 /*
@@ -123,21 +125,21 @@ int MakeTopoCPT(char* fileout);
 int GenGridViewGMT(GridDesc* , char , char , char[][20] , int ,
 	int , int , int , int , int ,
 	double , char *, char* , char* , double * , double * , double * ,
-	double , double , double, double);
+	double , double , double, double, int );
 int MapFiles2GMT(double , double , double , double , FILE* , char* , int , int );
 int MapLines2GMT(int , double , double , double , double , FILE* , char* , int );
 int grd2GMT(int , double , double , double , double , FILE* , char* , int );
 int GenMapFileName(char * , char * , char * , char * , char * , char *);
 int Scat2GMT(char* , char* , int , char* );
 double CalcAngleValue(double , int , int );
-int PlotTraditionStats(char , double , Vect3D* , Vect3D* , Ellipsoid3D * ,
+int PlotTraditionStats(char , char , double , Vect3D* , Vect3D* , Ellipsoid3D * ,
 		FILE* , char* , char* );
 int PlotFocalMechanism(char view_type, double scale, double magnitude, FocalMech *pfocMech,
 	FILE* fp_io, char *plt_code, char *linecolor, char *fillcolor,
 	double horiz_min, double horiz_max, double vert_min, double vert_max, double plot_scale);
 int addStations(SourceDesc *stations, int numStations, ArrivalDesc *arrival, int nArrivals);
 int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
-		SourceDesc* staList, int nstations, double );
+		SourceDesc* staList, int nstations, double , int);
 void genResidualGMT(FILE* fp_out, char* xtra_args, double resid,
 		double x, double y, double scale);
 SourceDesc *findStaLoc(char *staName, SourceDesc* stalist, int nstations);
@@ -300,6 +302,7 @@ int main(int argc, char *argv[])
 
 		/* open grid file and header file and read header file */
 		grid0.iSwapBytes = 0;
+// swap bytes if byte order problem
 //grid0.iSwapBytes = 1;
 		if ((istat = OpenGrid3dFile(fnroot_input, &fp_grid, &fp_hdr, &grid0, "", NULL,
 				grid0.iSwapBytes)) < 0)
@@ -402,6 +405,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 	char sys_string[MAXLINE];
 
 	double res_scale;
+	int res_min_num_readings;
 
 	double xres, yres, xres_shift, res_legend_mag;
 	char res_legend_mag_string[20];
@@ -481,7 +485,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 		if ((fp_hypo = fopen(fn_hypo, "r")) == NULL)
 		{
 			if (message_flag >= 1)
-				puterr2("INFO: cannot open hypocenter file", fn_hypo);
+				putmsg2(1, "INFO: cannot open hypocenter file", fn_hypo);
 		}
 
 		strcpy(Hypo.comment, "---" );
@@ -553,12 +557,27 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
 			if (istat < 0)
 				puterr("ERROR: Reading 2nd argument of 'R' datatype.");
+			istat = 0;
+			if (num_arg_elements <= 2)
+				res_min_num_readings = 1;
+			else
+				istat = sscanf(arg_elements[2], "%d", &res_min_num_readings);
+printf("arg_elements[2] <%s>  RES MIN NUM RADINGS: %d\n", arg_elements[2], res_min_num_readings);
+			if (istat < 0)
+				puterr("ERROR: Reading 3rd argument of 'R' datatype.");
 
 		}
 
 		if (PLOT_LEGEND_LINE) {
 
-			if (cdatatype == 'E') {
+			if (cdatatype == 'S') {
+				fprintf(fp_gmt,
+	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
+				PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
+				0.75, 0.96, HYPO_FONT_SIZE,
+				0, TITLE_FONT, 2, "PDF scatter sample");
+			}
+			else if (cdatatype == 'E') {
 				fprintf(fp_gmt,
 	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
 				PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
@@ -566,26 +585,19 @@ printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
 				0, TITLE_FONT, 2,
 	"Error Ellipsoid, Expectation (dot) and Maximum Likelihood (star)");
 			}
-			if (cdatatype == 'M') {
+			else if (cdatatype == 'M') {
 				fprintf(fp_gmt,
 	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
 				PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
 				0.75, 0.96, HYPO_FONT_SIZE,
 				0, TITLE_FONT, 2, "Double-couple focal mechanisms");
 			}
-			if (cdatatype == 'R') {
+			else if (cdatatype == 'R') {
 				fprintf(fp_gmt,
 	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s %s\nEND\n\n",
 				PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
 				0.75, 0.96, HYPO_FONT_SIZE,
 				0, TITLE_FONT, 2, arg_elements[0], "Residuals");
-			}
-			if (cdatatype == 'S') {
-				fprintf(fp_gmt,
-	"pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
-				PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
-				0.75, 0.96, HYPO_FONT_SIZE,
-				0, TITLE_FONT, 2, "PDF scatter sample");
 			}
 
 		}	// PLOT_LEGEND_LINE
@@ -614,7 +626,7 @@ printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
 			Hypo.iy, 0,
 			plot_width, "WEnS", "", shift_str,
 			&scale, &xlen, &ylen, Hypo.z, Hypo.x,
-			Hypo.grid_misfit_max, res_scale);
+			Hypo.grid_misfit_max, res_scale, res_min_num_readings);
 		xshift_cum += xshift;
 		yshift_cum += yshift;
 
@@ -625,7 +637,7 @@ printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
 			0, 0, 0, 0, Hypo.iz,
 			plot_width, "WeNs", title_str, shift_str,
 			&scale, &xlen, &ylen, Hypo.y, Hypo.x,
-			Hypo.grid_misfit_max, res_scale);
+			Hypo.grid_misfit_max, res_scale, res_min_num_readings);
 		xshift_cum += xshift;
 		yshift_cum += yshift;
 
@@ -637,7 +649,7 @@ printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
 			pgrid0->numy, 0,
 			plot_width, "wENS", "", shift_str,
 			&scale, &xlen, &ylen, Hypo.y, Hypo.z,
-			Hypo.grid_misfit_max, res_scale);
+			Hypo.grid_misfit_max, res_scale, res_min_num_readings);
 		xshift_cum += xshift;
 
 		scaleshift = -1.75;
@@ -658,7 +670,7 @@ printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
 			izlevel,
 			(26.0 / 32.0) * PLOT_WIDTH, "WESN", title_str, shift_str,
 			&scale, &xlen, &ylen, -1.0, -1.0,
-			Hypo.grid_misfit_max, res_scale);
+			Hypo.grid_misfit_max, res_scale, res_min_num_readings);
 		xshift_cum += xshift;
 		yshift_cum += yshift;
 
@@ -794,7 +806,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 		int ix1, int iy1, int ix2, int iy2, int izlevel,
 		double plot_width, char* chr_bounds, char* chr_title,
 		char* str_shift, double *pscale, double *pxlen, double *pylen,
-		double horiz_line, double vert_line, double misfit_max, double res_scale)
+		double horiz_line, double vert_line, double misfit_max, double res_scale, int res_min_num_readings)
 {
 
 	int istat;
@@ -809,7 +821,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 	double htick_int, vtick_int;
 	double vxmin, vxmax, vymin, vymax, vdummy, vdgridx = 0.0, vdgridy = 0.0, vlmean;
 	float value;
-	
+
 /*	union
 	{
 		long ival;
@@ -855,9 +867,19 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 
 	int plotExpScatter = 0;
 
-	/* set plot expectation, ellipsoid and scater */
-	if (cdatatype == 'M' || cdatatype == 'R')
+	/* set plot expectation, ellipsoid and scatter */
+	// AJL 20060829
+	//if (cdatatype == 'M' || cdatatype == 'R')
+	// AJL 20070103
+	//if (cdatatype == 'R')
+	//	plotExpScatter = 1;
+
+	/* convert S plot type to E to enable E arguments with S */
+	// AJL 20060829
+	/*if (cdatatype == 'S') {
+		cdatatype = 'E';
 		plotExpScatter = 1;
+	}*/
 
 
 	/* set lat long alternate */
@@ -1232,7 +1254,7 @@ value = 0.0;
 		fclose(fp_stations);
 	} else {
 		if (message_flag >= 1)
-			puterr2("INFO: cannot open station list file", fn_stations);
+			putmsg2(1, "INFO: cannot open station list file", fn_stations);
 		// will use stations found in hypocenter-phase files
 	}
 
@@ -1245,7 +1267,7 @@ value = 0.0;
 
 	/* RVAL rectangular x/y */
 	fprintf(fp_gmt, "# Rect x/y in km\n");
-	fprintf(fp_gmt, "set RVAL = \'-R%lf/%lf/%lf/%lf\'\n",
+	fprintf(fp_gmt, "set RVAL = \'-R%lf/%lf/%lf/%lf/-9999/9999\'\n",
 		horiz_min, horiz_max, vert_min, vert_max);
 	if (message_flag > 0)
 		fprintf(stdout, "RVAL: RECT/X: %lf/%lf RECTY:%lf/%lf\n",
@@ -1313,7 +1335,7 @@ printf("GetContourInterval vtick_int G: ");
 
 		fprintf(fp_gmt,
 "psbasemap ${JVAL_LL} ${RVAL_LL} ${BVAL_LL} %s -K -O >> %s.ps\n", str_shift, fn_ps_output);
-		
+
 		fprintf(fp_gmt, "endif\n");
 	}
 
@@ -1460,7 +1482,7 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 
 	}
 
-	if (cdatatype == 'E' || plotExpScatter) {
+	if (cdatatype == 'E' || cdatatype == 'S' || plotExpScatter) {
 
 		/* draw "traditional" expectation and error ellipses */
 
@@ -1473,14 +1495,14 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 			NumStations +=
 				addStations(Stations, NumStations, Arrival, NumArrivals);
 
-			if ((istat = PlotTraditionStats(file_id,
+			if ((istat = PlotTraditionStats(cdatatype, file_id,
 					PLOT_WIDTH / 25.0, &max_like, &expect,
-					&ellipsoid, fp_gmt, arg_elements[0], "-W1/255/0/0")) < 0)
+					&ellipsoid, fp_gmt, arg_elements[0], "-W1/0/0/255")) < 0)
 				break;
 			nplotted += istat;
 		}
-			if (num_arg_elements < 1 && message_flag > 0)
-				puterr(
+		if (cdatatype == 'E' && num_arg_elements < 1 && message_flag > 0)
+			puterr(
 "ERROR: 'E' datatype string does not have all required arguments.");
 		if (message_flag > 0)
 			fprintf(stdout,
@@ -1507,9 +1529,9 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 
 	/* draw "traditional" expectation and error ellipses */
 
-	if (!(/*cdatatype == 'S' ||*/ cdatatype == 'E' /* || plotExpScatter*/)
+	if (!(cdatatype == 'S' || cdatatype == 'E'  || plotExpScatter)
 				&& pgrid->type == GRID_PROB_DENSITY) {
-		PlotTraditionStats(file_id,
+		PlotTraditionStats(cdatatype, file_id,
 			PLOT_WIDTH / 25.0, &MaxLike, &Expectation,
 			&Ellipsoid, fp_gmt, "111", "-W1/0/0/0");
 
@@ -1522,15 +1544,18 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 
 		nevents = nplotted = 0;
 		fpio_tmp = NULL;
-		while (ReadFocalMech(&fpio_tmp, fnroot_input,
-				&focalMech, Arrival, &NumArrivals) != EOF) {
+		while (ReadFocalMech(&fpio_tmp, fnroot_input, &focalMech, Arrival, &NumArrivals) != EOF) {
 
 			nevents++;
+
+			// check if null focal mechanism
+			if (focalMech.nObs < 1)
+				continue;
 			NumStations += addStations(Stations, NumStations, Arrival, NumArrivals);
 			magnitude = 2.0;
 			if ((istat = PlotFocalMechanism(file_id,
 					PLOT_WIDTH / 10.0, magnitude, &focalMech,
-					fp_gmt, arg_elements[0], "-W1/255/0/0", "-G255/0/0",
+					fp_gmt, arg_elements[0], "-W1/255/0/0 ", "-G255/0/0 ",
 					horiz_min, horiz_max, vert_min, vert_max, plot_scale)) < 0)
 				break;
 			nplotted += istat;
@@ -1549,8 +1574,7 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 		if (cviewmode == 'H') {
 			sprintf(fn_nlloc_stat, "%s.stat", fnroot_input);
 			nresiduals = ConvertResids2MapGMT(
-				fn_nlloc_stat, arg_elements[0], fp_gmt, Stations, NumStations,
-				res_scale);
+				fn_nlloc_stat, arg_elements[0], fp_gmt, Stations, NumStations, res_scale, res_min_num_readings);
 			if (num_arg_elements < 1 && message_flag > 0) {
 				puterr(
 "ERROR: 'R' datatype string does not have all required arguments.");
@@ -2438,7 +2462,7 @@ int Scat2GMT(char* fnroot_in, char* orientation, int ilonglat, char* fnscat_out)
 
 /* returns 1 if plotted, 0 if not, -1 if error */
 
-int PlotTraditionStats(char view_type, double barlen,
+int PlotTraditionStats(char cdatatype, char view_type, double barlen,
 	Vect3D* pmax_like, Vect3D* pexpect, Ellipsoid3D *pellipsoid,
 	FILE* fp_io, char *plt_code_in, char *GMTcolor)
 {
@@ -2463,10 +2487,10 @@ int PlotTraditionStats(char view_type, double barlen,
 	/* check plot code string */
 
 	if ((plt_code[0] != '0' && plt_code[0] != '1')
-			|| (plt_code[1] != '0' && plt_code[1] != '1')
-			|| (plt_code[2] != '0' && plt_code[2] != '1')) {
-		puterr2("WARNING invalid entry in ellipse/statistic plot code",
-			plt_code);
+		    || (plt_code[1] != '0' && plt_code[1] != '1')
+		    || (plt_code[2] != '0' && plt_code[2] != '1')) {
+		if (cdatatype == 'E')
+			puterr2("WARNING invalid entry in ellipse/statistic plot code", plt_code);
 		plt_code[0] = '1';
 		plt_code[1] = plt_code[2] = '0';
 	}
@@ -2662,17 +2686,17 @@ int PlotFocalMechanism(char view_type, double scale, double magnitude, FocalMech
 		latlon2rect(proj_index_output, pfocMech->dlat, pfocMech->dlong,
 			&hypox, &hypoy);
 		if (view_type == 'Y') {
-			sprintf(mechAval_string, "-Ec%lf/0.0/%lf/0.0/90.0/1.0e6/%lf/%lf",
+			sprintf(mechAval_string, "-Ac%lf/0.0/%lf/0.0/90.0/1.0e6/%lf/%lf",
 				horiz_min, horiz_max, vert_max, vert_min);
 			sprintf(R_string, "-R%lf/%lf/%lf/%lf",
 				0.0, horiz_max - horiz_min, -vert_max, -vert_min);
 			sprintf(J_string, "-Jx%lf/%lf", plot_scale, plot_scale);
 			fprintf(fp_io,
 "# Focal Mechanism\npscoupe %s %s %s %s %s -Sa%lf -N -K -O << END >> %s.ps\n",
-				R_string, J_string, mechAval_string, fillcolor, linecolor,
+				R_string, J_string, mechAval_string, linecolor, fillcolor,
 				scale, "${POSTSCRIPT_NAME}");
 			fprintf(fp_io, "%lf %lf  %lf  %lf %lf %lf  %lf 0.0 0.0\n",
-				hypox, hypoy, pfocMech->depth,
+				hypox, hypoy, -pfocMech->depth,
 				pfocMech->dipDir - 90.0, pfocMech->dipAng, pfocMech->rake,
 				magnitude
 			);
@@ -2682,7 +2706,7 @@ int PlotFocalMechanism(char view_type, double scale, double magnitude, FocalMech
 "# Focal Mechanism\npsmeca $JVAL $RVAL %s %s -Sa%lf -K -O << END >> %s.ps\n",
 				linecolor, fillcolor, scale, "${POSTSCRIPT_NAME}");
 			fprintf(fp_io, "%lf %lf  %lf  %lf %lf %lf  %lf 0.0 0.0\n",
-				hypox, hypoy, pfocMech->depth,
+				hypox, hypoy, 0.0,
 				pfocMech->dipDir - 90.0, pfocMech->dipAng, pfocMech->rake,
 				magnitude
 			);
@@ -2715,7 +2739,7 @@ printf("FOCALMECH Hyp %lf %lf %lf  Mech %lf %lf %lf mf %lf nObs %d\n",
 
 
 int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
-		SourceDesc* staList, int nstations, double scale)
+		SourceDesc* staList, int nstations, double scale, int min_num_readings)
 {
 	int istat, nRdg, nresid;
 	int c = 0;
@@ -2760,23 +2784,23 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
 				;
 		} else {
 			ifound_readings = 1;
-			istat = fscanf(fp_in, "%s %s %d %lf\n", staName, phase, &nresid, &resid);
+			istat = fscanf(fp_in, "%s %s %d %lf", staName, phase, &nresid, &resid);
 			if (istat == EOF)
 				break;
 //printf("%s %s %d %lf\n", staName, phase, nresid, resid);
 
 			if ((staloc = findStaLoc(staName, staList, nstations)) != NULL) {
 //printf("resid: %s %s ==? %s\n", staName, phase, phaseID);
-				if (strstr(phaseID, phase) != NULL) {
+				if (nresid >= min_num_readings && strstr(phaseID, phase) != NULL) {
 					convertCoordsRect(proj_index_input, proj_index_output,
 						staloc->x, staloc->y, &xsta, &ysta);
 					genResidualGMT(fp_out, "", resid, xsta, ysta, scale);
 					nRdg++;
 				}
-				//fprintf(fp_text_out, "%lf %lf 10 0 4 6 %s\n",
-				//	staloc->x, staloc->y, staName);
+//fprintf(fp_text_out, "%lf %lf 10 0 4 6 %s\n", staloc->x, staloc->y, staName);
 			}
-
+			while((c = fgetc(fp_in)) != '\n' && c !=EOF)
+				;
 		}
 
 	} while (c != EOF);
@@ -2793,8 +2817,7 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
 
 #define RESID_MIN 0.01	// minimum size of residual symbol in inches or cm
 
-void genResidualGMT(FILE* fp_out, char* xtra_args, double resid,
-		double x, double y, double scale) {
+void genResidualGMT(FILE* fp_out, char* xtra_args, double resid, double x, double y, double scale) {
 
 	double resid_scaled, resid_plot;
 

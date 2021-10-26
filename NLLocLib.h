@@ -33,11 +33,16 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 
+#include "GridLib.h"
+#include "ran1.h"
+#include "velmod.h"
+#include "GridMemLib.h"
+#include "calc_crust_corr.h"
+#include "phaseloclist.h"
+
 
 /* defines */
 
-#define ARRIVAL_NULL_STR "?"
-#define ARRIVAL_NULL_CHR '?'
 
 
 
@@ -54,9 +59,20 @@ typedef struct
  	DMatrix WtMtrx; 	/* weight matrix */
  	double WtMtrxSum; 	/* sum of elements of weight matrix */
  	long double meanObs; 	/* weighted mean of obs arrival times */
- 	double meanPred; 	/* weighted mean of predicted travel times */
+	double meanPred; 	/* weighted mean of predicted travel times */
+	double arrivalWeightMax; /* maximum station (row) weight */
 }
 GaussLocParams;
+
+
+/* gaussian error travel time parameters */
+typedef struct
+{
+ 	double SigmaTfraction; 	/* fraction of travel times to use as travel times error */
+ 	double SigmaTmin; 	/* minimum travel times error */
+	double SigmaTmax; 	/* maximum travel times error */
+}
+Gauss2LocParams;
 
 
 /* scatter paramters */
@@ -148,6 +164,7 @@ typedef struct
 	int num_scatter;	// number of scatter points to output
 	int use_stations_density;	// if 1, weight oct node order in result tree by station density in node
 	int stop_on_min_node_size;	// if 1, stop search when first min_node_size reached, if 0 stop subdividing a given cell when min_node_size reached
+	double mean_cell_velocity;	// mean cell velocity (>0 = Increases misfit sigma in proportion to travel time across diagonal of cell.
 }
 OcttreeParams;
 
@@ -192,6 +209,8 @@ EXTERN_TXT char f_outpath[FILENAME_MAX];
 
 /* Gaussian error parameters */
 EXTERN_TXT GaussLocParams Gauss;
+EXTERN_TXT Gauss2LocParams Gauss2;
+EXTERN_TXT int iUseGauss2;
 
 /* Scatter parameters */
 EXTERN_TXT ScatterParams Scatter;
@@ -230,6 +249,7 @@ EXTERN_TXT int SearchType;
 #define METH_GAU_TEST  		2
 #define METH_EDT  		3
 #define METH_EDT_BOX  		4
+#define METH_ML_OT  		4
 EXTERN_TXT int LocMethod;
 EXTERN_TXT int EDT_use_otime_weight;
 EXTERN_TXT int EDT_otime_weight_active;
@@ -255,10 +275,14 @@ FILE *pSumFileHypNLLoc[MAX_NUM_LOCATION_GRIDS];
 FILE *pSumFileHypo71[MAX_NUM_LOCATION_GRIDS];
 FILE *pSumFileHypoEll[MAX_NUM_LOCATION_GRIDS];
 FILE *pSumFileHypoInv[MAX_NUM_LOCATION_GRIDS];
+FILE *pSumFileHypoInvY2K[MAX_NUM_LOCATION_GRIDS];
 FILE *pSumFileAlberto4[MAX_NUM_LOCATION_GRIDS];
 
 /* related flags */
 EXTERN_TXT int iWriteHypHeader[MAX_NUM_LOCATION_GRIDS];
+
+/* format specific event data */
+EXTERN_TXT char HypoInverseArchiveSumHdr[MAXLINE_LONG];
 
 /* hypocenter filetype saving flags */
 /* SH 02/26/2004  added iSaveSnapSum for output to be read
@@ -266,13 +290,17 @@ EXTERN_TXT int iWriteHypHeader[MAX_NUM_LOCATION_GRIDS];
 EXTERN_TXT int iSaveNLLocEvent, iSaveNLLocSum, iSaveNLLocOctree,
 		iSaveHypo71Event, iSaveHypo71Sum,
 		iSaveHypoEllEvent, iSaveHypoEllSum,
-		iSaveHypoInvSum, iSaveAlberto4Sum,
-		iSaveSnapSum, iSaveDecSec;
-		
+		iSaveHypoInvSum, iSaveHypoInvY2KArc, iSaveAlberto4Sum,
+		iSaveSnapSum, iSaveDecSec, iSaveNone;
+
 
 /* station distance weighting flag. */
 EXTERN_TXT int iSetStationDistributionWeights;
 EXTERN_TXT double stationDistributionWeightCutoff;
+
+/* station density weghting */
+EXTERN_TXT double AveInterStationDistance;
+EXTERN_TXT int NumForceOctTreeStaDenWt;
 
 EXTERN_TXT int iRejectDuplicateArrivals;
 
@@ -328,6 +356,10 @@ EXTERN_TXT double ElevCorrVelS;
 EXTERN_TXT int ApplyCrustElevCorrFlag;
 EXTERN_TXT double MinDistCrustElevCorr;
 
+/* topo surface */
+EXTERN_TXT struct surface *topo_surface;
+EXTERN_TXT int topo_surface_index;	// topo surface index is velmod.h.MAX_SURFACES-1 so as not to interferce with any TimeDelaySurfaces read in
+
 
 
 /* station list */
@@ -369,6 +401,8 @@ EXTERN_TXT int iAngleQualityMin;	/* minimum quality for angles to be used */
 #define ANGLE_MODE_UNDEF	-1
 
 
+
+
 /*------------------------------------------------------------*/
 /** hashtable routines for accumulating station statistics */
 
@@ -407,6 +441,7 @@ EXTERN_TXT double S_ResidualMax;
 EXTERN_TXT double Ell_Len3_Max;
 EXTERN_TXT double Hypo_Depth_Min;
 EXTERN_TXT double Hypo_Depth_Max;
+EXTERN_TXT double Hypo_Dist_Max;
 
 /* hashtable function declarations */
 unsigned hash(char* , char* );
@@ -414,8 +449,8 @@ StaStatNode *lookup(int , char* , char* );
 StaStatNode *InstallStaStatInTable(int, char* , char* , int , double ,
 				double , double , double , double);
 int WriteStaStatTable(int , FILE *, double , int , double ,
-			double , double , double , double , double , int);
-void UpdateStaStat(int , ArrivalDesc *, int , double , double );
+			double , double , double , double , double , double , int);
+void UpdateStaStat(int , ArrivalDesc *, int , double , double , double );
 
 /** end of hashtable routines */
 /*------------------------------------------------------------*/
@@ -426,17 +461,22 @@ void UpdateStaStat(int , ArrivalDesc *, int , double , double );
 /*------------------------------------------------------------*/
 /* function declarations */
 
+int NLLoc(char *pid_main, char *fn_control_main, char **param_line_array, int n_param_lines, char **obs_line_array, int n_obs_lines, int return_locations, int return_oct_tree_grid, int return_scatter_sample, LocNode **ploc_list_head);
+
+int Locate(int ngrid, char* fn_root_out, int numArrivalsReject, int return_locations, int return_oct_tree_grid, int return_scatter_sample, LocNode **ploc_list_head);
+
 int checkObs(ArrivalDesc *arrival, int nobs);
 int ExtractFilenameInfo(char*, char*);
+int ReadNLLoc_Input(FILE* fp_input, char **param_line_array, int n_param_lines);
 int GetNLLoc_Grid(char*);
 int GetNLLoc_HypOutTypes(char*);
 int GetPhaseID(char*);
 int GetStaWeight(char* line1);
 int GetNLLoc_Gaussian(char*);
+int GetNLLoc_Gaussian2(char*);
 int GetNLLoc_PhaseStats(char*);
 int GetNLLoc_Angles(char*);
 int GetNLLoc_Magnitude(char*);
-int ReadNLLoc_Input(FILE* );
 int GetNLLoc_Files(char* );
 int GetNLLoc_Method(char* );
 int GetNLLoc_SearchType(char* );
@@ -454,8 +494,7 @@ int FindDuplicateTimeGrid(ArrivalDesc *arrival, int num_arrivals, int ntest);
 
 int WriteHypo71(FILE *, HypoDesc* , ArrivalDesc* , char* , int , int );
 int WriteHypoEll(FILE *, HypoDesc* , ArrivalDesc* , char* , int , int );
-int WriteHypoInverseArchive(FILE *, HypoDesc* , ArrivalDesc* , int ,
-		char* , int , int );
+int WriteHypoInverseArchive(FILE *, HypoDesc* , ArrivalDesc* , int , char* , int , int , double );
 int WriteHypoAlberto4(FILE *, HypoDesc* , ArrivalDesc* , char* );
 int OpenSummaryFiles(char *, char *);
 int CloseSummaryFiles();
@@ -466,6 +505,8 @@ int GetLocExclude(char* line1);
 int GetTimeDelays(char* );
 int GetTimeDelaySurface(char* );
 
+int GetTopoSurface(char* );
+
 int LocGridSearch(int , int , int , ArrivalDesc* ,  GridDesc* ,
 		GaussLocParams* , HypoDesc* );
 int LocMetropolis(int , int , int , ArrivalDesc *,
@@ -474,19 +515,25 @@ int SaveBestLocation(int , int , ArrivalDesc *,  GridDesc* , GaussLocParams* , H
 		double , int );
 int ConstWeightMatrix(int , ArrivalDesc* , GaussLocParams* );
 void CalcCenteredTimesObs(int , ArrivalDesc* , GaussLocParams* , HypoDesc* );
-inline void CalcCenteredTimesPred(int , ArrivalDesc* , GaussLocParams* );
-inline double CalcSolutionQuality(int , ArrivalDesc* , GaussLocParams* , int, double* , double*);
-inline double CalcSolutionQuality_GAU_ANALYTIC(int , ArrivalDesc* , GaussLocParams* , int , double* , double*);
-inline double CalcSolutionQuality_GAU_TEST(int , ArrivalDesc* , GaussLocParams* , int , double* , double*);
-inline double CalcSolutionQuality_EDT(int , ArrivalDesc* , GaussLocParams* , int , double* , double*, int);
+INLINE void CalcCenteredTimesPred(int , ArrivalDesc* , GaussLocParams* );
+INLINE double CalcSolutionQuality(int num_arrivals, ArrivalDesc *arrival, GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime, double* potime_var, double cell_diagonal_time_var, double* pvalue_search);
+INLINE double CalcSolutionQuality_GAU_ANALYTIC(int , ArrivalDesc* , GaussLocParams* , int , double* , double*);
+INLINE double CalcSolutionQuality_GAU_TEST(int , ArrivalDesc* , GaussLocParams* , int , double* , double*);
+INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival, GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime, double* potime_var, double cell_diagonal_time_var, int method_box, double* pvalue_search);
+INLINE double CalcSolutionQuality_ML_OT(int num_arrivals, ArrivalDesc *arrival, GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime, double* potime_var, double cell_diagonal_time_var, int method_box, double* pvalue_search);
+INLINE double calc_maximum_likelihood_ot(double *ot_ml_arrival, double *ot_ml_arrival_edt_sum, int num_arrivals, ArrivalDesc *arrival, DMatrix edtmtx, double *pot_ml_var, int iwrite_errors,
+double *pprob_max);
+INLINE double calc_likelihood_ot(double *ot_ml_arrival, double *ot_ml_arrival_edt_sum, int num_arrivals, ArrivalDesc *arrival, DMatrix edtmtx, double time);
+INLINE double calc_variance_ot(double *ot_ml_arrival, double *ot_ml_arrival_edt_sum, int num_arrivals, ArrivalDesc *arrival, DMatrix edtmtx, double expectation_time);
 long double CalcMaxLikeOriginTime(int , ArrivalDesc* , GaussLocParams* );
-inline void UpdateProbabilisticResiduals(int , ArrivalDesc *, double);
+int NormalizeWeights(int num_arrivals, ArrivalDesc *arrival);
+INLINE void UpdateProbabilisticResiduals(int , ArrivalDesc *, double);
 int CalcConfidenceIntrvl(GridDesc* , HypoDesc* , char* );
 int HomogDateTime(ArrivalDesc* , int , HypoDesc* );
 int CheckAbsoluteTiming(ArrivalDesc *arrival, int num_arrivals);
 int StdDateTime(ArrivalDesc* , int , HypoDesc* );
-int SetOutName(ArrivalDesc *arrival, char* out_file_root, char* out_file, char lastfile[FILENAME_MAX], int isec, int ncount);
-int SaveLocation(HypoDesc* , int , char *, int , char *, int );
+int SetOutName(ArrivalDesc *arrival, char* out_file_root, char* out_file, char lastfile[FILENAME_MAX], int isec, int *pncount);
+int SaveLocation(HypoDesc* , int , char *, int , char *, int , GaussLocParams *);
 int GenEventScatterGrid(GridDesc* , HypoDesc* , ScatterParams* , char* );
 void InitializeArrivalFields(ArrivalDesc *);
 int isExcluded(char *label, char *phase);
@@ -499,9 +546,9 @@ double CalcAzimuthGap(ArrivalDesc *, int );
 
 void InitializeMetropolisWalk(GridDesc* ,  ArrivalDesc* , int ,
 		WalkParams* , int , double );
-inline int GetNextMetropolisSample(WalkParams* , double , double ,
+INLINE int GetNextMetropolisSample(WalkParams* , double , double ,
 	double , double , double , double , double* , double* , double* );
-inline int MetropolisTest(double , double );
+INLINE int MetropolisTest(double , double );
 
 double CalculateVpVsEstimate(HypoDesc* phypo, ArrivalDesc* parrivals, int narrivals);
 
@@ -518,21 +565,29 @@ int setStationDistributionWeights(SourceDesc *stations, int numStations, Arrival
 
 int getTravelTimes(ArrivalDesc *arrival, int num_arr_loc, double xval, double yval, double zval);
 double applyCrustElevCorrection(ArrivalDesc* parrival, double xval, double yval, double zval);
+int isAboveTopo(double xval, double yval, double zval);
 
-Tree3D*  InitializeOcttree(GridDesc* ptgrid, ArrivalDesc* parrivals,
-		int numArrLoc,  OcttreeParams* pParams);
+Tree3D*  InitializeOcttree(GridDesc* ptgrid, OcttreeParams* pParams);
 int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
-		ArrivalDesc *arrival,
-		GridDesc* ptgrid, GaussLocParams* gauss_par, HypoDesc* phypo,
-		OcttreeParams* pParams, Tree3D* pOctTree, float* fdata, double* poct_node_value_max);
-double getOctTreeStationDensityWeight(OctNode* poct_node, SourceDesc *stations, int numStations, GridDesc *pgrid);
-int GenEventScatterOcttree(OcttreeParams* pParams, double oct_node_value_max, float* fscatterdata, double integral);
+	      ArrivalDesc *arrival,
+	      GridDesc* ptgrid, GaussLocParams* gauss_par, HypoDesc* phypo,
+	      OcttreeParams* pParams, Tree3D* pOctTree, float* fdata,
+	      double *poct_node_value_max, double *poct_tree_integral);
+INLINE long double LocOctree_core(int ngrid, double xval, double yval, double zval,
+		int num_arr_loc, ArrivalDesc *arrival,
+		OctNode* poct_node,
+		int icalc_cell_diagonal_time_var, double *volume_min,
+		double *diagonal, double *cell_diagonal_time_var,
+		OcttreeParams* pParams, GaussLocParams* gauss_par, int iGridType,
+		double *misfit, double logWtMtrxSum);
+double getOctTreeStationDensityWeight(OctNode* poct_node, SourceDesc *stations, int numStations, GridDesc *pgrid, int iOctLevelMax);
+int GenEventScatterOcttree(OcttreeParams* pParams, double oct_node_value_max, float* fscatterdata, double integral, HypoDesc* Hypocenter);
 double convertOcttreeValuesToProb(ResultTreeNode* prtree, double sum, double oct_node_value_max);
 double integrateResultTree(ResultTreeNode* prtree, double sum, double oct_node_value_max);
 ResultTreeNode* createResultTree(ResultTreeNode* prtree, ResultTreeNode* pnew_rtree);
 int getScatterSampleResultTree(ResultTreeNode* prtree, OcttreeParams* pParams,
 		double integral, float* fdata, int npoints, int* pfdata_index,
-		double oct_node_value_max);
+		double oct_node_value_max, double *poct_tree_scatter_volume);
 
 int GetElevCorr(char* line1);
 

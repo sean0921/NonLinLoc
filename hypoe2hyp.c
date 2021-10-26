@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -66,7 +66,7 @@ int ReadHypoellSum(FILE *fp_in, HypoDesc *phypo);
 #define PNAME  "hypoe2hyp"
 
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	int istat, narg;
@@ -86,7 +86,7 @@ main(int argc, char *argv[])
 
 	if (argc < 3) {
 		puterr("ERROR wrong number of command line arguments.");
-		disp_usage(PNAME, 
+		disp_usage(PNAME,
 "<hypoellipse_file> <out_hyp_file> [EllLenMax [RMSMax [NRdgsMin [GapMax]]]]");
 		exit(-1);
 	}
@@ -106,7 +106,7 @@ main(int argc, char *argv[])
 
 int Hypoe2Hyp(int argc, char *argv[])
 {
-	int istat, narg;
+	int istat;
 	int nLocWritten, nLocRead;
 	char fn_hyp_out[FILENAME_MAX];
 	char fn_hypoell_in[FILENAME_MAX];
@@ -116,8 +116,7 @@ int Hypoe2Hyp(int argc, char *argv[])
 	double EllLenMax, RMSMax;
 	int NRdgsMin, GapMax;
 
-	GridDesc Grid, locgrid;
-	SourceDesc* Srce;
+	GridDesc locgrid;
 	HypoDesc Hypo, *phypo;
 
 
@@ -188,8 +187,8 @@ int Hypoe2Hyp(int argc, char *argv[])
 		} else if (strcmp(Hypo.locStat, "REJECTED") == 0) {
 			puterr("WARNING: location REJECTED, ignoring event");
 			continue;
-		} else if (Hypo.ellipsoid.len1 > EllLenMax 
-				|| Hypo.ellipsoid.len2 > EllLenMax 
+		} else if (Hypo.ellipsoid.len1 > EllLenMax
+				|| Hypo.ellipsoid.len2 > EllLenMax
 				|| Hypo.ellipsoid.len3 > EllLenMax) {
 /*			puterr(
 "WARNING: location ellipsoid Len is greater than EllLenMax, ignoring event");*/
@@ -216,15 +215,15 @@ int Hypoe2Hyp(int argc, char *argv[])
 
 		/* wirte ellipsoid */
 		phypo = &Hypo;
-		fprintf(fp_hyp_out, 
+		fprintf(fp_hyp_out,
 			"ELLIPSOID  Hyp  %lf %lf %lf",
 			phypo->dlat, phypo->dlong, phypo->depth);
-		fprintf(fp_hyp_out, 
+		fprintf(fp_hyp_out,
 			" Ell1  %.1lf %.1lf %.2le",
-			phypo->ellipsoid.az1, phypo->ellipsoid.dip1, 
+			phypo->ellipsoid.az1, phypo->ellipsoid.dip1,
 				phypo->ellipsoid.len1);
 		fprintf(fp_hyp_out, " Ell2  %.1lf %.1lf %.2le",
-			phypo->ellipsoid.az2, phypo->ellipsoid.dip2, 
+			phypo->ellipsoid.az2, phypo->ellipsoid.dip2,
 				phypo->ellipsoid.len2);
 		fprintf(fp_hyp_out, " Ell3  %.2le\n", phypo->ellipsoid.len3);
 
@@ -239,8 +238,8 @@ int Hypoe2Hyp(int argc, char *argv[])
 	fclose(fp_hyp_out);
 
 	/* write message */
-	fprintf(stdout, 
-"%d locations read, %d written to ascii hyp file <%s>\n", 
+	fprintf(stdout,
+"%d locations read, %d written to ascii hyp file <%s>\n",
 		nLocRead, nLocWritten, fn_hyp_out);
 
 
@@ -275,7 +274,7 @@ int ReadHypoellSum(FILE *fp_in, HypoDesc *phypo)
 	istat = 0;
 	istat += ReadFortranInt(line, 1, 2, &phypo->year);
 	istat += ReadFortranInt(line, 3, 2, &phypo->month);
-	istat += ReadFortranInt(line, 5, 2, &phypo->day);    
+	istat += ReadFortranInt(line, 5, 2, &phypo->day);
 	istat += ReadFortranInt(line, 7, 2, &phypo->hour);
 	istat += ReadFortranInt(line, 9, 2, &phypo->min);
 	istat += ReadFortranReal(line, 11, 4, &phypo->sec);
@@ -323,24 +322,24 @@ int ReadHypoellSum(FILE *fp_in, HypoDesc *phypo)
 	istat += ReadFortranReal(line, 73, 4, &(phypo->ellipsoid.len3));
 	phypo->ellipsoid.len3 /= 100.0;
 
-/*	fprintf(stdout, 
-"%4.4d%2.2d%2.2d %2.2d%2.2d %5.2lf %3d %1c %5.2lf %4d %1c %5.2lf %7.3lf ", 
+/*	fprintf(stdout,
+"%4.4d%2.2d%2.2d %2.2d%2.2d %5.2lf %3d %1c %5.2lf %4d %1c %5.2lf %7.3lf ",
 		phypo->year, phypo->month, phypo->day,
-		phypo->hour, phypo->min, phypo->sec, 
+		phypo->hour, phypo->min, phypo->sec,
 		(int) fabs(phypo->dlat), (phypo->dlat >= 0.0 ? 'N' : 'S'),
 		(fabs(phypo->dlat) - (int) fabs(phypo->dlat)) * 60.0,
 		(int) fabs(phypo->dlong), (phypo->dlong >= 0.0 ? 'E' : 'W'),
 		(fabs(phypo->dlong) - (int) fabs(phypo->dlong)) * 60.0,
 		phypo->depth);
-	fprintf(stdout, "%4.2lf %3d %3d %6.2lf %5.2lf ", 
+	fprintf(stdout, "%4.2lf %3d %3d %6.2lf %5.2lf ",
 		mag, phypo->nreadings, phypo->gap, phypo->dist, phypo->rms);
-	fprintf(stdout, "%4d %4d %6.2lf %4d %4d %6.2lf %6.2lf ", 
-		(int) (0.5 + phypo->ellipsoid.az1), 
-			(int) (0.5 + phypo->ellipsoid.dip1), 
-			phypo->ellipsoid.len1, 
-		(int) (0.5 + phypo->ellipsoid.az2), 
-			(int) (0.5 + phypo->ellipsoid.dip2), 
-			phypo->ellipsoid.len2, 
+	fprintf(stdout, "%4d %4d %6.2lf %4d %4d %6.2lf %6.2lf ",
+		(int) (0.5 + phypo->ellipsoid.az1),
+			(int) (0.5 + phypo->ellipsoid.dip1),
+			phypo->ellipsoid.len1,
+		(int) (0.5 + phypo->ellipsoid.az2),
+			(int) (0.5 + phypo->ellipsoid.dip2),
+			phypo->ellipsoid.len2,
 		phypo->ellipsoid.len3);
 	fprintf(stdout, "\n");
 */

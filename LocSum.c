@@ -37,9 +37,9 @@
 	ver 01    04Nov1997  AJL  Original version
 
 		    Unregistered bug fixes
-		    Jan 2006 Frederik Tilmann   
+		    Jan 2006 Frederik Tilmann
 		     MAX_NUM_INPUT_FILES reduced to 32000 (larger values result in segmentation violation on jumping into subroutine Sum_Locations)
-+ 
++
 		   13Feb2006 AJL MAX_NUM_INPUT_FILES reduced to 5000
 
 .........1.........2.........3.........4.........5.........6.........7.........8
@@ -96,7 +96,7 @@ int main(int argc, char** argv)
 	if (argc < 5) {
 		puterr("ERROR wrong number of command line arguments.");
 		disp_usage(PNAME,
-"<size_gridfile> decim <output_file_root> <add_file_list> [Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax [latMin,latMax,longMin,longMax]]]]]]");
+			   "<size_gridfile> decim <output_file_root> <add_file_list> [Len3Max [ProbMin [RMSMax [NRdgsMin [GapMax [latMin,latMax,longMin,longMax]]]]]]");
 		exit(-1);
 	}
 
@@ -126,15 +126,16 @@ int SumLocations(int argc, char** argv)
 	int npt, npoints;
 	long num_points_tot = 0L, num_points_read = 0L, num_points_written = 0L;
 
+	char *pchr;
 	char sys_string[FILENAME_MAX];
 	char filename[FILENAME_MAX];
 	char fn_grid_size[FILENAME_MAX];
 	char fn_scatter[FILENAME_MAX];
 	char fn_hyp_scat_out[FILENAME_MAX];
 	char fn_root_out[FILENAME_MAX], fn_hypos_in[FILENAME_MAX],
-		fn_scat_out[FILENAME_MAX];
-	FILE *fp_dummy, *fp_hyp_scat_out, *fp_scat_out,
-		*fp_scat_in, *fp_grid, *fp_hdr;
+	fn_scat_out[FILENAME_MAX];
+	FILE *fp_hypo, *fp_dummy, *fp_hyp_scat_out, *fp_scat_out,
+	*fp_scat_in, *fp_grid, *fp_hdr;
 	float fdata[4], probmax = -VERY_LARGE_FLOAT;
 
 	int nFile, numFiles, nLocWritten, nLocAccepted;
@@ -155,7 +156,7 @@ int SumLocations(int argc, char** argv)
 	int icut = 0;
 
 	GridDesc Grid, locgrid;
-	SourceDesc* Srce;
+	SourceDesc* Srce = NULL;
 	HypoDesc Hypo;
 
 
@@ -166,7 +167,7 @@ int SumLocations(int argc, char** argv)
 	sscanf(argv[2], "%d", &num_decim);
 	if (num_decim < 1)
 		fprintf(stdout,
-"  Decimation < 1, no scatter points will be written to ouptut.\n");
+			"  Decimation < 1, no scatter points will be written to ouptut.\n");
 	else
 		fprintf(stdout, "  Decimation: %d\n", num_decim);
 
@@ -223,9 +224,8 @@ int SumLocations(int argc, char** argv)
 	/* read grid header file and get grid bounds */
 
 	Grid.iSwapBytes = 0;
- 	if ((istat = OpenGrid3dFile(fn_root_out, &fp_grid, &fp_hdr,
-			&Grid, "scat", Srce, Grid.iSwapBytes)) < 0) {
-			sprintf(MsgStr, "%s.hdr", fn_root_out);
+	if ((istat = OpenGrid3dFile(fn_root_out, &fp_grid, &fp_hdr, &Grid, "scat", Srce, Grid.iSwapBytes)) < 0) {
+		sprintf(MsgStr, "%s.hdr", fn_root_out);
 		puterr2("ERROR: open grid header file", MsgStr);
 		return(-1);
 	}
@@ -275,134 +275,153 @@ int SumLocations(int argc, char** argv)
 	nLocAccepted = 0;
 	for (nFile = 0; nFile < numFiles; nFile++) {
 
-		/*fprintf(OUT_LEVEL_1, "Adding location <%s>.\n",
-					fn_hyp_in_list[nFile]);*/
+		fprintf(OUT_LEVEL_1, "Adding location <%s>.\n", fn_hyp_in_list[nFile]);
 
 		/* open hypocenter file */
-		sprintf(strstr(fn_hyp_in_list[nFile], test_str), "\0");
-	    	istat = GetHypLoc(NULL, fn_hyp_in_list[nFile], &Hypo, Arrival,
-				&NumArrivals, 1, &locgrid, 0);
-		if (istat < 0) {
-			puterr2(
-"ERROR: opening hypocenter file, ignoring event, file",
+		//sprintf(strstr(fn_hyp_in_list[nFile], test_str), "\0");
+		if ((fp_hypo = fopen(fn_hyp_in_list[nFile], "r")) == NULL)
+		{
+			puterr2("ERROR: opening hypocenter file, ignoring event, file",
 				fn_hyp_in_list[nFile]);
 			continue;
-		} else if (strcmp(Hypo.locStat, "ABORTED") == 0) {
+		}
+
+		// loop over events in file
+
+		while (1) {
+
+			istat = GetHypLoc(fp_hypo, NULL, &Hypo, Arrival, &NumArrivals, 1, &locgrid, 0);
+			if (istat == EOF) {
+				break;
+			}
+			if (istat < 0) {
+				puterr2("ERROR: reading hypocenter file, ignoring event, file",
+					fn_hyp_in_list[nFile]);
+				break;
+			}
+
+			if (strcmp(Hypo.locStat, "ABORTED") == 0) {
 			//puterr("WARNING: location ABORTED, ignoring event");
-			continue;
-		} else if (strcmp(Hypo.locStat, "REJECTED") == 0) {
+				continue;
+			} else if (strcmp(Hypo.locStat, "REJECTED") == 0) {
 			//puterr("WARNING: location REJECTED, ignoring event");
-			continue;
-		}
-		nLocAccepted++;
-		Len3Mean += Hypo.ellipsoid.len3;
-		ProbMean += Hypo.probmax;
-		RMSMean += Hypo.rms;
-		NRdgsMean += (double) Hypo.nreadings;
-		GapMean += Hypo.gap;
-		iReject = 0;
-		if (Hypo.ellipsoid.len3 > Len3Max) {
-			//puterr("WARNING: location ellipsoid Len3 is greater than Len3Max, ignoring event");
-			Len3Reject++;
-			iReject = 1;
-		}
-		if (Hypo.probmax < ProbMin) {
-			//puterr("WARNING: location Prob max is less than ProbMin, ignoring event");
-			ProbReject++;
-			iReject = 1;
-		}
-		if (Hypo.rms > RMSMax) {
-			//puterr("WARNING: location RMS is Greater than RMSMax, ignoring event");
-			RMSReject++;
-			iReject = 1;
-		}
-		if (Hypo.nreadings < NRdgsMin) {
-			//puterr("WARNING: location num readings is less than NRdgsMin, ignoring event");
-			NRdgsReject++;
-			iReject = 1;
-		}
-		if (Hypo.gap > GapMax) {
-			//puterr("WARNING: location gap is greater than GapMax, ignoring event");
-			GapReject++;
-			iReject = 1;
-		}
-		if (icut && (Hypo.dlat < latMin || Hypo.dlat > latMax
-				|| Hypo.dlong < longMin || Hypo.dlong > longMax)) {
-			CutReject++;
-			iReject = 1;
-		}
-
-		if (iReject)
-			continue;
-
-
-		WriteLocation(fp_hyp_scat_out, &Hypo,
-			Arrival, NumArrivals, fn_hyp_scat_out, 1, 0, 0, &locgrid, 0);
-
-		nLocWritten++;
-
-		if (num_decim > 0) {
-
-			/* open scatter file */
-			strcpy(fn_scatter, fn_hyp_in_list[nFile]);
-			strcat(fn_scatter, ".scat\0");
-			if ((fp_scat_in = fopen(fn_scatter, "r")) == NULL) {
-				puterr2("ERROR: opening scatter file", fn_scatter);
-				fprintf(fp_hyp_scat_out, "SCATTER Nsamples %d\n", 0);
-				fprintf(fp_hyp_scat_out, "END_SCATTER\n\n");
 				continue;
 			}
-
-
-			/* read header record */
-			fseek(fp_scat_in, 0, SEEK_SET);
-			fread(&npoints, sizeof(int), 1, fp_scat_in);
-
-			fprintf(fp_hyp_scat_out, "SCATTER Nsamples %d\n", npoints / num_decim);
-
-			/* skip header record */
-			fseek(fp_scat_in, 4 * sizeof(float), SEEK_SET);
-
-			/* copy date records */
-			/*fprintf(stdout, "  Summing %d samples...\n", npoints);*/
-			for (npt = 0; npt < npoints; npt += num_decim) {
-
-				if ((istat = fread(fdata, sizeof(float), 4, fp_scat_in)) != 4) {
-					sprintf(MsgStr, "ERROR: freed = %d != 4!!! (%d/%d)",
-							istat, npt, npoints);
-					puterr(MsgStr);
-				}
-				num_points_read++;
-				fseek(fp_scat_in, (num_decim - 1) * 4 * sizeof(float),
-					SEEK_CUR);
-
-				/* clip - check that sample is within grid */
-				/*if (fdata[0] < xmin || fdata[0] > xmax
-						|| fdata[1] < ymin || fdata[1] > ymax
-						|| fdata[2] < zmin || fdata[2] > zmax)
-					continue;*/
-
-				fwrite(fdata, sizeof(float), 4, fp_scat_out);
-				num_points_written++;
-
-				if (fdata[3] > probmax)
-					probmax = fdata[3];
-
-				fprintf(fp_hyp_scat_out,  "%9.4lf %9.4lf %9.4lf %9.2le\n",
-					fdata[0], fdata[1], fdata[2], fdata[3]);
-
+			nLocAccepted++;
+			Len3Mean += Hypo.ellipsoid.len3;
+			ProbMean += Hypo.probmax;
+			RMSMean += Hypo.rms;
+			NRdgsMean += (double) Hypo.nreadings;
+			GapMean += Hypo.gap;
+			iReject = 0;
+			if (Hypo.ellipsoid.len3 > Len3Max) {
+			//puterr("WARNING: location ellipsoid Len3 is greater than Len3Max, ignoring event");
+				Len3Reject++;
+				iReject = 1;
+			}
+			if (Hypo.probmax < ProbMin) {
+			//puterr("WARNING: location Prob max is less than ProbMin, ignoring event");
+				ProbReject++;
+				iReject = 1;
+			}
+			if (Hypo.rms > RMSMax) {
+			//puterr("WARNING: location RMS is Greater than RMSMax, ignoring event");
+				RMSReject++;
+				iReject = 1;
+			}
+			if (Hypo.nreadings < NRdgsMin) {
+			//puterr("WARNING: location num readings is less than NRdgsMin, ignoring event");
+				NRdgsReject++;
+				iReject = 1;
+			}
+			if (Hypo.gap > GapMax) {
+			//puterr("WARNING: location gap is greater than GapMax, ignoring event");
+				GapReject++;
+				iReject = 1;
+			}
+			if (icut && (Hypo.dlat < latMin || Hypo.dlat > latMax || Hypo.dlong < longMin || Hypo.dlong > longMax)) {
+				CutReject++;
+				iReject = 1;
 			}
 
-			num_points_tot += npoints;
+			if (iReject)
+				continue;
 
-			fprintf(fp_hyp_scat_out, "END_SCATTER\n");
 
-			fclose(fp_scat_in);
+			WriteLocation(fp_hyp_scat_out, &Hypo,
+				      Arrival, NumArrivals, fn_hyp_scat_out, 1, 0, 0, &locgrid, 0);
+
+			nLocWritten++;
+
+			if (num_decim > 0) {
+
+				/* open scatter file */
+				strcpy(fn_scatter, fn_hyp_in_list[nFile]);
+				pchr = strstr(fn_scatter, test_str);
+				if (pchr != NULL)
+					*pchr = '\0';
+				strcat(fn_scatter, ".scat\0");
+				if ((fp_scat_in = fopen(fn_scatter, "r")) == NULL) {
+					puterr2("ERROR: opening scatter file", fn_scatter);
+					fprintf(fp_hyp_scat_out, "SCATTER Nsamples %d\n", 0);
+					fprintf(fp_hyp_scat_out, "END_SCATTER\n\n");
+					continue;
+				}
+
+
+				/* read header record */
+				fseek(fp_scat_in, 0, SEEK_SET);
+				fread(&npoints, sizeof(int), 1, fp_scat_in);
+
+				fprintf(fp_hyp_scat_out, "SCATTER Nsamples %d\n", npoints / num_decim);
+
+				/* skip header record */
+				fseek(fp_scat_in, 4 * sizeof(float), SEEK_SET);
+
+				/* copy date records */
+				/*fprintf(stdout, "  Summing %d samples...\n", npoints);*/
+				for (npt = 0; npt < npoints; npt += num_decim) {
+
+					if ((istat = fread(fdata, sizeof(float), 4, fp_scat_in)) != 4) {
+						sprintf(MsgStr, "ERROR: freed = %d != 4!!! (%d/%d)",
+								istat, npt, npoints);
+						puterr(MsgStr);
+					}
+					num_points_read++;
+					fseek(fp_scat_in, (num_decim - 1) * 4 * sizeof(float),
+					      SEEK_CUR);
+
+					/* clip - check that sample is within grid */
+				/*if (fdata[0] < xmin || fdata[0] > xmax
+					|| fdata[1] < ymin || fdata[1] > ymax
+					|| fdata[2] < zmin || fdata[2] > zmax)
+					continue;*/
+
+					fwrite(fdata, sizeof(float), 4, fp_scat_out);
+					num_points_written++;
+
+					if (fdata[3] > probmax)
+						probmax = fdata[3];
+
+					fprintf(fp_hyp_scat_out,  "%9.4lf %9.4lf %9.4lf %9.2le\n",
+							fdata[0], fdata[1], fdata[2], fdata[3]);
+
+				}
+
+				num_points_tot += npoints;
+
+				fprintf(fp_hyp_scat_out, "END_SCATTER\n");
+
+				fclose(fp_scat_in);
+			}
+
+
+			/* write end line and blank line */
+			fprintf(fp_hyp_scat_out, "END_NLLOC\n\n");
+
+
+
 		}
-
-
-		/* write end line and blank line */
-		fprintf(fp_hyp_scat_out, "END_NLLOC\n\n");
 
 	}
 
@@ -419,7 +438,7 @@ int SumLocations(int argc, char** argv)
 	/* write message */
 	fprintf(stdout,
 		"%d location files read, %d accepted.\n",
-			numFiles, nLocAccepted);
+		numFiles, nLocAccepted);
 	fprintf(stdout,
 		"Len3 Mean: %lf, Reject %d\n",
 		Len3Mean / (double) nLocAccepted, Len3Reject);
@@ -444,7 +463,7 @@ int SumLocations(int argc, char** argv)
 	fprintf(stdout, "%ld samples written to binary sumfile <%s>\n",
 		num_points_written, fn_scat_out);
 	fprintf(stdout,
-"%ld samples and %d locations written to ascii sumfile <%s>\n",
+		"%ld samples and %d locations written to ascii sumfile <%s>\n",
 		num_points_written, nLocWritten, fn_hyp_scat_out);
 
 

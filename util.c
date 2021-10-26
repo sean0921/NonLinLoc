@@ -1,4 +1,4 @@
-/* 
+/*
  * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
  *
  * This program is free software; you can redistribute it and/or modify
@@ -17,7 +17,7 @@
  */
 
 
-/* util.c 
+/* util.c
 
    AJL utility functions.
 
@@ -49,7 +49,7 @@
 
 /*** function to display correct command line usage */
 
-void disp_usage(char* progname, char* options)
+void disp_usage(const char * progname, const char * options)
 {
 	fprintf(stderr, "Usage: %s %s\n", progname, options);
 }
@@ -58,7 +58,7 @@ void disp_usage(char* progname, char* options)
 
 /*** function to display error message */
 
-void puterr(char *pm)
+void puterr(const char *pm)
 {
 	fprintf(stderr, "%s: %s\n", prog_name, pm);
 }
@@ -67,7 +67,7 @@ void puterr(char *pm)
 
 /*** function to display error message */
 
-void puterr2(char *pmessage1, char *pmessage2)
+void puterr2(const char *pmessage1, const char *pmessage2)
 {
 	fprintf(stderr, "%s: %s: %s\n", prog_name, pmessage1, pmessage2);
 }
@@ -76,10 +76,20 @@ void puterr2(char *pmessage1, char *pmessage2)
 
 /*** function to display message */
 
-void putmsg(int imsg_level, char *pm)
+void putmsg(int imsg_level, const char *pm)
 {
 	if (message_flag >= imsg_level)
 		fprintf(stdout, "%s\n", pm);
+}
+
+
+
+/*** function to display message */
+
+void putmsg2(int imsg_level, const char *pmessage1, const char *pmessage2)
+{
+	if (message_flag >= imsg_level)
+		fprintf(stdout, "%s: %s\n", pmessage1, pmessage2);
 }
 
 
@@ -88,7 +98,7 @@ void putmsg(int imsg_level, char *pm)
 
 void DispProgInfo()
 {
-	sprintf(MsgStr, "%s (%s v%s %s) %s", 
+	sprintf(MsgStr, "%s (%s v%s %s) %s",
 		prog_name, package_name, prog_ver, prog_date, prog_copyright);
 	putmsg(1, MsgStr);
 }
@@ -97,22 +107,22 @@ void DispProgInfo()
 
 /*** function to check that int val is in range */
 
-int checkRangeInt(char* name, char* param, int val, 
+int checkRangeInt(const char * name, const char * param, int val,
 		int checkMin, int min, int checkMax, int max)
 {
 	int stat = 0;
 
 	if (checkMin && val < min) {
-		sprintf(MsgStr, 
-			"ERROR: %s param %s: value: %d is less than min value: %d", 
+		sprintf(MsgStr,
+			"ERROR: %s param %s: value: %d is less than min value: %d",
 			name, param, val, min);
 		puterr(MsgStr);
 		stat = -1;
 	}
 
 	if (checkMax && val > max) {
-		sprintf(MsgStr, 
-			"ERROR: %s param %s: value: %d is greater than max value: %d", 
+		sprintf(MsgStr,
+			"ERROR: %s param %s: value: %d is greater than max value: %d",
 			name, param, val, max);
 		puterr(MsgStr);
 		stat = 1;
@@ -126,22 +136,22 @@ int checkRangeInt(char* name, char* param, int val,
 
 /*** function to check that double val is in range */
 
-int checkRangeDouble(char* name, char* param, double val, 
+int checkRangeDouble(const char * name, const char * param, double val,
 		int checkMin, double min, int checkMax, double max)
 {
 	int stat = 0;
 
 	if (checkMin && val < min - VERY_SMALL_DOUBLE) {
-		sprintf(MsgStr, 
-			"ERROR: %s param %s: value: %lf is less than min value: %lf", 
+		sprintf(MsgStr,
+			"ERROR: %s param %s: value: %lf is less than min value: %lf",
 			name, param, val, min);
 		puterr(MsgStr);
 		stat = -1;
 	}
 
 	if (checkMax && val > max + VERY_SMALL_DOUBLE) {
-		sprintf(MsgStr, 
-			"ERROR: %s param %s: value: %lf is greater than max value: %lf", 
+		sprintf(MsgStr,
+			"ERROR: %s param %s: value: %lf is greater than max value: %lf",
 			name, param, val, max);
 		puterr(MsgStr);
 		stat = 1;

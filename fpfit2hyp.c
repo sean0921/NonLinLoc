@@ -65,7 +65,7 @@ int Fpfit2Hyp(int , char **);
 #define PNAME  "fpfit2hyp"
 
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
 	int istat, narg;
@@ -105,7 +105,7 @@ main(int argc, char *argv[])
 
 int Fpfit2Hyp(int argc, char *argv[])
 {
-	int istat, narg;
+	int istat;
 	int nLocWritten, nLocRead;
 	char fn_hyp_out[FILENAME_MAX];
 	char fn_fpfit_in[FILENAME_MAX];
@@ -115,8 +115,7 @@ int Fpfit2Hyp(int argc, char *argv[])
 	double MechMisfitMax, RMSMax;
 	int NRdgsMin, GapMax;
 
-	GridDesc Grid, locgrid;
-	SourceDesc* Srce;
+	GridDesc locgrid;
 	HypoDesc Hypo, *phypo;
 
 
@@ -208,15 +207,15 @@ int Fpfit2Hyp(int argc, char *argv[])
 
 		/* write ellipsoid */
 		phypo = &Hypo;
-		fprintf(fp_hyp_out, 
+		fprintf(fp_hyp_out,
 			"ELLIPSOID  Hyp  %lf %lf %lf",
 			phypo->dlat, phypo->dlong, phypo->depth);
-		fprintf(fp_hyp_out, 
+		fprintf(fp_hyp_out,
 			" Ell1  %.1lf %.1lf %.2le",
-			phypo->ellipsoid.az1, phypo->ellipsoid.dip1, 
+			phypo->ellipsoid.az1, phypo->ellipsoid.dip1,
 				phypo->ellipsoid.len1);
 		fprintf(fp_hyp_out, " Ell2  %.1lf %.1lf %.2le",
-			phypo->ellipsoid.az2, phypo->ellipsoid.dip2, 
+			phypo->ellipsoid.az2, phypo->ellipsoid.dip2,
 				phypo->ellipsoid.len2);
 		fprintf(fp_hyp_out, " Ell3  %.2le", phypo->ellipsoid.len3);
 		fprintf(fp_hyp_out, "\n");
@@ -224,12 +223,12 @@ int Fpfit2Hyp(int argc, char *argv[])
 
 		/* write mechanism */
 		phypo = &Hypo;
-		fprintf(fp_hyp_out, 
+		fprintf(fp_hyp_out,
 			"FOCALMECH  Hyp  %lf %lf %lf",
 			phypo->dlat, phypo->dlong, phypo->depth);
-		fprintf(fp_hyp_out, 
+		fprintf(fp_hyp_out,
 			" Mech  %.1lf %.1lf %.1lf",
-			phypo->focMech.dipDir, phypo->focMech.dipAng, 
+			phypo->focMech.dipDir, phypo->focMech.dipAng,
 			phypo->focMech.rake);
 		fprintf(fp_hyp_out, " mf  %.2lf nObs %d",
 			phypo->focMech.misfit, phypo->focMech.nObs);
@@ -247,8 +246,8 @@ int Fpfit2Hyp(int argc, char *argv[])
 	fclose(fp_hyp_out);
 
 	/* write message */
-	fprintf(stdout, 
-"%d locations read, %d written to ascii hyp file <%s>\n", 
+	fprintf(stdout,
+"%d locations read, %d written to ascii hyp file <%s>\n",
 		nLocRead, nLocWritten, fn_hyp_out);
 
 

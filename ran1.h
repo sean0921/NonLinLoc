@@ -8,8 +8,13 @@
 EXTERN_TXT int RanSeed;
 
 
+// following inline probably does nothing - functions body must be defined in header file
 #ifndef INLINE
+#ifndef __GNUC__
 #define INLINE inline
+#else
+#define INLINE __inline__
+#endif
 #endif
 
 

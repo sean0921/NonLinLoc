@@ -139,19 +139,24 @@ void free_vector(v,nl,nh)
 float *v;
 int nl,nh;
 {
+	if ((v+nl) == NULL) return;
 	free((char*) (v+nl));
 }
+
 
 void free_ivector(v,nl,nh)
 int *v,nl,nh;
 {
+	if ((v+nl) == NULL) return;
 	free((char*) (v+nl));
 }
+
 
 void free_dvector(v,nl,nh)
 double *v;
 int nl,nh;
 {
+	if ((v+nl) == NULL) return;
 	free((char*) (v+nl));
 }
 
@@ -163,6 +168,8 @@ int nrl,nrh,ncl,nch;
 {
 	int i;
 
+	if ((m+nrl) == NULL) return;
+
 	for(i=nrh;i>=nrl;i--) free((char*) (m[i]+ncl));
 	free((char*) (m+nrl));
 }
@@ -172,6 +179,8 @@ double **m;
 int nrl,nrh,ncl,nch;
 {
 	int i;
+
+	if ((m+nrl) == NULL) return;
 
 	for(i=nrh;i>=nrl;i--) free((char*) (m[i]+ncl));
 	free((char*) (m+nrl));
@@ -183,6 +192,8 @@ int nrl,nrh,ncl,nch;
 {
 	int i;
 
+	if ((m+nrl) == NULL) return;
+
 	for(i=nrh;i>=nrl;i--) free((char*) (m[i]+ncl));
 	free((char*) (m+nrl));
 }
@@ -193,6 +204,7 @@ void free_submatrix(b,nrl,nrh,ncl,nch)
 float **b;
 int nrl,nrh,ncl,nch;
 {
+	if ((b+nrl) == NULL) return;
 	free((char*) (b+nrl));
 }
 
@@ -220,5 +232,6 @@ void free_convert_matrix(b,nrl,nrh,ncl,nch)
 float **b;
 int nrl,nrh,ncl,nch;
 {
+	if ((b+nrl) == NULL) return;
 	free((char*) (b+nrl));
 }

@@ -20,7 +20,7 @@
 /*   oct2grid.c
 
 	Program to convert OctTree file to Grid file
-	
+
 
 
 */
@@ -65,10 +65,10 @@ int apply_oct2grid(int , char ** );
 #define PNAME  "oct2grid"
 
 
-main(int argc, char *argv[])
+int main(int argc, char *argv[])
 {
 
-	int istat, narg, nchar;
+	int narg;
 
 
 	// set program name
@@ -99,7 +99,7 @@ main(int argc, char *argv[])
 
 int apply_oct2grid(int argc, char *argv[])
 {
-	int istat, narg;
+	int istat;
 
 	char fn_oct_in[FILENAME_MAX];
 	char fn_grid_out[FILENAME_MAX];
@@ -107,16 +107,16 @@ int apply_oct2grid(int argc, char *argv[])
 
 	GridDesc grid_out;
 	Tree3D* ptree;
-	
+
 	double dx, dy, dz;
 	//char grid_type[MAXLINE];
-	
-	char fn_conf_out[FILENAME_MAX];
-	FILE *fpio;
-	int ilevel;
-	double conf_level, conf_incr;
-	
-	
+
+	//char fn_conf_out[FILENAME_MAX];
+	//FILE *fpio;
+	//int ilevel;
+	//double conf_level, conf_incr;
+
+
 	// open input grid file
 	strcpy(fn_oct_in, argv[1]);
 	if ((fp_oct_in = fopen(fn_oct_in, "r")) == NULL)
@@ -124,8 +124,8 @@ int apply_oct2grid(int argc, char *argv[])
 		puterr("ERROR opening input oct tree file.");
 		return(-1);
 	}
-	
-	// cread output grid	
+
+	// cread output grid
 	sscanf(argv[3], "%lf", &dx);
 	if (argc > 4) {
 		sscanf(argv[4], "%lf", &dy);
@@ -134,7 +134,7 @@ int apply_oct2grid(int argc, char *argv[])
 		dz = dy = dx;
 	}
 	ptree = readTree3D(fp_oct_in);
-	close(fp_oct_in);
+	fclose(fp_oct_in);
 	//strcpy(grid_type, "LIKELIHOOD");
 	//strcpy(grid_type, "PROB_DENSITY");
 	//strcpy(grid_type, "MISFIT");
@@ -148,15 +148,15 @@ int apply_oct2grid(int argc, char *argv[])
 		return(-1);
 	}
 
-	
-	// open confidence interval file 
+
+	// open confidence interval file
 	/*
 	sprintf(fn_conf_out, "%s.octree.conf", fn_grid_out);
 	if ((fpio = fopen(fn_conf_out, "w")) == NULL) {
 		puterr("ERROR: opening confidence interval output file.");
 		return(-1);
 	}
-	// write confidence levels to file 
+	// write confidence levels to file
 	conf_incr = 1.0 / (N_STEPS_CONF - 1);
 	conf_level = 1.0;
 	for (ilevel = 0; ilevel < N_STEPS_CONF; ilevel++) {
@@ -165,7 +165,7 @@ int apply_oct2grid(int argc, char *argv[])
 	}
 	fclose(fpio);
 	*/
-	
+
 
 	return(0);
 

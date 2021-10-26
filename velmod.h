@@ -20,7 +20,7 @@
 /* velmod.h include file */
 
 /* 	History:
-	
+
 	see wls.c
 
 */
@@ -32,7 +32,11 @@
 #include <limits.h>
 
 #ifndef INLINE
+#ifndef __GNUC__
 #define INLINE inline
+#else
+#define INLINE __inline__
+#endif
 #endif
 
 #define MAXFILE 200
@@ -73,14 +77,7 @@
 
 /* externally defined names */
 extern int prog_mode_3d;	/* 0 = 2D, 1 = 3D calculation */
-extern void puterr(char* );
-
-#undef EXTERN_TXT
-#ifdef EXTERN_MODE
-#define	EXTERN_TXT extern
-#else
-#define EXTERN_TXT
-#endif
+//extern void puterr(char* );
 
 EXTERN_TXT double min_x_cut;	/* minimum x distance cutoff */
 EXTERN_TXT double max_x_cut;	/* maximum x distance cutoff */
@@ -96,7 +93,7 @@ EXTERN_TXT double max_z_cut;	/* maximum y distance cutoff */
 
 
 	/* 2D to 3D transformation */
-		
+
 EXTERN_TXT int prog_mode_Mod2D3D;	/* 1 = 3D calculation with 2D model */
 EXTERN_TXT double Mod2D3D_origx, Mod2D3D_origy, Mod2D3D_rot;
 EXTERN_TXT double Mod2D3D_cosang, Mod2D3D_sinang;
@@ -140,7 +137,7 @@ struct surface {
 				   SURF_REF_SURF - use local depth of surface
 				   SURF_REF_HIGH - use highest depth on surface
 				   SURF_REF_LOW - use lowest depth on surface */
-	double ref_level;	/* depth from ref point to reference level 
+	double ref_level;	/* depth from ref point to reference level
 					for vel/den determination; */
 	double pix_shift;	/* shift in loc to account for
 							node_offset type */
@@ -431,16 +428,17 @@ struct edge *addedge();
 struct polygon *addpoly();
 struct solid *addsolid();
 void disp_model_poly();
-double get_poly_vel(double , double , char , double* , 
+double get_poly_vel(double , double , char , double* ,
 			int , int *);
-INLINE double get_poly_vel_2D3D(double , double , double , char , 
+INLINE double get_poly_vel_2D3D(double , double , double , char ,
 			double* , int , int* );
 INLINE double get_solid_vel();
 INLINE double get_rough_z();
 INLINE double get_rough_vel();
-INLINE double get_surface_vel(double , double , double , char , 
+INLINE double get_surface_vel(double , double , double , char ,
 		struct surface *, int , double *, int );
 INLINE double get_surface_z(int , double , double );
+int dump_grd(int nsurface, int idump_decimation, double x_factor, double y_factor, double z_factor, char *dump_file);
 
 int draw_model();
 int draw_dist_axis();

@@ -17,7 +17,7 @@
  */
 
 
-/* util.h 
+/* util.h
 
    AJL utility functions.
 
@@ -53,36 +53,42 @@ EXTERN_TXT char MsgStr[10 * MAXLINE];
 
 
 /*** function to display command usage */
-void disp_usage(char* , char*);
+void disp_usage(const char * , const char *);
 
 /*** function to display error message */
-void puterr(char *);
+void puterr(const char *);
 
 /*** function to display error message */
-void puterr2(char *, char *);
+void puterr2(const char *, const char *);
 
 /*** function to display message */
-void putmsg(int , char *);
+void putmsg(int , const char *);
+
+/*** function to display message */
+void putmsg2(int imsg_level, const char *pmessage1, const char *pmessage2);
 
 /*** function to display program information */
 void DispProgInfo();
 
 /*** function to check that int val is in range */
-int checkRangeInt(char* name, char* param, int val, 
+int checkRangeInt(const char * name, const char * param, int val,
 	int checkMin, int min, int checkMax, int max);
 
 /*** function to check that double val is in range */
-int checkRangeDouble(char* name, char* param, double val, 
+int checkRangeDouble(const char * name, const char * param, double val,
 	int checkMin, double min, int checkMax, double max);
 
 /* misc structures */
 
 /* 3D vector or point */
+// AEH/AJL 20080709 - already in geometry.h
+/*
 struct Vect3D {
 	double x;
 	double y;
 	double z;
 };
+*/
 
 
 

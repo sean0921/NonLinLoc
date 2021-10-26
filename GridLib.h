@@ -35,9 +35,9 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 #define PACKAGE  "NonLinLoc"
-#define PVER  "4.10.6"
-#define PDATE "31MAY2006"
-/*#define PCOPYRIGHT "\nCopyright (C) 1999-2005 Anthony Lomax\n"*/
+#define PVER  "5.00.0"
+#define PDATE "02Sep2008"
+/*#define PCOPYRIGHT "\nCopyright (C) 1999-2008 Anthony Lomax\n"*/
 #define PCOPYRIGHT "\0"
 
 
@@ -48,6 +48,8 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #include <float.h>
 #include <limits.h>
 #include <time.h>
+#include <dirent.h>
+#include <fnmatch.h>
 /* SH 07222004 added */
 #include <ctype.h>
 
@@ -66,8 +68,13 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #include "map_project.h"
 #include "octtree.h"
 
+// following inline probably does nothing - functions body must be defined in header file
 #ifndef INLINE
+#ifndef __GNUC__
 #define INLINE inline
+#else
+#define INLINE __inline__
+#endif
 #endif
 
 /* the following defines needed for old cc version */
@@ -235,7 +242,7 @@ GridDesc;
 #define X_MAX_NUM_STATIONS_DIFF	40000
 #define MAX_NUM_ARRIVALS_STA	2
 #define X_MAX_NUM_ARRIVALS 	MAX_NUM_ARRIVALS_STA*X_MAX_NUM_STATIONS
-#define ARRIVAL_LABEL_LEN	7
+#define ARRIVAL_LABEL_LEN	21
 
 /* phase (sythetic arrival observation) */
 
@@ -284,24 +291,30 @@ StationDesc;
 
 /* arrival observation */
 
+#define ARRIVAL_NULL_STR "?"
+#define ARRIVAL_NULL_CHR '?'
+#define FORMAT_PHASE_1 0
+#define FORMAT_PHASE_2 1
 #define IO_ARRIVAL_OBS 0
 #define IO_ARRIVAL_ALL 1
 #define CODA_DUR_NULL -1.0
 #define AMPLITUDE_NULL -1.0
 #define PERIOD_NULL -1.0
-#define MAG_NULL -9.9
-#define INST_LABEL_LEN 5
-#define COMP_LABEL_LEN 5
+// 20060623 AJL MAG_NULL changed to MAGNITUDE_NULL to resolve potential conflict with Earthworm defines
+#define MAGNITUDE_NULL -9.9
+#define INST_LABEL_LEN 32
+#define COMP_LABEL_LEN 32
 //INGV #define PHASE_LABEL_LEN	7
 #define PHASE_LABEL_LEN	32
 typedef struct
 {
-	char label[ARRIVAL_LABEL_LEN];  /* char label (i.e. station code) */
+	char label[ARRIVAL_LABEL_LEN];  /* char label (i.e. station or site code) */
+	char network[ARRIVAL_LABEL_LEN];  /* char network name */
 	char time_grid_label[ARRIVAL_LABEL_LEN];  /* char label for time grid */
 	char inst[INST_LABEL_LEN];  		/* instrument code */
 	char comp[COMP_LABEL_LEN];  		/* component (ie Z N 128) */
 
-		/* observed values */
+	/* observed values */
 
 	char phase[PHASE_LABEL_LEN];	/* char phase id */
 	char onset[2];  		/* char onset (ie E I) */
@@ -310,7 +323,11 @@ typedef struct
  	int year, month, day; 		/* observed arrival date */
  	int hour, min; 			/* observed arrival hour/min */
  	double sec; 			/* observed arrival seconds */
- 	double coda_dur; 		/* coda duration */
+
+	double error; 			/* error in arrival time */
+	char error_type[MAXLINE]; 	/* error type */
+
+	double coda_dur; 		/* coda duration */
  	double amplitude; 		/* amplitude */
  	double period; 			/* period */
 /* SH 07212004 added */
@@ -318,18 +335,21 @@ typedef struct
                                1 = don't use amplitude for magnitude calculation
                               -1 = amplitude is clipped */
 
+	/* new values NLL PHASE_2 format*/
+	/* 20060629 AJL - Added */
+	double apriori_weight; 		/* a priori weight of datum */
 
-		/* calculated values */
 
+	/* calculated values */
+
+	double tt_error; 		/* travel time error (=LOCGAU if no LOCGAU2, otherwise calculated
+						from travel time using LOCGAU2 params) */
 	double delay; 			/* time delay (is subtracted from arival
 						seconds when phase read */
 	double elev_corr; 		/* elevation correction (is added to arival
 						seconds when phase read */
 	int day_of_year; 		/* day of year (of earliest arrival) */
  	long double obs_time; 		/* corrected observed time; secs from beginning of day of year */
-
- 	double error; 			/* error in arrival time */
- 	char error_type[MAXLINE]; 	/* error type */
 
 		/* flags */
 
@@ -378,7 +398,7 @@ typedef struct
 	GridDesc sheetdesc;		/* description for dual-sheet in memory */
 
 	SourceDesc station;		/* station description */
-	
+
 	double station_weight;		/* station specific weight */
 
 
@@ -486,8 +506,7 @@ typedef struct
 	char signature[6*MAXLINE]; 	/* char signature/program/date/etc */
 	char searchInfo[2*MAXLINE]; 	/* char search type dependent info */
 
-	char locStat[10]; 	/* char location status
-						LOCATED, ABORTED, IGNORED */
+	char locStat[10]; 	/* char location status LOCATED, ABORTED, IGNORED */
 	char locStatComm[2*MAXLINE]; 	/* char location status comment */
 
 	// DD
@@ -564,6 +583,7 @@ EXTERN_TXT SourceDesc Source[MAX_NUM_SOURCES];
 EXTERN_TXT StationDesc Station[MAX_NUM_SOURCES];
 
 /* arrivals */
+EXTERN_TXT int PhaseFormat;
 EXTERN_TXT int MAX_NUM_STATIONS;
 EXTERN_TXT int MAX_NUM_ARRIVALS;
 EXTERN_TXT int NumArrivals;
@@ -575,9 +595,11 @@ EXTERN_TXT HypoDesc Hypocenter;
 /* geographic transformations (lat/long <=> x/y) */
 #define NUM_PROJ_MAX 		3
 #define MAP_TRANS_UNDEF 	-1
+#define MAP_TRANS_NONE	 	0
 #define MAP_TRANS_GLOBAL 	1
 #define MAP_TRANS_SIMPLE 	2
 #define MAP_TRANS_LAMBERT 	3
+#define MAP_TRANS_SDC 		4
 EXTERN_TXT char map_trans_type[NUM_PROJ_MAX][MAXLINE];	/* name of projection */
 EXTERN_TXT int map_itype[NUM_PROJ_MAX];			/* int id of projection */
 EXTERN_TXT char MapProjStr[NUM_PROJ_MAX][2*MAXLINE];	/* string description of proj params */
@@ -587,6 +609,9 @@ EXTERN_TXT double map_orig_lat[NUM_PROJ_MAX], map_orig_long[NUM_PROJ_MAX], map_r
 EXTERN_TXT double map_cosang[NUM_PROJ_MAX], map_sinang[NUM_PROJ_MAX];		/* rotation */
 /* LAMBERT projection parameters */
 EXTERN_TXT double map_lambert_1st_std_paral[NUM_PROJ_MAX], map_lambert_2nd_std_paral[NUM_PROJ_MAX];
+/* SDC Short Distance Coversion projection parameters */
+EXTERN_TXT double map_sdc_xltkm[NUM_PROJ_MAX], map_sdc_xlnkm[NUM_PROJ_MAX];
+#define MAP_TRANS_SDC_DRLT 0.99330647
 
 /* constants */
 EXTERN_TXT double cPI;
@@ -672,6 +697,7 @@ int SwapBytes(float *buffer, long int bufsize);
 int OpenGrid3dFile(char *, FILE **, FILE **, GridDesc* ,
 		char* , SourceDesc* , int );
 void CloseGrid3dFile(FILE **, FILE **);
+float* ReadGridFile(float* values, char *fname, char* file_type, double* xloc, double* yloc, double* zloc, int nvalues, int iSwapBytes);
 INLINE float ReadGrid3dValue(FILE *, int , int , int , GridDesc* );
 INLINE DOUBLE InterpCubeLagrange(DOUBLE , DOUBLE , DOUBLE , DOUBLE , DOUBLE ,
 		DOUBLE , DOUBLE , DOUBLE , DOUBLE , DOUBLE , DOUBLE );
@@ -708,7 +734,7 @@ int WritePhases(FILE *fpio, HypoDesc* phypo, ArrivalDesc* parrivals,
 		int narrivals, char* filename,
 		int iWriteArrivals, int iWriteEndLoc, int iWriteMinimal,
 		GridDesc* pgrid, int n_proj, int io_arrival_mode);
-int GetHypLoc(FILE* , char* , HypoDesc* , ArrivalDesc* , int* , int,
+int GetHypLoc(FILE* , const char* , HypoDesc* , ArrivalDesc* , int* , int,
 			GridDesc* , int );
 int ReadArrival(char* , ArrivalDesc* , int );
 int WriteArrival(FILE* , ArrivalDesc* , int );
@@ -721,12 +747,19 @@ void Qual2Err(ArrivalDesc *);
 int Err2Qual(ArrivalDesc *);
 int GetQuality2Err(char* );
 
+/* strucutre utility functions */
+HypoDesc* cloneHypoDesc(HypoDesc *phypo_orig);
+ArrivalDesc* cloneArrivalDescArray(ArrivalDesc* parrivals_orig, int narrivals);
+GridDesc* cloneGridDesc(GridDesc* pgrid_orig);
+
 /* source/station functions */
 INLINE double GetEpiDist(SourceDesc* , double , double );
 double GetEpiAzim(SourceDesc* , double , double );
 INLINE double GetEpiDistSta(StationDesc* , double , double );
 double GetEpiAzimSta(StationDesc* , double , double );
 INLINE double Dist3D(double , double , double , double, double , double);
+INLINE double calcAveInterStationDistance(SourceDesc *stations, int numStations);
+INLINE int stationLocationIsKnown(double x, double y);
 
 /* date functions */
 int DayOfYear(int , int , int );
@@ -738,6 +771,8 @@ char* CurrTimeStr(void);
 
 /* file list functions */
 int ExpandWildCards(char* , char[][FILENAME_MAX] , int );
+int fnmatch_wrapper(const struct dirent* entry);
+EXTERN_TXT char ExpandWildCards_pattern[FILENAME_MAX];
 
 /* string / char functions */
 int TrimString(char* );

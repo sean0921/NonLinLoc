@@ -17,11 +17,11 @@
  */
 
 
-/* 	wls Velocity Model Functions 
+/* 	wls Velocity Model Functions
 	Functions to get velocity */
 
 /* 	History:
-	
+
 	16 May 1991		original routines
 	23 Sep 1991		polygon model added
 
@@ -29,6 +29,16 @@
 
 
 #define EXTERN_MODE 1
+
+#undef EXTERN_TXT
+#ifdef EXTERN_MODE
+#define	EXTERN_TXT extern
+#else
+#define EXTERN_TXT
+#endif
+
+
+#include "util.h"
 #include "velmod.h"
 
 
@@ -44,7 +54,7 @@ int read_vel_mod_input(FILE* fp_input, char* param, char* line, int istat, int i
 			/* read velocity model input */
 
 		if (strcmp(param, "SURFACE") == 0) {	/* read surfrace desc */
-    			if ((istat = get_model_surface(model_surface, num_surfaces, 
+    			if ((istat = get_model_surface(model_surface, num_surfaces,
 					strchr(line, ' '), imessage)) < 0)
 				fprintf(stderr, "ERROR: reading model surface.\n");
 			else
@@ -52,7 +62,7 @@ int read_vel_mod_input(FILE* fp_input, char* param, char* line, int istat, int i
 		}
 
 		if (strcmp(param, "LAYER") == 0) {	/* read layer desc */
-    			if ((istat = get_model_layer(model_layer, num_layers, 
+    			if ((istat = get_model_layer(model_layer, num_layers,
 					strchr(line, ' '))) < 0)
 				fprintf(stderr, "ERROR: reading model layer.\n");
 			else
@@ -69,20 +79,20 @@ int read_vel_mod_input(FILE* fp_input, char* param, char* line, int istat, int i
 		}
 
 		if (strcmp(param, "VGRID") == 0) {	/* read vel grid desc */
-    		if ((istat = 
+    		if ((istat =
 			get_model_fdgrid(strchr(line, ' '), fp_input)) < 0)
 			fprintf(stderr, "ERROR: reading fdgrid model.\n");
 		}
 
 		if (strcmp(param, "DISK") == 0) {	/* read disk desc */
-    		if ((istat = get_model_disk(model_disk, num_disks, 
+    		if ((istat = get_model_disk(model_disk, num_disks,
 					strchr(line, ' '))) < 0)
 				fprintf(stderr, "ERROR: reading disk model.\n");
 			num_disks += istat;
 		}
 
 		if (strcmp(param, "SPHERE") == 0) {	/* read disk desc */
-    		if ((istat = get_model_sphere(model_sphere, num_spheres, 
+    		if ((istat = get_model_sphere(model_sphere, num_spheres,
 					strchr(line, ' '))) < 0)
 				fprintf(stderr, "ERROR: reading sphere model.\n");
 			num_spheres += istat;
@@ -90,27 +100,27 @@ int read_vel_mod_input(FILE* fp_input, char* param, char* line, int istat, int i
 
 		if (strcmp(param, "2DTO3DTRANS") == 0)	/* read 2D to 3D trans */
 			if ((istat = Get2Dto3DTrans(strchr(line, ' '))) < 0)
-				fprintf(stderr, 
+				fprintf(stderr,
 					"ERROR: reading 2D to 3D tansformation.\n");
 
 		if (strcmp(param, "VERTEX") == 0)	/* read vertex */
-			if ((istat = get_model_vertex(strchr(line, ' '))) < 0) 
+			if ((istat = get_model_vertex(strchr(line, ' '))) < 0)
 				fprintf(stderr, "ERROR: reading vertex.\n");
 
 		if (strcmp(param, "EDGE") == 0)	/* read edge */
-			if ((istat = get_model_edge(strchr(line, ' '))) < 0) 
+			if ((istat = get_model_edge(strchr(line, ' '))) < 0)
 				fprintf(stderr, "ERROR: reading edge.\n");
 
 		if (strcmp(param, "POLYGON2") == 0)	/* read polygon */
-			if ((istat = get_model_poly(strchr(line, ' '), fp_input)) < 0) 
+			if ((istat = get_model_poly(strchr(line, ' '), fp_input)) < 0)
 				fprintf(stderr, "ERROR: reading 2D polygon.\n");
 
 		if (strcmp(param, "POLYGON3") == 0)	/* read polygon */
-			if ((istat = get_model_poly_3d(strchr(line, ' '), fp_input)) < 0) 
+			if ((istat = get_model_poly_3d(strchr(line, ' '), fp_input)) < 0)
 				fprintf(stderr, "ERROR: reading 3D polygon.\n");
 
 		if (strcmp(param, "SOLID") == 0)	/* read polygon */
-			if ((istat = get_model_solid(strchr(line, ' '), fp_input)) < 0) 
+			if ((istat = get_model_solid(strchr(line, ' '), fp_input)) < 0)
 				fprintf(stderr, "ERROR: reading solid.\n");
 
 	return (istat);
@@ -120,7 +130,7 @@ int read_vel_mod_input(FILE* fp_input, char* param, char* line, int istat, int i
 
 /* function to get velocity at location */
 
-INLINE double get_vel(xpos, ypos, zpos, wavetype, density, idensity, imodel)   
+INLINE double get_vel(xpos, ypos, zpos, wavetype, density, idensity, imodel)
 double xpos, ypos, zpos;
 char wavetype;
 double *density;
@@ -134,41 +144,41 @@ int *imodel;
 
 	*imodel = 0;
 
-	if (num_spheres < 1 || 
+	if (num_spheres < 1 ||
 		(vel = get_sphere_vel(xpos, ypos, zpos, wavetype, model_sphere,
 			num_spheres, density, iden)) < 0.0)
 		{
-		if (num_disks < 1 || 
-			(vel = get_disk_vel(xpos, zpos, wavetype, model_disk, 
+		if (num_disks < 1 ||
+			(vel = get_disk_vel(xpos, zpos, wavetype, model_disk,
 				num_disks, density, iden)) < 0.0)
 			{
-			if (( prog_mode_3d && (num_solid < 1 || 
+			if (( prog_mode_3d && (num_solid < 1 ||
 				(vel = get_solid_vel(xpos, ypos, zpos, wavetype,
 				density, iden)) < 0.0) ) ||
-			    ( !prog_mode_3d && (num_poly < 1 || 
+			    ( !prog_mode_3d && (num_poly < 1 ||
 				(vel = get_poly_vel(xpos, zpos, wavetype,
 					density, iden, imodel)) < 0.0) ))
 			    {
 			    if ( !prog_mode_Mod2D3D ||
-				( prog_mode_Mod2D3D && (num_poly < 1 || 
-					(vel = get_poly_vel_2D3D(xpos, ypos, zpos, 
+				( prog_mode_Mod2D3D && (num_poly < 1 ||
+					(vel = get_poly_vel_2D3D(xpos, ypos, zpos,
 					wavetype, density, iden, imodel)) < 0.0) ))
 				{
-				if (num_rough < 1 || 
+				if (num_rough < 1 ||
 					(vel = get_rough_vel(xpos, zpos,
 					wavetype, model_rough,
 					num_rough, density, iden)) < 0.0)
 				    {
-				    /*if (num_surfaces < 1 || 
+				    /*if (num_surfaces < 1 ||
 					    (vel = get_surface_vel(xpos, ypos, zpos,
 					    wavetype, model_surface,
 					    num_surfaces, density, iden)) < 0.0)
 				        {*/
-				    	if (fdgrid_flag < 1 || 
+				    	if (fdgrid_flag < 1 ||
 						(vel = get_fdiff_vel(xpos, -zpos,
 						wavetype, density, iden)) < 0.0)
 					    {
-					        vel = get_layer_vel(zpos, 
+					        vel = get_layer_vel(zpos,
 						    wavetype, model_layer,
 						    num_layers, density,
 						    iden, imodel);
@@ -182,14 +192,14 @@ int *imodel;
 		}
 	}
 
-	return(vel); 
+	return(vel);
 }
 
 
 /* function to calculate velocity from gradient layer model */
- 
-INLINE double get_layer_vel(depth, wavetype, pm, nlayer, 
-						density, iden, imodel)  
+
+INLINE double get_layer_vel(depth, wavetype, pm, nlayer,
+						density, iden, imodel)
 double depth;
 char wavetype;
 struct layer *pm;
@@ -232,8 +242,8 @@ int *imodel;
 
 
 /* function to calculate velocity from disk model */
- 
-INLINE double get_disk_vel(xpos, zpos, wavetype, pd, ndisk, density, iden)  
+
+INLINE double get_disk_vel(xpos, zpos, wavetype, pd, ndisk, density, iden)
 double xpos, zpos;
 char wavetype;
 struct disk *pd;
@@ -244,7 +254,7 @@ int iden;
     int n;
 	double xtemp, ztemp;
     double vel = -1.0;
-	
+
     for (n = 0; n < ndisk; n++) {		/* check if pos is in each disk */
 		xtemp = xpos - (pd+n)->x;
 		ztemp = zpos - (pd+n)->z;
@@ -264,22 +274,22 @@ int iden;
 
 
 /* function to calculate velocity from surface model */
- 
-INLINE double get_surface_vel(double xpos, double ypos, double zpos, char wavetype, 
-	struct surface *psur, int nsurface, double *density, int iden)  
+
+INLINE double get_surface_vel(double xpos, double ypos, double zpos, char wavetype,
+	struct surface *psur, int nsurface, double *density, int iden)
 {
 	int n;
 	double vel = -1.0;
 	double surface_level, ref_level;
 	struct surface *ps;
 
-	
+
 
 	/* find last surface in list above point  */
 
 	for (n = nsurface - 1; n >= 0; n--) {
 		ps = psur + n;
-		if (zpos >= ps->zmin && zpos 
+		if (zpos >= ps->zmin && zpos
 				>= (surface_level = get_surface_z(n, xpos, ypos))) {
 			if (ps->iref_type == SURF_REF_SURF)
 				ref_level = surface_level + ps->ref_level;
@@ -339,8 +349,8 @@ INLINE double get_surface_z(int nsurface, double x, double y)
 
 
 /* function to calculate velocity from rough layer model */
- 
-INLINE double get_rough_vel(xpos, zpos, wavetype, pr, nrough, density, iden)  
+
+INLINE double get_rough_vel(xpos, zpos, wavetype, pr, nrough, density, iden)
 double xpos, zpos;
 char wavetype;
 struct rough_bndry *pr;
@@ -350,7 +360,7 @@ int iden;
 {
     int n;
     double vel = -1.0;
-	
+
 
 		/* check if zpos is below each bndry */
 
@@ -374,8 +384,8 @@ int iden;
 
 
 /* function to calculate velocity from sphere model */
- 
-INLINE double get_sphere_vel(xpos, ypos, zpos, wavetype, pd, nsphere, density,iden)  
+
+INLINE double get_sphere_vel(xpos, ypos, zpos, wavetype, pd, nsphere, density,iden)
 double xpos, ypos, zpos;
 char wavetype;
 struct sphere *pd;
@@ -386,7 +396,7 @@ int iden;
     int n;
 	double xtemp, ytemp, ztemp;
     double vel = -1.0;
-	
+
 
     for (n = 0; n < nsphere; n++) {		/* check if pos is in each sphere */
 		xtemp = xpos - (pd+n)->x;
@@ -458,7 +468,7 @@ int Get2Dto3DTrans(char* input_line)
 	int istat;
 	double angle, rad_per_deg;
 
-	if ((istat = sscanf(input_line, "%lf %lf %lf", 
+	if ((istat = sscanf(input_line, "%lf %lf %lf",
 			&Mod2D3D_origx, &Mod2D3D_origy, &Mod2D3D_rot)) != 3)
 		return(-1);
 
@@ -472,7 +482,7 @@ int Get2Dto3DTrans(char* input_line)
 
 	prog_mode_Mod2D3D = 1;
 
-	
+
 
     return (1);
 }
@@ -482,7 +492,7 @@ int Get2Dto3DTrans(char* input_line)
 
 /*	surface is defined by a GMT grd file
 	surface array is in order of reading of surfaces
-	velocity at point x,y,z is determined by first surface found, 
+	velocity at point x,y,z is determined by first surface found,
 		working backwards from end of surface array, that is above point
 */
 
@@ -500,7 +510,7 @@ int get_model_surface(struct surface *psur, int nsurface, char *input_line, int 
 	if ((istat = sscanf(input_line, "%s %lf %s %lf %lf %lf %lf %lf %lf %lf %d",
 			ps->grd_file, &ps->zshift, str_ref_type, &ps->ref_level,
 			&ps->vptop, &ps->vpgrad,
-			&ps->vstop, &ps->vsgrad, 
+			&ps->vstop, &ps->vsgrad,
 			&ps->dentop, &ps->dengrad,
 			&ps->plot))
 				!= 10 && istat != 11)
@@ -579,7 +589,7 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 	if ((pchr = strchr((ps->hdr)->command, '\n')) != NULL)
 		*pchr = '\0';
 	if (imessage)
-		printf("\"%s\"\t\t/* Command line that produced the grdfile */\n", 
+		printf("\"%s\"\t\t/* Command line that produced the grdfile */\n",
 		(ps->hdr)->command);
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
@@ -603,8 +613,8 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 		ps->pix_shift = 0.0;
 	}
 	if (imessage)
-		printf("%d\t\t\t/* 0 for grid line reg, 1 for pixel reg */\n", 
-		(ps->hdr)->node_offset);  
+		printf("%d\t\t\t/* 0 for grid line reg, 1 for pixel reg */\n",
+		(ps->hdr)->node_offset);
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
@@ -612,7 +622,7 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s x_min: %lf x_max: %lf x_inc: %lf units: %s nx: %d", 
+	sscanf(hline, "%s x_min: %lf x_max: %lf x_inc: %lf units: %s nx: %d",
 		filename, &(ps->hdr)->x_min, &(ps->hdr)->x_max, &(ps->hdr)->x_inc,
 		(ps->hdr)->x_units, &(ps->hdr)->nx);
 	if (imessage) {
@@ -620,13 +630,13 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 		printf("%lf\t/* Maximum x-value of region */\n", (ps->hdr)->x_max);
 		printf("%lf\t/* Node spacing in x-dimension */\n", (ps->hdr)->x_inc);
 		printf("%s\t/* Units of the x-dimension */\n", (ps->hdr)->x_units);
-		printf("%d\t\t\t/* Number of nodes in the x-dimension */\n", 
+		printf("%d\t\t\t/* Number of nodes in the x-dimension */\n",
 			(ps->hdr)->nx);
 	}
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s y_min: %lf y_max: %lf y_inc: %lf units: %s ny: %d", 
+	sscanf(hline, "%s y_min: %lf y_max: %lf y_inc: %lf units: %s ny: %d",
 		filename, &(ps->hdr)->y_min, &(ps->hdr)->y_max, &(ps->hdr)->y_inc,
 		(ps->hdr)->y_units, &(ps->hdr)->ny);
 	if (imessage) {
@@ -639,7 +649,7 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s zmin: %lf zmax: %lf units: %s", 
+	sscanf(hline, "%s zmin: %lf zmax: %lf units: %s",
 		filename, &(ps->hdr)->z_min, &(ps->hdr)->z_max, (ps->hdr)->z_units);
 	if (imessage) {
 		printf("%lf\t/* Minimum z-value in data set */\n", (ps->hdr)->z_min);
@@ -649,10 +659,10 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s  scale_factor: %lf add_offset: %lf", 
+	sscanf(hline, "%s  scale_factor: %lf add_offset: %lf",
 		filename, &(ps->hdr)->z_scale_factor, &(ps->hdr)->z_add_offset);
 	if (imessage) {
-		printf("%lf\t/* Factor to multiply z-values after read */\n", 
+		printf("%lf\t/* Factor to multiply z-values after read */\n",
 						(ps->hdr)->z_scale_factor);
 		printf("%lf\t/* Offset to add to scaled z-values */\n", (ps->hdr)->z_add_offset);
 	}
@@ -701,7 +711,7 @@ int read_grd_surface(struct surface *ps, int imessage, int force_km)
 	return(0);
 
 }
-		
+
 
 
 /*** function to read GMT grd file */
@@ -736,6 +746,8 @@ int read_grd(struct surface *ps, int imessage)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
 	psubstr = strrchr(hline,':');
 	if (psubstr != NULL)
 		strcpy((ps->hdr)->title, psubstr + 1);
@@ -746,17 +758,21 @@ int read_grd(struct surface *ps, int imessage)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
 	psubstr = strrchr(hline,':');
 	if (psubstr != NULL)
 		strcpy((ps->hdr)->command, psubstr + 1);
 	if ((pchr = strchr((ps->hdr)->command, '\n')) != NULL)
 		*pchr = '\0';
 	if (imessage)
-		printf("\"%s\"\t\t/* Command line that produced the grdfile */\n", 
+		printf("\"%s\"\t\t/* Command line that produced the grdfile */\n",
 		(ps->hdr)->command);
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
 	psubstr = strrchr(hline,':');
 	if (psubstr != NULL)
 		strcpy((ps->hdr)->remark, psubstr + 1);
@@ -767,6 +783,8 @@ int read_grd(struct surface *ps, int imessage)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
 	sscanf(hline, "%s %s", filename, regstr);
 	if (strcmp(regstr, "Normal") == 0) {
 		(ps->hdr)->node_offset = 0;
@@ -776,16 +794,20 @@ int read_grd(struct surface *ps, int imessage)
 		ps->pix_shift = 0.0;
 	}
 	if (imessage)
-		printf("%d\t\t\t/* 0 for grid line reg, 1 for pixel reg */\n", 
-		(ps->hdr)->node_offset);  
+		printf("%d\t\t\t/* 0 for grid line reg, 1 for pixel reg */\n",
+		(ps->hdr)->node_offset);
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
 	/* skip grdfile format # line */
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s x_min: %lf x_max: %lf x_inc: %lf units: %s nx: %d", 
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
+	sscanf(hline, "%s x_min: %lf x_max: %lf x_inc: %lf units: %s nx: %d",
 		filename, &(ps->hdr)->x_min, &(ps->hdr)->x_max, &(ps->hdr)->x_inc,
 		(ps->hdr)->x_units, &(ps->hdr)->nx);
 	if (imessage) {
@@ -798,7 +820,9 @@ int read_grd(struct surface *ps, int imessage)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s y_min: %lf y_max: %lf y_inc: %lf units: %s ny: %d", 
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
+	sscanf(hline, "%s y_min: %lf y_max: %lf y_inc: %lf units: %s ny: %d",
 		filename, &(ps->hdr)->y_min, &(ps->hdr)->y_max, &(ps->hdr)->y_inc,
 		(ps->hdr)->y_units, &(ps->hdr)->ny);
 	if (imessage) {
@@ -811,7 +835,9 @@ int read_grd(struct surface *ps, int imessage)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s zmin: %lf zmax: %lf units: %s", 
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
+	sscanf(hline, "%s zmin: %lf zmax: %lf units: %s",
 		filename, &(ps->hdr)->z_min, &(ps->hdr)->z_max, (ps->hdr)->z_units);
 	if (imessage) {
 		printf("%lf\t/* Minimum z-value in data set */\n", (ps->hdr)->z_min);
@@ -821,10 +847,12 @@ int read_grd(struct surface *ps, int imessage)
 
 	if ((phline = fgets(hline, MAXLINE_LONG, fp_grd)) == NULL)
 		return(-1);
-	sscanf(hline, "%s  scale_factor: %lf add_offset: %lf", 
+	if (imessage)
+		printf("phline: \"%s\"\n", phline);
+	sscanf(hline, "%s  scale_factor: %lf add_offset: %lf",
 		filename, &(ps->hdr)->z_scale_factor, &(ps->hdr)->z_add_offset);
 	if (imessage) {
-		printf("%lf\t/* Factor to multiply z-values after read */\n", 
+		printf("%lf\t/* Factor to multiply z-values after read */\n",
 						(ps->hdr)->z_scale_factor);
 		printf("%lf\t/* Offset to add to scaled z-values */\n", (ps->hdr)->z_add_offset);
 	}
@@ -853,7 +881,60 @@ int read_grd(struct surface *ps, int imessage)
 	return(0);
 
 }
-		
+
+
+
+/*** function to write surace data to xyz file */
+
+int dump_grd(int nsurface, int idump_decimation, double x_factor, double y_factor, double z_factor, char *dump_file)
+{
+
+	double x, y;
+	int npoints;
+	float fdata[4], value, fmax;
+	FILE *fp_out;
+	struct surface *ps;
+
+
+	ps = &model_surface[nsurface];
+
+
+	if ((fp_out = fopen(dump_file, "w")) == NULL) {
+		fprintf(stderr, "ERROR: Cannot open dump file:\n");
+		fprintf(stderr, "  %s\n", dump_file);
+		return(-1);
+	}
+
+	// skip header record (used later to store number of samples taken)
+	fseek(fp_out, 4 * sizeof(float), SEEK_SET);
+
+	// write data
+	fmax = -LARGE_FLOAT;
+	npoints = 0;
+	for (x = (ps->hdr)->x_min; x < (ps->hdr)->x_max; x += (double) idump_decimation * (ps->hdr)->x_inc) {
+		fdata[0] = x_factor  * x;
+		for (y = (ps->hdr)->y_min; y < (ps->hdr)->y_max; y += (double) idump_decimation * (ps->hdr)->y_inc) {
+			fdata[1] = y_factor * y;
+			value = z_factor * get_surface_z(nsurface, x, y);
+			fdata[2] = fdata[3] = value;
+			fwrite(fdata, sizeof(float), 4, fp_out);
+			if (value > fmax)
+				fmax = value;
+			npoints++;
+		}
+	}
+
+	// write header
+	fseek(fp_out, 0, SEEK_SET);
+	fwrite(&npoints, sizeof(int), 1, fp_out);
+	fwrite(&fmax, sizeof(float), 1, fp_out);
+
+	fclose(fp_out);
+
+	return(0);
+
+}
+
 
 
 /*** function to read GMT grd file */
@@ -870,7 +951,7 @@ int convGridTokm(struct surface *ps, int imessage)
 		(ps->hdr)->x_inc /= 1000.0;
 		strcpy((ps->hdr)->x_units, "km");
 	} else {
-		fprintf(stderr, "ERROR: unrecognized grid x units: %s.\n", 
+		fprintf(stderr, "ERROR: unrecognized grid x units: %s.\n",
 			(ps->hdr)->x_units);
 		return(-1);
 	}
@@ -883,7 +964,7 @@ int convGridTokm(struct surface *ps, int imessage)
 		(ps->hdr)->y_inc /= 1000.0;
 		strcpy((ps->hdr)->y_units, "km");
 	} else {
-		fprintf(stderr, "ERROR: unrecognized grid y units: %s.\n", 
+		fprintf(stderr, "ERROR: unrecognized grid y units: %s.\n",
 			(ps->hdr)->y_units);
 		return(-1);
 	}
@@ -896,7 +977,7 @@ int convGridTokm(struct surface *ps, int imessage)
 	return(0);
 
 }
-		
+
 
 
 /*** function to read model layer from input file */
@@ -919,7 +1000,7 @@ int get_model_layer(struct layer *pm, int nlayer, char *input_line)
 
 /*** function to read model rough layer from input file */
 
-int get_model_rough(struct rough_bndry *pm, int nrough, 
+int get_model_rough(struct rough_bndry *pm, int nrough,
 					char* input_line, FILE* fp)
 /*!struct rough_bndry *pm;
 int nrough;
@@ -976,7 +1057,7 @@ void set_rough_limits(struct rough_bndry *pr)
 
 	}
 }
-		
+
 
 
 /*** function to get rough boundary z level */
@@ -1011,7 +1092,7 @@ int get_model_fdgrid(char* in_line, FILE* fp)
 
 	sscanf(in_line, "%d %lf %lf %lf %lf %s",
 		&fdgrid_flag,
-		&fdgrid_xmin, &fdgrid_xmax, &fdgrid_zmin, &fdgrid_zmax, 
+		&fdgrid_xmin, &fdgrid_xmax, &fdgrid_zmin, &fdgrid_zmax,
 		vfile_name);
 
 	min_x_cut = fdgrid_xmin;
@@ -1128,7 +1209,7 @@ int get_model_poly(char* input_line, FILE* fp)
 	if (num_edges < 3)
 		fprintf(stderr,
 			"Warning polygon %d has less than 3 edges!\n", ident);
-		
+
 
 		/* add polygon structure to polygon list */
 
@@ -1144,7 +1225,7 @@ int get_model_poly(char* input_line, FILE* fp)
 	polyaddr->vsgrad = vsgrad;
 	polyaddr->denref = denref;
 	polyaddr->dengrad = dengrad;
-			
+
 		/* allocate space for edge pointer array */
 
 	if ((polyaddr->edges = (struct edge **)
@@ -1204,7 +1285,7 @@ int get_model_poly_3d(char* input_line, FILE* fp)
 	if (num_edges < 3)
 		fprintf(stderr,
 			"Warning polygon %d has less than 3 edges!\n", ident);
-		
+
 		/* add polygon structure to polygon list */
 
 	if ((polyaddr = addpoly(ident)) == NULL)
@@ -1212,7 +1293,7 @@ int get_model_poly_3d(char* input_line, FILE* fp)
 	num_poly++;
 	polyaddr->id_poly = ident;
 	polyaddr->n_edges = num_edges;
-			
+
 		/* allocate space for edge pointer array */
 
 	if ((polyaddr->edges = (struct edge **)
@@ -1269,7 +1350,7 @@ int get_model_solid(char* input_line, FILE* fp)
 	if (num_poly < 4)
 		fprintf(stderr,
 			"Warning solid %d has less than 3 polygons!\n", ident);
-		
+
 
 		/* add solid structure to solid list */
 
@@ -1285,7 +1366,7 @@ int get_model_solid(char* input_line, FILE* fp)
 	solidaddr->vsgrad = vsgrad;
 	solidaddr->denref = denref;
 	solidaddr->dengrad = dengrad;
-			
+
 		/* allocate space for polygon pointer array */
 
 	if ((solidaddr->poly = (struct polygon **)
@@ -1558,7 +1639,7 @@ int disp_solids()
 /*	  Normals are used to determine if a point is inside polygon */
 /*		if eq. of line is F(x,y) = Ax - By + C = 0, then point is to one side
 		of the line or the other if F(x,y) > or < 0.
-		This function determines A, B and C so that 
+		This function determines A, B and C so that
 		points inside the polygon will satisfy F(x,y) >= 0.
 */
 
@@ -1609,7 +1690,7 @@ int set_poly_normals(struct polygon *addr)
 		ztest = vaddr_test->z;
 
 			/* adjust coeff so test vertex gives > 0 in line eq. */
- 
+
 		if ((a * xtest + b * ztest + c) < 0.0) {
 			a = -a; b = -b; c = -c;
 		}
@@ -1634,7 +1715,7 @@ int set_poly_normals(struct polygon *addr)
 /*	  Normals are used to determine if a point is inside solid */
 /*		if eq. of polygon is F(x,y) = Ax + By + Cz + D = 0, then point
 		is to one side of the line or the other if F(x,y) > or < 0.
-		This function determines A, B, C and D so that 
+		This function determines A, B, C and D so that
 		points inside the solid will satisfy F(x,y) >= 0.
 */
 
@@ -1732,7 +1813,7 @@ int set_solid_normals(struct solid *addr)
 		ztest = vaddr_test->z;
 
 			/* adjust coeff so test vertex gives > 0 in line eq. */
- 
+
 		if ((a * xtest + b * ytest + c * ztest + d) < 0.0) {
 			a = -a; b = -b; c = -c; d = -d;
 		}
@@ -1851,9 +1932,9 @@ int set_solid_limits(struct solid *addr)
 
 
 /*** function to calculate velocity from  polygon model for 2D to 3D case */
- 
-INLINE double get_poly_vel_2D3D(double xpos, double ypos, double zpos, char wavetype, 
-	double* pdensity, int iden, int *pimodel)  
+
+INLINE double get_poly_vel_2D3D(double xpos, double ypos, double zpos, char wavetype,
+	double* pdensity, int iden, int *pimodel)
 {
 	double xtrans, ytrans;
 
@@ -1865,19 +1946,19 @@ INLINE double get_poly_vel_2D3D(double xpos, double ypos, double zpos, char wave
 
 	xtrans = xtrans * Mod2D3D_cosang - ytrans * Mod2D3D_sinang;
 
-	return(get_poly_vel(xtrans, zpos, wavetype, pdensity, iden, pimodel)); 
+	return(get_poly_vel(xtrans, zpos, wavetype, pdensity, iden, pimodel));
 
 }
 
 
 /*** function to calculate velocity from polygon model */
- 
-double get_poly_vel(double xpos, double zpos, char wavetype, double* density, 
-	int iden, int *imodel)  
+
+double get_poly_vel(double xpos, double zpos, char wavetype, double* density,
+	int iden, int *imodel)
 {
     double vel;
 	struct polygon *addr;
-	
+
 
 	if ((addr = poly_head) == NULL) {
 		return(-1.0);
@@ -1922,9 +2003,9 @@ int inside_poly(double xpt, double zpt, struct polygon *addr)
 struct polygon *addr;*/
 {
 	int nedge;
-	
+
 	for (nedge = 0; nedge < addr->n_edges; nedge++) {
-/*		printf("TEST e%d x %f y %f test=%f\n", addr->edges[nedge]->id_edge, 
+/*		printf("TEST e%d x %f y %f test=%f\n", addr->edges[nedge]->id_edge,
 			xpt, zpt,
 			xpt * addr->norm[nedge].a + zpt * addr->norm[nedge].b +
 			addr->norm[nedge].c);
@@ -1939,8 +2020,8 @@ struct polygon *addr;*/
 
 
 /*** function to calculate velocity from polygon model */
- 
-INLINE double get_solid_vel(xpos, ypos, zpos, wavetype, density, iden)  
+
+INLINE double get_solid_vel(xpos, ypos, zpos, wavetype, density, iden)
 double xpos, ypos, zpos;
 char wavetype;
 double *density;
@@ -1948,7 +2029,7 @@ int iden;
 {
     double vel;
 	struct solid *addr;
-	
+
 
 	if ((addr = solid_head) == NULL) {
 		return(-1.0);
@@ -1984,9 +2065,9 @@ int inside_solid(double xpt, double ypt, double zpt, struct solid *addr)
 struct solid *addr;*/
 {
 	int npoly;
-	
+
 	for (npoly = 0; npoly < addr->n_poly; npoly++) {
-/*		printf("TEST p%d x %f y %f z %f test=%f\n", addr->poly[npoly]->id_poly, 
+/*		printf("TEST p%d x %f y %f z %f test=%f\n", addr->poly[npoly]->id_poly,
 			xpt, ypt, zpt,
 			xpt * addr->norm[npoly].a + ypt * addr->norm[npoly].b +
 			zpt * addr->norm[npoly].c +
@@ -2005,8 +2086,8 @@ struct solid *addr;*/
 
 
 /* function to read finite difference grid model */
- 
-void read_fdiff_vel(char* fname)  
+
+void read_fdiff_vel(char* fname)
 {
 	FILE *fp_grid;
 	int gridsize, nz, nx;
@@ -2058,10 +2139,10 @@ printf("  Row nz = %4d: %f  %f  ...  %f  %f\n", nz, *(fdgrid_array + (nz * fdgri
 
 }
 
-	
+
 /* function to calculate velocity from finite difference grid model */
- 
-INLINE double get_fdiff_vel(xpos, zpos, wavetype, density, iden)  
+
+INLINE double get_fdiff_vel(xpos, zpos, wavetype, density, iden)
 double xpos, zpos;
 char wavetype;
 double *density;
