@@ -19,10 +19,10 @@
 
 /*   NLLoc_func_test.c
 
-	Program to demonstrate running NLLoc through a function call.
+        Program to demonstrate running NLLoc through a function call.
 
 
-*/
+ */
 
 /*-----------------------------------------------------------------------
 Anthony Lomax
@@ -33,16 +33,17 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 /*
-	history:	(see also http://alomax.net/nlloc -> Updates)
+        history:	(see also http://alomax.net/nlloc -> Updates)
 
-	ver 01    17DEC2007  AJL  Original version
+        ver 01    17DEC2007  AJL  Original version
+        ver 02    29NOV2010  AJL  Added multiple calls of NLLoc funciton if multiple observation files specified
 
-	see NLLoc1.c and NLLocLib.c
+        see NLLoc1.c and NLLocLib.c
 
 
 .........1.........2.........3.........4.........5.........6.........7.........8
 
-*/
+ */
 
 
 
@@ -50,6 +51,13 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 #define PNAME  "NLLoc_func_test"
 
+#include "GridLib.h"
+#include "ran1/ran1.h"
+#include "velmod.h"
+#include "GridMemLib.h"
+#include "calc_crust_corr.h"
+#include "phaseloclist.h"
+#include "otime_limit.h"
 #include "NLLocLib.h"
 
 
@@ -78,188 +86,201 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #define NARGS_MIN 2
 #define ARG_DESC "<control file> [<obs file>]"
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
 
-	int istat;
-	char line[4*MAXLINE];
+    int istat = 0;
+    char line[4 * MAXLINE];
 
 
-	char pid_main[255];	// string process id (for CUSTOM_ETH)
-	char **param_line_array = NULL;
-	int n_param_lines = 0;
-	char **obs_line_array = NULL;
-	int n_obs_lines = 0;
-	LocNode *loc_list_head = NULL;       // root node of location list
-	int return_locations, return_oct_tree_grid, return_scatter_sample;
+    char pid_main[255]; // string process id (for CUSTOM_ETH)
+    char **param_line_array = NULL;
+    char **obs_line_array = NULL;
+    LocNode *loc_list_head = NULL; // root node of location list
+    int return_locations, return_oct_tree_grid, return_scatter_sample;
 
 
 
 
 
-	// set program name
-	strcpy(prog_name, PNAME);
+    // set program name
+    strcpy(prog_name, PNAME);
 
-	// check command line for correct usage
-	if (argc < NARGS_MIN) {
-		disp_usage(prog_name, ARG_DESC);
-		return(EXIT_ERROR_USAGE);
-	}
+    // check command line for correct usage
+    if (argc < NARGS_MIN) {
+        disp_usage(prog_name, ARG_DESC);
+        return (EXIT_ERROR_USAGE);
+    }
 
-	// set file names
-	// control file name
-	char fn_control_main[MAXLINE];
-	strcpy(fn_control_main, argv[1]);
-	// obs file name
-	char fn_obs[MAXLINE];
-	if ((argc > 2) && strcmp(argv[2], "-") != 0)
-		strcpy(fn_obs, argv[2]);
-	else
-		strcpy(fn_obs, "-");
+    // set file names
+    // control file name
+    char fn_control_main[MAXLINE];
+    strcpy(fn_control_main, argv[1]);
 
 
+    /** ===========================================================================
+     *  Loop over all observation files specified in command line
+     */
+    int narg;
+    for (narg = 2; narg < argc; narg++) {
 
-	/** ===========================================================================
-	 *  Convert nll control file specified on command line to array of string in memory.
-	 *  A production program might construct these control strings entirely in memory.
-	 */
+        // obs file name
+        char fn_obs[MAXLINE];
+        strcpy(fn_obs, argv[narg]);
+        sprintf(MsgStr, "========> Running overvatoin file: %d: %s", narg - 1, fn_obs);
+        nll_putmsg(1, MsgStr);
 
-	FILE* fp_control;
+        int n_param_lines = 0;
+        int n_obs_lines = 0;
 
-	if ((fp_control = fopen(fn_control_main, "r")) == NULL) {
-		puterr("FATAL ERROR: opening control file.");
-		return(EXIT_ERROR_FILEIO);
-	} else {
-		NumFilesOpen++;
-	}
+        /** ===========================================================================
+         *  Convert nll control file specified on command line to array of string in memory.
+         *  A production program might construct these control strings entirely in memory.
+         */
 
-	param_line_array = (char **) calloc(1000, sizeof(char *));
-	while (fp_control != NULL && fgets(line, 4*MAXLINE, fp_control) != NULL) {
-		param_line_array[n_param_lines] = (char *) malloc(4*MAXLINE);
-		strcpy(param_line_array[n_param_lines], line);
-		n_param_lines++;
-	}
-	fclose(fp_control);
-	NumFilesOpen--;
+        FILE* fp_control;
 
+        if ((fp_control = fopen(fn_control_main, "r")) == NULL) {
+            nll_puterr("FATAL ERROR: opening control file.");
+            return (EXIT_ERROR_FILEIO);
+        } else {
+            NumFilesOpen++;
+        }
 
-
-	/** ===========================================================================
-	 *  Convert obs file specified on command line to array of string in memory.
-	 *  A production program might construct these control strings entirely in memory.
-	 */
-
-	if (strcmp(fn_obs, "-") != 0) {
-
-		FILE* fp_obs;
-
-		if ((fp_obs = fopen(fn_obs, "r")) == NULL) {
-			puterr("FATAL ERROR: opening observations file.");
-			return(EXIT_ERROR_FILEIO);
-		} else {
-			NumFilesOpen++;
-		}
-
-		obs_line_array = (char **) calloc(1000, sizeof(char *));
-		while (fp_obs != NULL && fgets(line, 4*MAXLINE, fp_obs) != NULL) {
-			obs_line_array[n_obs_lines] = (char *) malloc(4*MAXLINE);
-			strcpy(obs_line_array[n_obs_lines], line);
-			n_obs_lines++;
-		}
-		fclose(fp_obs);
-		NumFilesOpen--;
-	}
+        param_line_array = (char **) calloc(1000, sizeof (char *));
+        while (fp_control != NULL && fgets(line, 4 * MAXLINE, fp_control) != NULL) {
+            param_line_array[n_param_lines] = (char *) malloc(4 * MAXLINE);
+            strcpy(param_line_array[n_param_lines], line);
+            n_param_lines++;
+        }
+        fclose(fp_control);
+        NumFilesOpen--;
 
 
 
-	/** ===========================================================================
-	*  Call function invocation of NLLoc.
-	*
-	*  NOTE: the parameter loc_list_head in NLLoc() returns the location results:
-	*  LocNode **loc_list_head - pointer to pointer to head of list of LocNodes containing Location's for
-	*  located events (see phaseloclist.h)
-	*  *loc_list_head must be initialized to NULL on first call to NLLoc()
-	*/
+        /** ===========================================================================
+         *  Convert obs file specified on command line to array of string in memory.
+         *  A production program might construct these control strings entirely in memory.
+         */
 
-	return_locations = 1;
-	return_oct_tree_grid = 1;
-	return_scatter_sample = 1;
-	istat = NLLoc(pid_main, NULL, (char **) param_line_array, n_param_lines, (char **) obs_line_array, n_obs_lines, return_locations, return_oct_tree_grid, return_scatter_sample, &loc_list_head);
+        if (strcmp(fn_obs, "-") != 0) {
 
+            FILE* fp_obs;
 
+            if ((fp_obs = fopen(fn_obs, "r")) == NULL) {
+                nll_puterr("FATAL ERROR: opening observations file.");
+                return (EXIT_ERROR_FILEIO);
+            } else {
+                NumFilesOpen++;
+            }
 
-	/** ===========================================================================
-	*  Write location results to disk for each returned event.
-	*  A production program might scan and process these location results entirely in memory.
-	*/
-
-	int id = 0;
-	LocNode* locNode = NULL;
-	char frootname[FILENAME_MAX];
-	char fname[FILENAME_MAX];
-
-	// loop over returned location results
-	while ((locNode = getLocationFromLocList(loc_list_head, id)) != NULL) {
-
-		sprintf(frootname, "out/%3.3d", id);
-		sprintf(fname, "%s.loc.hyp", frootname);
-
-		// write NLLoc Hypocenter-Phase file to disk
-		if ((istat = WriteLocation(NULL, locNode->plocation->phypo, locNode->plocation->parrivals,
-		     locNode->plocation->narrivals, fname, 1, 1, 0, locNode->plocation->pgrid, 0)) < 0) {
-			     puterr2("ERROR: writing location to event file: %s", fname);
-		}
-
-		// write NLLoc location Grid Header file to disk
-		if ((istat = WriteGrid3dHdr(locNode->plocation->pgrid, NULL, frootname, "loc")) < 0) {
-			puterr2("ERROR: writing grid header to disk: %s", frootname);
-		}
-
-		// write NLLoc location Oct tree structure of locaiton likelihood values to disk
-		if (return_oct_tree_grid) {
-			sprintf(fname, "%s.loc.octree", frootname);
-			FILE *fpio;
-			if ((fpio = fopen(fname, "w")) != NULL) {
-				istat = writeTree3D(fpio, locNode->plocation->poctTree);
-				fclose(fpio);
-				sprintf(MsgStr, "Oct tree structure written to file : %d nodes", istat);
-				putmsg(1, MsgStr);
-			}
-		}
-
-		// write NLLoc binary Scatter file to disk
-		if (return_scatter_sample) {
-			sprintf(fname, "%s.loc.scat", frootname);
-			FILE *fpio;
-			if ((fpio = fopen(fname, "w")) != NULL) {
-				// write scatter file header informaion
-				fseek(fpio, 0, SEEK_SET);
-				fwrite(&(locNode->plocation->phypo->nScatterSaved), sizeof(int), 1, fpio);
-				float ftemp = (float) locNode->plocation->phypo->probmax;
-				fwrite(&ftemp, sizeof(float), 1, fpio);
-				// skip header record
-				fseek(fpio, 4 * sizeof(float), SEEK_SET);
-				// write scatter samples
-				fwrite(locNode->plocation->pscatterSample, 4 * sizeof(float), locNode->plocation->phypo->nScatterSaved, fpio);
-				fclose(fpio);
-			}
-		}
-
-		id++;
-	}
-
-	// clean up
-	freeLocList(loc_list_head, 1);
-	int i;
-	for (i = 0; i < n_param_lines; i++)
-		free(param_line_array[i]);
-	free(param_line_array);
-	for (i = 0; i < n_obs_lines; i++)
-		free(obs_line_array[i]);
-	free(obs_line_array);
+            obs_line_array = (char **) calloc(1000, sizeof (char *));
+            while (fp_obs != NULL && fgets(line, 4 * MAXLINE, fp_obs) != NULL) {
+                obs_line_array[n_obs_lines] = (char *) malloc(4 * MAXLINE);
+                strcpy(obs_line_array[n_obs_lines], line);
+                n_obs_lines++;
+            }
+            fclose(fp_obs);
+            NumFilesOpen--;
+        }
 
 
-	return(istat);
+
+        /** ===========================================================================
+         *  Call function invocation of NLLoc.
+         *
+         *  NOTE: the parameter loc_list_head in NLLoc() returns the location results:
+         *  LocNode **loc_list_head - pointer to pointer to head of list of LocNodes containing Location's for
+         *  located events (see phaseloclist.h)
+         *  *loc_list_head must be initialized to NULL on first call to NLLoc()
+         */
+
+        return_locations = 1;
+        return_oct_tree_grid = 1;
+        return_scatter_sample = 1;
+        istat = NLLoc(pid_main, NULL, (char **) param_line_array, n_param_lines, (char **) obs_line_array, n_obs_lines, return_locations, return_oct_tree_grid, return_scatter_sample, &loc_list_head);
+
+
+
+        /** ===========================================================================
+         *  Write location results to disk for each returned event.
+         *  A production program might scan and process these location results entirely in memory.
+         */
+
+        int id = 0;
+        LocNode* locNode = NULL;
+        char frootname[FILENAME_MAX];
+        char fname[FILENAME_MAX];
+
+        // loop over returned location results
+        while ((locNode = getLocationFromLocList(loc_list_head, id)) != NULL) {
+
+            sprintf(frootname, "out/%3.3d", id);
+            sprintf(fname, "%s.loc.hyp", frootname);
+
+            // write NLLoc Hypocenter-Phase file to disk
+            if ((istat = WriteLocation(NULL, locNode->plocation->phypo, locNode->plocation->parrivals,
+                    locNode->plocation->narrivals, fname, 1, 1, 0, locNode->plocation->pgrid, 0)) < 0) {
+                nll_puterr2("ERROR: writing location to event file: %s", fname);
+            }
+
+            // write NLLoc location Grid Header file to disk
+            if ((istat = WriteGrid3dHdr(locNode->plocation->pgrid, NULL, frootname, "loc")) < 0) {
+                nll_puterr2("ERROR: writing grid header to disk: %s", frootname);
+            }
+
+            // write NLLoc location Oct tree structure of locaiton likelihood values to disk
+            if (return_oct_tree_grid) {
+                sprintf(fname, "%s.loc.octree", frootname);
+                FILE *fpio;
+                if ((fpio = fopen(fname, "w")) != NULL) {
+                    istat = writeTree3D(fpio, locNode->plocation->poctTree);
+                    fclose(fpio);
+                    sprintf(MsgStr, "Oct tree structure written to file : %d nodes", istat);
+                    nll_putmsg(1, MsgStr);
+                }
+            }
+
+            // write NLLoc binary Scatter file to disk
+            if (return_scatter_sample) {
+                sprintf(fname, "%s.loc.scat", frootname);
+                FILE *fpio;
+                if ((fpio = fopen(fname, "w")) != NULL) {
+                    // write scatter file header informaion
+                    fseek(fpio, 0, SEEK_SET);
+                    fwrite(&(locNode->plocation->phypo->nScatterSaved), sizeof (int), 1, fpio);
+                    float ftemp = (float) locNode->plocation->phypo->probmax;
+                    fwrite(&ftemp, sizeof (float), 1, fpio);
+                    // skip header record
+                    fseek(fpio, 4 * sizeof (float), SEEK_SET);
+                    // write scatter samples
+                    fwrite(locNode->plocation->pscatterSample, 4 * sizeof (float), locNode->plocation->phypo->nScatterSaved, fpio);
+                    fclose(fpio);
+                }
+            }
+
+            id++;
+        }
+
+        // clean up
+        freeLocList(loc_list_head, 1);
+        loc_list_head = NULL;
+        int i;
+        for (i = 0; i < n_param_lines; i++)
+            free(param_line_array[i]);
+        free(param_line_array);
+        n_param_lines = 0;
+        for (i = 0; i < n_obs_lines; i++)
+            free(obs_line_array[i]);
+        free(obs_line_array);
+        n_obs_lines = 0;
+
+
+        /** ===========================================================================
+         *  END of oop over all observation files specified in command line
+         */
+    }
+
+    return (istat);
 
 }
 

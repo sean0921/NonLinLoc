@@ -1,19 +1,19 @@
 /*
- * Copyright (C) 1999-2000 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
+ * Copyright (C) 1999-2010 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * GNU Lesser Public License for more details.
+
+ * You should have received a copy of the GNU Lesser Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
  */
 
 
@@ -47,10 +47,10 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 /*** wrapper function to allocate buffer for 3D grid ***/
 
-float* NLL_AllocateGrid(GridDesc* pgrid)
+void* NLL_AllocateGrid(GridDesc* pgrid)
 {
 	int index, nactive, ngrid_read, n;
-	float* fptr = NULL;
+	void* fptr = NULL;
 	GridMemStruct* pGridMemStruct = NULL;
 
 //printf("IN: NLL_AllocateGrid\n");
@@ -133,10 +133,10 @@ void NLL_FreeGrid(GridDesc* pgrid)
 
 /*** wrapper function to create array for accessing 3D grid ***/
 
-float*** NLL_CreateGridArray(GridDesc* pgrid)
+void*** NLL_CreateGridArray(GridDesc* pgrid)
 {
 
-	float*** fptr = NULL;
+	void*** fptr = NULL;
 
 	int index;
 	GridMemStruct* pGridMemStruct;

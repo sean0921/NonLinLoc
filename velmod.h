@@ -1,19 +1,19 @@
 /*
- * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
+ * Copyright (C) 1999-2010 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * GNU Lesser Public License for more details.
+
+ * You should have received a copy of the GNU Lesser Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
  */
 
 
@@ -139,8 +139,7 @@ struct surface {
 				   SURF_REF_LOW - use lowest depth on surface */
 	double ref_level;	/* depth from ref point to reference level
 					for vel/den determination; */
-	double pix_shift;	/* shift in loc to account for
-							node_offset type */
+	double pix_shift;	/* shift in loc to account for node_offset type */
 	double zmin;	/* minimum z value on surface */
 	double zmax;	/* minimum z value on surface */
 	double vptop;	/* P velocity at ref level */
@@ -403,13 +402,14 @@ int inside_poly(double , double , struct polygon *);
 int inside_solid(double , double , double , struct solid *);
 
 int read_vel_mod_input(FILE* , char* , char* , int, int);
-int get_model_layer();
-int get_model_disk();
-INLINE double get_vel();
+int get_model_layer(struct layer *pm, int nlayer, char *input_line);
+int get_model_disk(struct disk *pd, int ndisk, char *input_line);
+INLINE double get_vel(double xpos, double ypos, double zpos, char wavetype, double *density, int idensity, int *imodel);
 int get_vel_den();
-INLINE double get_layer_vel();
-INLINE double get_disk_vel();
-INLINE double get_sphere_vel();
+INLINE double get_layer_vel(double depth, char wavetype, struct layer *pm, int nlayer, double *density, int iden, int *imodel);
+
+INLINE double get_disk_vel(double xpos, double zpos, char wavetype, struct disk *pd, int ndisk, double *density, int iden);
+INLINE double get_sphere_vel(double xpos, double ypos, double zpos, char wavetype, struct sphere *pd, int nsphere, double *density, int iden);
 int get_model_surface(struct surface *, int , char * , int );
 int read_grd_surface(struct surface *, int , int);
 int read_grd(struct surface *ps, int imessage);
@@ -423,28 +423,31 @@ int get_model_poly_3d(char* , FILE* );
 int get_model_solid(char* , FILE* );
 
 
-struct vertex *addvtx();
+struct vertex *addvtx(int id_num);
 struct edge *addedge();
-struct polygon *addpoly();
-struct solid *addsolid();
+struct edge *addedge(int id_num);
+struct polygon *addpoly(int id_num);
+struct solid *addsolid(int id_num);
 void disp_model_poly();
 double get_poly_vel(double , double , char , double* ,
 			int , int *);
 INLINE double get_poly_vel_2D3D(double , double , double , char ,
 			double* , int , int* );
-INLINE double get_solid_vel();
-INLINE double get_rough_z();
-INLINE double get_rough_vel();
+INLINE double get_solid_vel(double xpos, double ypos, double zpos, char wavetype, double *density, int iden);
+INLINE double get_rough_z(int nrough, double x);
+INLINE double get_rough_vel(double xpos, double zpos, char wavetype, struct rough_bndry *pr, int nrough, double *density, int iden);
 INLINE double get_surface_vel(double , double , double , char ,
 		struct surface *, int , double *, int );
 INLINE double get_surface_z(int , double , double );
+int free_surface(struct surface *ps);
 int dump_grd(int nsurface, int idump_decimation, double x_factor, double y_factor, double z_factor, char *dump_file);
 
 int draw_model();
 int draw_dist_axis();
 int draw_time_axis();
 
-INLINE double get_fdiff_vel();
+INLINE double get_fdiff_vel(double xpos, double zpos, char wavetype, double *density, int iden);
+
 
 
 /*

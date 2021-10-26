@@ -1,19 +1,19 @@
 /*
- * Copyright (C) 2008 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
+ * Copyright (C) 1999-2010 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * GNU Lesser Public License for more details.
+
+ * You should have received a copy of the GNU Lesser Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
  */
 
 
@@ -50,6 +50,13 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 #define PNAME  "mag_func_test"
 
+#include "GridLib.h"
+#include "ran1/ran1.h"
+#include "velmod.h"
+#include "GridMemLib.h"
+#include "calc_crust_corr.h"
+#include "phaseloclist.h"
+#include "otime_limit.h"
 #include "NLLocLib.h"
 
 
@@ -97,14 +104,14 @@ int main(int argc, char *argv[])
 	// read input
 	FILE* fp_input;
 	if ((fp_input = fopen(fn_input, "r")) == NULL) {
-		puterr("FATAL ERROR: opening input file.");
+		nll_puterr("FATAL ERROR: opening input file.");
 		return(EXIT_ERROR_FILEIO);
 	}
 
 	// get magnitude parameters, sets Magnitude[0]
 	// LOCMAG  ML_HB  1.82e7  1.678  -0.00514  20  1.8
 	if ((fgets(in_line, 4*MAXLINE, fp_input) == NULL) || (GetNLLoc_Magnitude(strchr(in_line, ' ')) < 0)) {
-		puterr("ERROR: reading magnitude parameters.");
+		nll_puterr("ERROR: reading magnitude parameters.");
 		return(EXIT_ERROR_FILEIO);
 	}
 

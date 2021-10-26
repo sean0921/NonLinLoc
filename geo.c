@@ -46,13 +46,6 @@ double GCAzimuth(double lat1, double lon1, double lat2, double lon2)
 	{
 		return result;
 	}
-	else if (ilat1 == ilat2)
-	{
-		if (ilon1 > ilon2)
-			result = 90.0;
-		else
-			result = 270.0;
-	}
 	else if (ilon1 == ilon2)
 	{
 		if (ilat1 > ilat2)

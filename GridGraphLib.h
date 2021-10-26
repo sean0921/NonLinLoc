@@ -186,7 +186,6 @@ char *get_timestamp();
 int Err2GMT(FILE* , double , double , double , double , double , double );
 Vect2D* Cov2Ellipse(double , double, double, double , double , Vect2D* , int );
 int Vect2DArray2GMT(FILE* , Vect2D* , int );
-void initEllipsiodAxes(Ellipsoid3D *, Vect3D *, Vect3D *, Vect3D *);
 Vect3D* toEllipsoid3D(Vect3D , Vect3D , Vect3D , int );
 Vect2D*  Vect3D2To2D(Vect3D *, Vect2D* , int , int );
 

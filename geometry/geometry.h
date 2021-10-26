@@ -2,8 +2,7 @@
 /* Linear Algebra  */
 /*------------------------------------------------------------/ */
 
-/* Vector2D */
-
+// Vector2D
 typedef struct
 {
  	double x, y;
@@ -11,8 +10,7 @@ typedef struct
 Vect2D;
 
 
-/* Vector3D */
-
+// Vector3D
 typedef struct
 {
  	double x, y, z;
@@ -20,8 +18,7 @@ typedef struct
 Vect3D;
 
 
-/* Matrix3D */
-
+// Matrix3D
 typedef struct
 {
  	double xx, xy, xz;

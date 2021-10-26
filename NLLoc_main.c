@@ -49,12 +49,22 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 #ifdef CUSTOM_ETH
 #define PNAME  "NLLoc(ETH)"
-#include "custom_eth/eth_functions.h"
 #else
 #define PNAME  "NLLoc"
 #endif
 
+#include "GridLib.h"
+#include "ran1/ran1.h"
+#include "velmod.h"
+#include "GridMemLib.h"
+#include "calc_crust_corr.h"
+#include "phaseloclist.h"
+#include "otime_limit.h"
 #include "NLLocLib.h"
+
+#ifdef CUSTOM_ETH
+#include "custom_eth/eth_functions.h"
+#endif
 
 
 // function declarations

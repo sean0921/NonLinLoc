@@ -71,7 +71,7 @@ double calc_crust_corr (char ps, double lat, double lon, double depth, double el
 	}
 	else {
 		sprintf(MsgStr,"calc_crust_corr: wrong ps value %c",ps);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		return 0.0;
 	}
 
@@ -137,7 +137,7 @@ double calc_crust_corr (char ps, double lat, double lon, double depth, double el
 			layer_time *= layer_time;
 			if (layer_time >= 1){  /* Goes through layer horizontaly. */
 				sprintf(MsgStr,"WARNING: calc_crust_corr: layer_time = %f",layer_time);
-				putmsg(1, MsgStr);
+				nll_putmsg(1, MsgStr);
 				continue;
 			}
 			layer_time  = 1.0 / sqrt( 1.0 - layer_time);
@@ -187,27 +187,27 @@ double calc_crust_corr (char ps, double lat, double lon, double depth, double el
 
 	if (diagnostic /*|| fabs(total_corr) > 2.0*/){
 		sprintf(MsgStr,"\ncalc_crust_corr: lat=%.3f lon=%.3f depth=%.3f elev=%.3f", lat,lon, depth, elev);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"c[%d][%d]=%d",col,row,c);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"calc_crust_corr: extra_mantle=%.3f ",extra_mantle);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"iso_corr=%.3f",iso_corr);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"calc_crust_corr:dtdd=%.3f ",dtdd);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"time %.3f cf jb %.3f",crust_time,jb_crust_time);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"calc_crust_corr: uplift=%.3f ",uplift);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"elev_diff=%.3f ",elev_diff);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"elev_corr=%.3f",elev_corr);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"calc_crust_corr: lat=%.3f lon=%.3f depth=%.3f elev=%.3f", lat,lon, depth, elev);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		sprintf(MsgStr,"calc_crust_corr: tot_corr=%.3f \n", total_corr);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 	}
 
 	return (total_corr);

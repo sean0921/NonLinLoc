@@ -215,7 +215,9 @@ double rlong0, rlat0, pha, phb; {
 	double t_pha, m_pha, t_phb, m_phb, t_rlat0;
 
 	NorthPole[n_proj] = (rlat0 > 0.0);
-	Pole[n_proj] = (NorthPole) ? 90.0 : -90.0;
+        // AJL 20090812 BUG FIX
+	Pole[n_proj] = (NorthPole[n_proj]) ? 90.0 : -90.0;
+	//Pole[n_proj] = (NorthPole) ? 90.0 : -90.0;
 	pha *= D2R;
 	phb *= D2R;
 

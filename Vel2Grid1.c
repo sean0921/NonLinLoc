@@ -110,7 +110,7 @@ int main(int argc, char *argv[])
 
 	strcpy(fn_control, argv[1]);
 	if ((fp_control = fopen(fn_control, "r")) == NULL) {
-		puterr("ERROR: opening control file.");
+		nll_puterr("ERROR: opening control file.");
 		exit(EXIT_ERROR_FILEIO);
 	}
 
@@ -128,14 +128,14 @@ int main(int argc, char *argv[])
 	/* allocate model grid */
 	mod_grid.buffer = AllocateGrid(&mod_grid);
 	if (mod_grid.buffer == NULL) {
-		puterr(
+		nll_puterr(
 "ERROR: allocating memory for 3D slowness grid buffer.");
 		exit(EXIT_ERROR_MEMORY);
 	}
 	/* create array access pointers */
 	mod_grid.array = CreateGridArray(&mod_grid);
 	if (mod_grid.array == NULL) {
-		puterr(
+		nll_puterr(
 "ERROR: creating array for accessing 3D vel/slowness grid buffer.");
 		exit(EXIT_ERROR_MEMORY);
 	}
@@ -149,19 +149,19 @@ int main(int argc, char *argv[])
 		sprintf(fileRoot, "%s.mod", WaveType[nWaveType]);
 		sprintf(MsgStr, "Creating model grid files: %s.%s.*",
 			fn_vg_output, fileRoot);
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 
 		/* load vel model to grid */
 
 		if ((istat = VelModToGrid3d(&mod_grid, WaveType[nWaveType])) < 0) {
-			puterr("ERROR: loading velocity model to grid.");
+			nll_puterr("ERROR: loading velocity model to grid.");
 			exit(EXIT_ERROR_MODEL);
 		}
 
 		/* save grid to disk */
 
 		if ((istat = WriteGrid3dBuf(&mod_grid, NULL, fn_vg_output, fileRoot)) < 0) {
-			puterr("ERROR: writing slowness grid to disk.");
+			nll_puterr("ERROR: writing slowness grid to disk.");
 			exit(EXIT_ERROR_IO);
 		}
 
@@ -222,7 +222,7 @@ int ReadVel2GridInput(FILE* fp_input)
 		if (strcmp(param, "INCLUDE") == 0)
 			if ((istat = GetIncludeFile(strchr(line, ' '), 
 							&fp_input)) < 0) {
-				puterr("ERROR: processing include file.");
+				nll_puterr("ERROR: processing include file.");
 				flag_include = 0;
 			}
 
@@ -231,7 +231,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 		if (strcmp(param, "CONTROL") == 0) {
 			if ((istat = get_control(strchr(line, ' '))) < 0) 
-				puterr("ERROR: reading control params.");
+				nll_puterr("ERROR: reading control params.");
 			else
 				flag_control = 1;
 		}
@@ -241,7 +241,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 		if (strcmp(param, "TRANS") == 0) {
     			if ((istat = get_transform(0, strchr(line, ' '))) < 0)
-			    puterr("ERROR: reading transformation parameters.");
+			    nll_puterr("ERROR: reading transformation parameters.");
 			else
 				flag_trans = 1;
 		}
@@ -251,7 +251,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 		if (strcmp(param, "VGOUT") == 0) {
 			if ((istat = get_vg_outfile(strchr(line, ' '))) < 0)
-				puterr(
+				nll_puterr(
 				"ERROR: reading Vel2Grid output file name.");
 			else
 				flag_outfile = 1;
@@ -261,7 +261,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 		if (strcmp(param, "VGGRID") == 0) {
     			if ((istat = get_grid(strchr(line, ' '))) < 0)
-				puterr("ERROR: reading grid parameters.");
+				nll_puterr("ERROR: reading grid parameters.");
 			else
 				flag_grid = 1;
 		}
@@ -272,7 +272,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 		if (strcmp(param, "VGTYPE") == 0) {
 			if ((istat = get_vg_type(strchr(line, ' '))) < 0)
-				puterr("ERROR: reading Vel2Grid grid type.");
+				nll_puterr("ERROR: reading Vel2Grid grid type.");
 			else
 				flag_type = 1;
 		}
@@ -291,7 +291,7 @@ int ReadVel2GridInput(FILE* fp_input)
 			if ((pchr = strchr(line, '\n')) != NULL)
 				*pchr = '\0';
 			sprintf(MsgStr, "Skipping input: %s", line);
-			putmsg(4, MsgStr);
+			nll_putmsg(4, MsgStr);
 		}
 
 	}
@@ -301,17 +301,17 @@ int ReadVel2GridInput(FILE* fp_input)
 	/* check for missing input */
 
 	if (!flag_control) 
-		puterr("ERROR: no control (CONTROL) params read.");
+		nll_puterr("ERROR: no control (CONTROL) params read.");
 	if (!flag_outfile) 
-		puterr("ERROR: no outputfile (VGOUT) params read.");
+		nll_puterr("ERROR: no outputfile (VGOUT) params read.");
 	if (!flag_type) 
-		puterr("ERROR: no type (VGTYPE) params read.");
+		nll_puterr("ERROR: no type (VGTYPE) params read.");
 	if (!flag_grid) 
-		puterr("ERROR: no grid (VGGRID) params read.");
+		nll_puterr("ERROR: no grid (VGGRID) params read.");
 
 	if (!flag_trans) {
 		sprintf(MsgStr, "INFO: no transformation (TRANS) params read.");
-		putmsg(1, MsgStr);
+		nll_putmsg(1, MsgStr);
 		Hypocenter.comment[0] = '\0';
 	}
 	
@@ -330,7 +330,7 @@ int get_vg_outfile(char* line1)
 
 	sprintf(MsgStr, "Vel2Grid files:  Output: %s.*",
 		 fn_vg_output);
-	putmsg(3, MsgStr);
+	nll_putmsg(3, MsgStr);
 
 	return(0);
 }
@@ -345,7 +345,7 @@ int get_vg_type(char* line1)
 {
 
 	if (NumWaveTypes >= MAX_NUM_WAVE_TYPES) {
-		puterr("WARNING: maximum number of wave types reached, ignoring wave type.");
+		nll_puterr("WARNING: maximum number of wave types reached, ignoring wave type.");
 		return(-1);
 	}
 
@@ -353,7 +353,7 @@ int get_vg_type(char* line1)
 	sscanf(line1, " %s", WaveType[NumWaveTypes]);
 
 	sprintf(MsgStr, "Vel2Grid wave type:  %s", WaveType[NumWaveTypes]);
-	putmsg(3, MsgStr);
+	nll_putmsg(3, MsgStr);
 
 	NumWaveTypes++;
 
@@ -379,7 +379,7 @@ int get_vg_type(char* line1)
 
 */
 
-#define DUMP_LAT_LON_TO_FILE 1
+#define DUMP_LAT_LON_TO_FILE 0
 
 int VelModToGrid3d(GridDesc* grid, char *waveType)
 {
@@ -401,7 +401,7 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 	else if (strcmp(waveType, "S") == 0)
 		cWaveType = 'S';
 	else {
-		puterr2( "ERROR: unrecognized wave type", waveType);
+		nll_puterr2( "ERROR: unrecognized wave type", waveType);
 		return(-1);
 	}
 	
@@ -456,31 +456,31 @@ printf("xloc %lf yloc %lf zdepth %lf cWaveType %c imodel %d vel %lg\n", xloc, yl
 				}
 
 				if (vel < 0.0) {
-					puterr("ERROR: cannot get velocity.");
+					nll_puterr("ERROR: cannot get velocity.");
 					return(-1);
 				}
 
 				switch (grid->type) {
 
 				case GRID_VELOCITY:
-				    grid->array[ix][iy][iz] = vel;
+				    ((GRID_FLOAT_TYPE***) grid->array)[ix][iy][iz] = vel;
 				    break;
 
 				case GRID_VELOCITY_METERS:
-				    grid->array[ix][iy][iz] = 1000.0 * vel;
+				    ((GRID_FLOAT_TYPE***) grid->array)[ix][iy][iz] = 1000.0 * vel;
 				    break;
 
 				case GRID_SLOW_LEN:
-				    grid->array[ix][iy][iz] = grid->dx / vel;
+				    ((GRID_FLOAT_TYPE***) grid->array)[ix][iy][iz] = grid->dx / vel;
 				    break;
 
 				case GRID_SLOW2_METERS:
-				    grid->array[ix][iy][iz] = 
+				    ((GRID_FLOAT_TYPE***) grid->array)[ix][iy][iz] =
 					(1.0e-3 / vel) * (1.0e-3 / vel);
 				    break;
 
 				default:
-				    puterr("ERROR: unrecognized grid type.");
+				    nll_puterr("ERROR: unrecognized grid type.");
 					return(-1);
 
 				}

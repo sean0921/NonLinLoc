@@ -54,7 +54,7 @@ void test_rand_int();
 #define RAND_MAX1 1.0
 
 
-INLINE double get_rand_real(const double xmin, const double xmax);
+INLINE double get_rand_double(const double xmin, const double xmax);
 INLINE int get_rand_int(const int imin, const int imax);
 void test_rand_int();
 

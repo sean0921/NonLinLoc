@@ -1,19 +1,19 @@
 /*
- * Copyright (C) 2005 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
+ * Copyright (C) 1999-2010 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * GNU Lesser Public License for more details.
+
+ * You should have received a copy of the GNU Lesser Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
  */
 
 
@@ -121,7 +121,7 @@ int apply_oct2grid(int argc, char *argv[])
 	strcpy(fn_oct_in, argv[1]);
 	if ((fp_oct_in = fopen(fn_oct_in, "r")) == NULL)
 	{
-		puterr("ERROR opening input oct tree file.");
+		nll_puterr("ERROR opening input oct tree file.");
 		return(-1);
 	}
 
@@ -144,7 +144,7 @@ int apply_oct2grid(int argc, char *argv[])
 	strcpy(fn_grid_out, argv[2]);
 	// save grid to disk
 	if ((istat = WriteGrid3dBuf(&grid_out, NULL, fn_grid_out, "octree")) < 0) {
-		puterr("ERROR: writing oct tree grid to disk.\n");
+		nll_puterr("ERROR: writing oct tree grid to disk.\n");
 		return(-1);
 	}
 
@@ -153,7 +153,7 @@ int apply_oct2grid(int argc, char *argv[])
 	/*
 	sprintf(fn_conf_out, "%s.octree.conf", fn_grid_out);
 	if ((fpio = fopen(fn_conf_out, "w")) == NULL) {
-		puterr("ERROR: opening confidence interval output file.");
+		nll_puterr("ERROR: opening confidence interval output file.");
 		return(-1);
 	}
 	// write confidence levels to file

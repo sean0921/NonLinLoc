@@ -1,19 +1,19 @@
 /*
- * Copyright (C) 1999 Anthony Lomax <lomax@faille.unice.fr>
+ * Copyright (C) 1999-2010 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License as published by
- * the Free Software Foundation; either version 2 of the License, or
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- *
+
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- * GNU General Public License for more details.
- *
- * You should have received a copy of the GNU General Public License
- * along with this program; if not, write to the Free Software
- * Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
+ * GNU Lesser Public License for more details.
+
+ * You should have received a copy of the GNU Lesser Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
  */
 
 
@@ -58,25 +58,27 @@ void disp_usage(const char * progname, const char * options)
 
 /*** function to display error message */
 
-void puterr(const char *pm)
+void nll_puterr(const char *pm)
 {
 	fprintf(stderr, "%s: %s\n", prog_name, pm);
+        fflush(stderr);
 }
 
 
 
 /*** function to display error message */
 
-void puterr2(const char *pmessage1, const char *pmessage2)
+void nll_puterr2(const char *pmessage1, const char *pmessage2)
 {
 	fprintf(stderr, "%s: %s: %s\n", prog_name, pmessage1, pmessage2);
+        fflush(stderr);
 }
 
 
 
 /*** function to display message */
 
-void putmsg(int imsg_level, const char *pm)
+void nll_putmsg(int imsg_level, const char *pm)
 {
 	if (message_flag >= imsg_level)
 		fprintf(stdout, "%s\n", pm);
@@ -86,7 +88,7 @@ void putmsg(int imsg_level, const char *pm)
 
 /*** function to display message */
 
-void putmsg2(int imsg_level, const char *pmessage1, const char *pmessage2)
+void nll_putmsg2(int imsg_level, const char *pmessage1, const char *pmessage2)
 {
 	if (message_flag >= imsg_level)
 		fprintf(stdout, "%s: %s\n", pmessage1, pmessage2);
@@ -100,7 +102,7 @@ void DispProgInfo()
 {
 	sprintf(MsgStr, "%s (%s v%s %s) %s",
 		prog_name, package_name, prog_ver, prog_date, prog_copyright);
-	putmsg(1, MsgStr);
+	nll_putmsg(1, MsgStr);
 }
 
 
@@ -116,7 +118,7 @@ int checkRangeInt(const char * name, const char * param, int val,
 		sprintf(MsgStr,
 			"ERROR: %s param %s: value: %d is less than min value: %d",
 			name, param, val, min);
-		puterr(MsgStr);
+		nll_puterr(MsgStr);
 		stat = -1;
 	}
 
@@ -124,7 +126,7 @@ int checkRangeInt(const char * name, const char * param, int val,
 		sprintf(MsgStr,
 			"ERROR: %s param %s: value: %d is greater than max value: %d",
 			name, param, val, max);
-		puterr(MsgStr);
+		nll_puterr(MsgStr);
 		stat = 1;
 	}
 
@@ -145,7 +147,7 @@ int checkRangeDouble(const char * name, const char * param, double val,
 		sprintf(MsgStr,
 			"ERROR: %s param %s: value: %lf is less than min value: %lf",
 			name, param, val, min);
-		puterr(MsgStr);
+		nll_puterr(MsgStr);
 		stat = -1;
 	}
 
@@ -153,7 +155,7 @@ int checkRangeDouble(const char * name, const char * param, double val,
 		sprintf(MsgStr,
 			"ERROR: %s param %s: value: %lf is greater than max value: %lf",
 			name, param, val, max);
-		puterr(MsgStr);
+		nll_puterr(MsgStr);
 		stat = 1;
 	}
 

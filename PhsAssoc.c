@@ -83,7 +83,7 @@ int main(int argc, char** argv)
 	fprintf(stdout, "\n");
 
 	if (argc < 7) {
-		puterr("ERROR wrong number of command line arguments.");
+		nll_puterr("ERROR wrong number of command line arguments.");
 		disp_usage(PNAME,
 "max_residual i_swap_bytes i_look_for_sta_grids i_write_all <time_grid_root> <nll_hyp_files...>");
 		exit(0);
@@ -95,7 +95,7 @@ int main(int argc, char** argv)
 	message_flag = 0;
 
 	if ((nPhaseIDChanged = AssociatePhases(argc, argv)) < 0) {
-		puterr("ERROR doing Phase Association process.");
+		nll_puterr("ERROR doing Phase Association process.");
 		exit(0);
 	}
 
@@ -186,7 +186,7 @@ int AssociatePhases(int argc, char** argv)
 		istat = GetHypLoc(NULL, fn_hyp, &Hypo, Arrival, &NumArrivals, 1, &locgrid, 0);
 
 		if (istat < 0) {
-			puterr2("ERROR: opening NLL hypocenter-phase file.", fn_hyp);
+			nll_puterr2("ERROR: opening NLL hypocenter-phase file.", fn_hyp);
 			continue;
 		}
 		fprintf(stdout,
@@ -247,7 +247,7 @@ int AssociatePhases(int argc, char** argv)
 				sprintf(fn_loc_grids1, "%s.*.%s.time.buf", fn_loc_grids, Arrival[nArr].label);
 				if ((numFiles1 = ExpandWildCards(fn_loc_grids1,
 						fn_loc_grids_list, MAX_NUM_INPUT_FILES)) < 0) {
-					puterr("ERROR: getting list of station specifc time grid files.");
+					nll_puterr("ERROR: getting list of station specifc time grid files.");
 						numFiles1 = 0;
 				}
 			}
@@ -256,7 +256,7 @@ int AssociatePhases(int argc, char** argv)
 				sprintf(fn_loc_grids2, "%s.*.DEFAULT.time.buf", fn_loc_grids);
 				if ((numFiles2 = ExpandWildCards(fn_loc_grids2,
 						fn_loc_grids_list + numFiles1, MAX_NUM_INPUT_FILES - numFiles1)) < 0) {
-					puterr("ERROR: getting list of DEFAULT time grid files.");
+					nll_puterr("ERROR: getting list of DEFAULT time grid files.");
 						numFiles2 = 0;
 				}
 			} else {
@@ -264,7 +264,7 @@ int AssociatePhases(int argc, char** argv)
 			}
 			if (numFiles1 + numFiles2 >= MAX_NUM_INPUT_FILES) {
 				sprintf(MsgStr, "WARNING: maximum number of travel-time files exceeded, only first %d will be processed.", MAX_NUM_INPUT_FILES);
-				puterr(MsgStr);
+				nll_puterr(MsgStr);
 			}
 
 			for (nTimeGrid = 0; nTimeGrid < numFiles1 + numFiles2; nTimeGrid++) {
@@ -275,7 +275,7 @@ int AssociatePhases(int argc, char** argv)
 				if ((istat = OpenGrid3dFile(fn_loc_grids_list[nTimeGrid], &fp_grid, &fp_hdr,
 							&Grid, "time", &Srce, Grid.iSwapBytes)) < 0) {
 						sprintf(MsgStr, "%s.time.*", fn_loc_grids_list[nTimeGrid]);
-					puterr2("ERROR: opening grid file", MsgStr);
+					nll_puterr2("ERROR: opening grid file", MsgStr);
 					continue;
 				}
 				if (Arrival[nArr].gdesc.type == GRID_TIME) {
@@ -360,7 +360,7 @@ int AssociatePhases(int argc, char** argv)
 				*pchr0 = '\0';
 			strcat(fn_hyp_out, ".phs_assoc");
 			if ((fp_hyp_out = fopen(fn_hyp_out, "w")) == NULL) {
-				puterr2("ERROR: opening output NLL associated phase file", fn_hyp_out);
+				nll_puterr2("ERROR: opening output NLL associated phase file", fn_hyp_out);
 				continue;
 			}
 			WritePhases(fp_hyp_out, &Hypo,
@@ -417,7 +417,7 @@ printf("ERROR: arrivals cross year boundary, ignoring observation set.");
 
 	// calc hypocenter otime in sec from beginning of day of year;
 	if (phypo->year != yearmin || DayOfYear(phypo->year, phypo->month, phypo->day) != dofymin) {
-		puterr(
+		nll_puterr(
 "ERROR: earliest arrivals year/month/day does not match fixed origin time year/month/day, ignoring observation set.");
 		return(OBS_FILE_ARRIVALS_CROSS_YEAR_BOUNDARY);
 	}

@@ -84,14 +84,14 @@ int main(int argc, char *argv[])
 	fprintf(stdout, "\n");
 
 	if (argc < 3) {
-		puterr("ERROR wrong number of command line arguments.");
+		nll_puterr("ERROR wrong number of command line arguments.");
 		disp_usage(PNAME,
 "<fpfit_file> <out_hyp_file> [MechMisfitMax [RMSMax [NRdgsMin [GapMax]]]]");
 		exit(-1);
 	}
 
 	if ((istat = Fpfit2Hyp(argc, argv)) < 0) {
-		puterr("ERROR converting fpfitise summary file.");
+		nll_puterr("ERROR converting fpfitise summary file.");
 		exit(-1);
 	}
 
@@ -150,13 +150,13 @@ int Fpfit2Hyp(int argc, char *argv[])
 	/* open fpfit summary file */
 
 	if ((fp_fpfit_in = fopen(fn_fpfit_in, "r")) == NULL) {
-		puterr("ERROR: opening fpfit summary file.");
+		nll_puterr("ERROR: opening fpfit summary file.");
 		return(-1);
 	}
 
 	/* open ascii hypocenter output file */
 	if ((fp_hyp_out = fopen(fn_hyp_out, "w")) == NULL) {
-		puterr("ERROR: opening NLL hyp output file.");
+		nll_puterr("ERROR: opening NLL hyp output file.");
 		return(-1);
 	}
 
@@ -175,26 +175,26 @@ int Fpfit2Hyp(int argc, char *argv[])
 	    	if ((istat = ReadFpfitSum(fp_fpfit_in, &Hypo)) == EOF)
 			break;
 		else if (istat < 0) {
-			puterr2(
+			nll_puterr2(
 "ERROR: reading fpfit summary file", fn_fpfit_in);
 			break;
 		}
 		nLocRead++;
 
 		if (Hypo.focMech.misfit > MechMisfitMax) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: solution misfit is greater than MFMax, ignoring event");*/
 			continue;
 		} else if (Hypo.rms > RMSMax) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: location RMS is Greater than RMSMax, ignoring event");*/
 			continue;
 		} else if (Hypo.nreadings < NRdgsMin) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: location num readings is less than NRdgsMin, ignoring event");*/
 			continue;
 		} else if (Hypo.gap > GapMax) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: location gap is greater than GapMax, ignoring event");*/
 			continue;
 		} else {

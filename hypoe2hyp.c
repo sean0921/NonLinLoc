@@ -85,14 +85,14 @@ int main(int argc, char *argv[])
 	fprintf(stdout, "\n");
 
 	if (argc < 3) {
-		puterr("ERROR wrong number of command line arguments.");
+		nll_puterr("ERROR wrong number of command line arguments.");
 		disp_usage(PNAME,
 "<hypoellipse_file> <out_hyp_file> [EllLenMax [RMSMax [NRdgsMin [GapMax]]]]");
 		exit(-1);
 	}
 
 	if ((istat = Hypoe2Hyp(argc, argv)) < 0) {
-		puterr("ERROR converting hypoellise summary file.");
+		nll_puterr("ERROR converting hypoellise summary file.");
 		exit(-1);
 	}
 
@@ -151,13 +151,13 @@ int Hypoe2Hyp(int argc, char *argv[])
 	/* open hypoellipse summary file */
 
 	if ((fp_hypoell_in = fopen(fn_hypoell_in, "r")) == NULL) {
-		puterr("ERROR: opening scatter output file.");
+		nll_puterr("ERROR: opening scatter output file.");
 		return(-1);
 	}
 
 	/* open ascii hypocenter output file */
 	if ((fp_hyp_out = fopen(fn_hyp_out, "w")) == NULL) {
-		puterr("ERROR: opening scatter ascii output file.");
+		nll_puterr("ERROR: opening scatter ascii output file.");
 		return(-1);
 	}
 
@@ -175,34 +175,34 @@ int Hypoe2Hyp(int argc, char *argv[])
 	    	if ((istat = ReadHypoellSum(fp_hypoell_in, &Hypo)) == EOF)
 			break;
 		else if (istat < 0) {
-			puterr2(
+			nll_puterr2(
 "ERROR: reading hypoellipse summary file", fn_hypoell_in);
 			break;
 		}
 		nLocRead++;
 
 		if (strcmp(Hypo.locStat, "ABORTED") == 0) {
-			puterr("WARNING: location ABORTED, ignoring event");
+			nll_puterr("WARNING: location ABORTED, ignoring event");
 			continue;
 		} else if (strcmp(Hypo.locStat, "REJECTED") == 0) {
-			puterr("WARNING: location REJECTED, ignoring event");
+			nll_puterr("WARNING: location REJECTED, ignoring event");
 			continue;
 		} else if (Hypo.ellipsoid.len1 > EllLenMax
 				|| Hypo.ellipsoid.len2 > EllLenMax
 				|| Hypo.ellipsoid.len3 > EllLenMax) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: location ellipsoid Len is greater than EllLenMax, ignoring event");*/
 			continue;
 		} else if (Hypo.rms > RMSMax) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: location RMS is Greater than RMSMax, ignoring event");*/
 			continue;
 		} else if (Hypo.nreadings < NRdgsMin) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: location num readings is less than NRdgsMin, ignoring event");*/
 			continue;
 		} else if (Hypo.gap > GapMax) {
-/*			puterr(
+/*			nll_puterr(
 "WARNING: location gap is greater than GapMax, ignoring event");*/
 			continue;
 		} else {
@@ -299,7 +299,9 @@ int ReadHypoellSum(FILE *fp_in, HypoDesc *phypo)
 	istat += ReadFortranReal(line, 35, 2, &mag);
 	mag /= 10.0;
 	istat += ReadFortranInt(line, 37, 3, &phypo->nreadings);
-	istat += ReadFortranInt(line, 40, 3, &phypo->gap);
+        int igap = -1;
+	istat += ReadFortranInt(line, 40, 3, &igap);
+        phypo->gap = (double) igap;
 	istat += ReadFortranReal(line, 43, 3, &phypo->dist);
 	istat += ReadFortranReal(line, 46, 4, &phypo->rms);
 	phypo->rms /= 100.0;

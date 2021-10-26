@@ -27,7 +27,7 @@
 #define INPUT_DEV 1
 #include "GridLib.h"
 #include "GridGraphLib.h"
-#include "vector.h"
+#include "vector/vector.h"
 
 
 
@@ -115,13 +115,13 @@ int get_maplines(char* input_line)
 	sprintf(MsgStr, "MAPLINE  fmt %s  `%s' ",
       		mapfile[gr_num_map_files].format,
 		mapfile[gr_num_map_files].name);
- 	putmsg(2, MsgStr);
+ 	nll_putmsg(2, MsgStr);
 	sprintf(MsgStr, "  col r %f g %f b %f   line_style %s",
        		mapfile[gr_num_map_files].rgb.r,
 		mapfile[gr_num_map_files].rgb.g,
 		mapfile[gr_num_map_files].rgb.b,
 		mapfile[gr_num_map_files].line_style);
- 	putmsg(2, MsgStr);
+ 	nll_putmsg(2, MsgStr);
 
 	gr_num_map_files++;
 
@@ -464,55 +464,6 @@ int Vect2DArray2GMT(FILE* fp_io, Vect2D* array, int npts)
 
 }
 
-
-
-/** method to convert ellipsoid axes in ax/dip/se to vector axes */
-
-/* converted from method init in Java class Ellipsoid3D (04DEC1998) */
-
-void initEllipsiodAxes(Ellipsoid3D *pellipsoid,
-			Vect3D *paxis1, Vect3D *paxis2, Vect3D *paxis3)
-{
-
-	double az1, az2, dip1, dip2;
-	double cosd1, cosd2;
-
-
- 	/* strike angles positive CCW from East = 0 */
-	az1 = 90.0 - pellipsoid->az1;
-	az2 = 90.0 - pellipsoid->az2;
-	/* dip angles increasing downwards from horiz = 0 */
-	dip1 = -pellipsoid->dip1;
-	dip2 = -pellipsoid->dip2;
-
-	/* get 3D vector axes */
-
-	cosd1 = cos(cRPD * pellipsoid->dip1);
-	paxis1->x = cos(cRPD * az1) * cosd1;
-	paxis1->y = sin(cRPD * az1) * cosd1;
-	paxis1->z = -sin(cRPD * dip1);
-
-	cosd2 = cos(cRPD * pellipsoid->dip2);
-	paxis2->x = cos(cRPD * az2) * cosd2;
-	paxis2->y = sin(cRPD * az2) * cosd2;
-	paxis2->z = -sin(cRPD * dip2);
-
-	cross_product_3d(
-		paxis1->x, paxis1->y, paxis1->z,
-		paxis2->x, paxis2->y, paxis2->z,
-		&paxis3->x, &paxis3->y, &paxis3->z);
-
-	paxis1->x *= pellipsoid->len1;
-	paxis1->y *= pellipsoid->len1;
-	paxis1->z *= pellipsoid->len1;
-	paxis2->x *= pellipsoid->len2;
-	paxis2->y *= pellipsoid->len2;
-	paxis2->z *= pellipsoid->len2;
-	paxis3->x *= pellipsoid->len3;
-	paxis3->y *= pellipsoid->len3;
-	paxis3->z *= pellipsoid->len3;
-
-}
 
 
 /** method to convert 2 semi-axis in 3D to an array of points

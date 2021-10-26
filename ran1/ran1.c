@@ -108,7 +108,7 @@ INLINE double ran1(int* idum)
 	double temp;
 	static int iff=0;
 	int j;
-	/*void nrerror(); */
+	/*void nll_nrerror(); */
 
 	if (*idum < 0 || iff == 0) {
 		iff=1;
