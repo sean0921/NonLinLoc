@@ -52,7 +52,7 @@
 
 /* globals  */
 
-char fn_vg_output[MAXLINE];
+char fn_vg_output[MAXLINE_LONG];
 
 /* wave type (P, S, ...) for vel grids */
 #define MAX_NUM_WAVE_TYPES 10
@@ -79,7 +79,7 @@ int main(int argc, char *argv[])
 
 	int istat;
 	int nWaveType;
-	char fileRoot[MAXLINE];
+	char fileRoot[MAXLINE_LONG];
 
 	GridDesc mod_grid;	/* model grid */
 
@@ -180,8 +180,8 @@ int main(int argc, char *argv[])
 int ReadVel2GridInput(FILE* fp_input)
 {
 	int istat, iscan;
-	char param[MAXLINE], *pchr;
-	char line[2*MAXLINE], *fgets_return;
+	char param[MAXLINE_LONG], *pchr;
+	char line[2*MAXLINE_LONG], *fgets_return;
 
 	int flag_control = 0, flag_outfile = 0, flag_grid = 0, flag_type = 0,
 		flag_trans = 0;
@@ -191,7 +191,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 	/* read each input line */
 
-	while ((fgets_return = fgets(line, 2*MAXLINE, fp_input)) != NULL
+	while ((fgets_return = fgets(line, 2*MAXLINE_LONG, fp_input)) != NULL
 			|| fp_include != NULL) {
 
 
@@ -220,7 +220,7 @@ int ReadVel2GridInput(FILE* fp_input)
 		/* read include file params and set input to include file */
 
 		if (strcmp(param, "INCLUDE") == 0)
-			if ((istat = GetIncludeFile(strchr(line, ' '), 
+			if ((istat = GetIncludeFile(strchr(line, ' '),
 							&fp_input)) < 0) {
 				nll_puterr("ERROR: processing include file.");
 				flag_include = 0;
@@ -230,7 +230,7 @@ int ReadVel2GridInput(FILE* fp_input)
 		/* read control params */
 
 		if (strcmp(param, "CONTROL") == 0) {
-			if ((istat = get_control(strchr(line, ' '))) < 0) 
+			if ((istat = get_control(strchr(line, ' '))) < 0)
 				nll_puterr("ERROR: reading control params.");
 			else
 				flag_control = 1;
@@ -279,7 +279,7 @@ int ReadVel2GridInput(FILE* fp_input)
 
 		/* check for velocity model input */
 
-		istat = read_vel_mod_input(fp_input, param, 
+		istat = read_vel_mod_input(fp_input, param,
 			line, istat, message_flag >= 2);
 			//strchr(line, ' '), istat, message_flag >= 2);
 
@@ -295,18 +295,18 @@ int ReadVel2GridInput(FILE* fp_input)
 		}
 
 	}
-	
+
 
 
 	/* check for missing input */
 
-	if (!flag_control) 
+	if (!flag_control)
 		nll_puterr("ERROR: no control (CONTROL) params read.");
-	if (!flag_outfile) 
+	if (!flag_outfile)
 		nll_puterr("ERROR: no outputfile (VGOUT) params read.");
-	if (!flag_type) 
+	if (!flag_type)
 		nll_puterr("ERROR: no type (VGTYPE) params read.");
-	if (!flag_grid) 
+	if (!flag_grid)
 		nll_puterr("ERROR: no grid (VGGRID) params read.");
 
 	if (!flag_trans) {
@@ -314,8 +314,8 @@ int ReadVel2GridInput(FILE* fp_input)
 		nll_putmsg(1, MsgStr);
 		Hypocenter.comment[0] = '\0';
 	}
-	
-	return (flag_include * flag_control * flag_outfile * flag_grid * 
+
+	return (flag_include * flag_control * flag_outfile * flag_grid *
 			flag_type - 1);
 }
 
@@ -341,7 +341,7 @@ int get_vg_outfile(char* line1)
 
 /*** function to read output file name ***/
 
-int get_vg_type(char* line1)		     
+int get_vg_type(char* line1)
 {
 
 	if (NumWaveTypes >= MAX_NUM_WAVE_TYPES) {
@@ -366,13 +366,13 @@ int get_vg_type(char* line1)
 
 
 /*** function to load 3D velocity model to model grid ***/
-/*  Notes:  
+/*  Notes:
 
 	(1)	Implicit staggered grids used -
-	model space and travel time grid is numx X numy X numz while 
+	model space and travel time grid is numx X numy X numz while
 	slowness grid is numx-1 X numy-1 X numz-1.
 	Slowness values are for mid-points of travel time grid cells,
-	i.e. slowness grid is shifted (+dx/2,+dy/2,+dz/2) in space relative to 
+	i.e. slowness grid is shifted (+dx/2,+dy/2,+dz/2) in space relative to
 	travel time grid.
 
 	(2)	Podvin Lecomte FFD uses cubic cells, i.e. dx=dy=dz.
@@ -389,7 +389,7 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 	char cWaveType;
 	double xval, yval, xloc, yloc, zdepth;
 	double vel, den, vel1;
-	
+
 	double dlat, dlon;
 	FILE *fpfile;
 
@@ -404,8 +404,8 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 		nll_puterr2( "ERROR: unrecognized wave type", waveType);
 		return(-1);
 	}
-	
-	
+
+
 	if (DUMP_LAT_LON_TO_FILE) {
 		fpfile = fopen("lon_lat.txt", "w");
 	}
@@ -416,10 +416,10 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 
 	xval = grid->origx + grid->dx / 2.0;
 	for (ix = 0; ix <  grid->numx; ix++) {
-		
+
 		yval = grid->origy + grid->dy / 2.0;
 		for (iy = 0; iy <  grid->numy; iy++) {
-			
+
 			if (ModelCoordsMode == COORDS_LATLON) {
 				rect2latlon(0, xval, yval, &yloc, &xloc);
 /*printf("rect2latlon(0, xval %lf yval %lf yloc %lf xloc %lf\n", xval, yval, yloc, xloc);*/
@@ -427,10 +427,10 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 				xloc = xval;
 				yloc = yval;
 			}
-			
+
 			zdepth = grid->origz + grid->dz / 2.0;
 			for (iz = 0; iz <  grid->numz; iz++) {
-				
+
 				if (DUMP_LAT_LON_TO_FILE) {
 					rect2latlon(0, xval, yval, &dlat, &dlon);
 					if (zdepth >= grid->dz / 2.0)
@@ -440,9 +440,9 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 				}
 
 
-				/* check for non-lat/lon and non-layer 
+				/* check for non-lat/lon and non-layer
 							vel mod element */
-				vel = get_vel(xval, yval, zdepth, 
+				vel = get_vel(xval, yval, zdepth,
 					cWaveType, &den, 0, &imodel);
 				if (imodel >= LAYEROFFSET || imodel < 0) {
 					/* check for surface */
@@ -490,7 +490,7 @@ printf("xloc %lf yloc %lf zdepth %lf cWaveType %c imodel %d vel %lg\n", xloc, yl
 			}
 			yval += grid->dy;
 		}
-		xval += grid->dx; 
+		xval += grid->dx;
 	}
 
 	if (DUMP_LAT_LON_TO_FILE) {

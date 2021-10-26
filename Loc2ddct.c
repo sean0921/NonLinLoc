@@ -45,6 +45,8 @@
 #define MAX_NUM_INPUT_FILES 4096
 //#define SMALL_FILENAME_MAX 256
 
+#define VERBOSE 0
+
 
 // globals
 
@@ -188,6 +190,7 @@ int ConvertLocToCT(int argc, char *argv[]) {
         // 20160621 AJL - bug (compiler warning) fix  sprintf(strstr(fn_hyp_in_list[nHypo], test_str), "\0");
         sprintf(strstr(fn_hyp_in_list[nHypo], test_str), "%c", '\0');
         sprintf(fn_hyp_in, "%s.hyp", fn_hyp_in_list[nHypo]);
+        if (VERBOSE > 0) fprintf(stdout, "Opening: %s\n", fn_hyp_in);
         if ((fp_hyp_in = fopen(fn_hyp_in, "r")) == NULL) {
             nll_puterr2("ERROR: opening hypocenter file, ignoring event, file",
                     fn_hyp_in_list[nHypo]);
@@ -202,12 +205,19 @@ int ConvertLocToCT(int argc, char *argv[]) {
                 fclose(fp_hyp_in);
                 break;
             }
+            if (VERBOSE > 1) fprintf(stdout, "Reading: location %d\n", nLocWritten);
+            // 20180612 AJL - added
+            if (strstr(MapProjStr[0], "GLOBAL") != NULL) {
+                GeometryMode = MODE_GLOBAL;
+            }
 
             if (strcmp(diffHypos[nLocWritten].locStat, "ABORTED") == 0) {
                 //nll_puterr("WARNING: location ABORTED, ignoring event");
+                if (VERBOSE > 0) fprintf(stdout, "Skip: diffHypos[nLocWritten].locStat, \"ABORTED\" %d\n", nLocWritten);
                 continue;
             } else if (strcmp(diffHypos[nLocWritten].locStat, "REJECTED") == 0) {
                 //nll_puterr("WARNING: location REJECTED, ignoring event");
+                if (VERBOSE > 0) fprintf(stdout, "Skip: diffHypos[nLocWritten].locStat, \"REJECTED\" %d\n", nLocWritten);
                 continue;
             }
             nLocAccepted++;
@@ -266,47 +276,63 @@ int ConvertLocToCT(int argc, char *argv[]) {
     for (narr1 = 0; narr1 < NumArrivals; narr1++) {
 
         fprintf(stdout, "Arr: %d/%d        \r", narr1, NumArrivals);
+        if (VERBOSE > 1) fprintf(stdout, "\n");
 
         parr1 = Arrival + narr1;
 
-        if (parr1->weight < SMALL_DOUBLE)
+        if (parr1->weight < SMALL_DOUBLE) {
+            if (VERBOSE > 1) fprintf(stdout, "Skip: parr1->weight < SMALL_DOUBLE %d %f\n", narr1, parr1->weight);
             continue; // not used for location
+        }
 
         for (narr2 = narr1 + 1; narr2 < NumArrivals; narr2++) {
 
             parr2 = Arrival + narr2;
 
-            if (parr2->weight < SMALL_DOUBLE)
+            if (parr2->weight < SMALL_DOUBLE) {
+                if (VERBOSE > 1) fprintf(stdout, "Skip: narr2->weight < SMALL_DOUBLE %d %f\n", narr2, parr2->weight);
                 continue; // not used for location
+            }
 
-            if (parr1->dd_event_id_1 == parr2->dd_event_id_1)
+            if (parr1->dd_event_id_1 == parr2->dd_event_id_1) {
+                if (VERBOSE > 1) fprintf(stdout, "Skip: parr1->dd_event_id_1 == parr2->dd_event_id_1 %d %d\n", narr1, narr2);
                 continue; // same event
+            }
 
-            if (strcmp(parr1->label, parr2->label))
+            if (strcmp(parr1->label, parr2->label)) {
+                if (VERBOSE > 1) fprintf(stdout, "Skip: strcmp(parr1->label, parr2->label) %d %d\n", narr1, narr2);
                 continue; // not same station
+            }
 
-            if (strcmp(parr1->phase, parr2->phase))
+            if (strcmp(parr1->phase, parr2->phase)) {
+                if (VERBOSE > 1) fprintf(stdout, "Skip: strcmp(parr1->phase, parr2->phase) %d %d\n", narr1, narr2);
                 continue; // not same phase
+            }
 
             phyp1 = &(diffHypos[parr1->dd_event_id_1]);
             phyp2 = &(diffHypos[parr2->dd_event_id_1]);
 
             // check distance between events
             if (event_dist_max > 0.0) {
-                epi_dist = Dist3D(
-                        phyp1->x, phyp2->x, phyp1->y, phyp2->y,
-                        0.0, 0.0); // epi
+                // 20180612 AJL  epi_dist = Dist3D(phyp1->x, phyp2->x, phyp1->y, phyp2->y, 0.0, 0.0); // epi
+                epi_dist = Dist2D(phyp1->x, phyp2->x, phyp1->y, phyp2->y); // epi
                 //phyp1->z, phyp2->z);  // hypo
-                if (epi_dist > event_dist_max)
+                if (epi_dist > event_dist_max) {
+                    if (VERBOSE > 1) fprintf(stdout, "Skip: epi_dist > event_dist_max %d %d\n", narr1, narr2);
                     continue;
+                }
             }
 
             // check distance between station and events
             if (station_dist_max > 0.0) {
-                if (parr1->dist > station_dist_max)
+                if (parr1->dist * DEG2KM > station_dist_max) {
+                    if (VERBOSE > 1) fprintf(stdout, "Skip: parr1->dist > station_dist_max %d\n", narr1);
                     continue;
-                if (parr2->dist > station_dist_max)
+                }
+                if (parr2->dist * DEG2KM > station_dist_max) {
+                    if (VERBOSE > 1) fprintf(stdout, "Skip: parr1->dist > station_dist_max %d\n", narr2);
                     continue;
+                }
             }
 
             // check weight
@@ -314,9 +340,11 @@ int ConvertLocToCT(int argc, char *argv[]) {
             weight = parr1->weight < parr2->weight ? parr1->weight : parr2->weight;
             if (weight < weight_min) {
                 //printf("REJECT\n");
+                if (VERBOSE > 1) fprintf(stdout, "Skip: weight < weight_min %d %f %d %f\n", narr1, parr1->weight, narr2, parr2->weight);
                 continue;
             }
             //printf("Accept\n");
+            if (VERBOSE > 1) fprintf(stdout, "Accept: %d w %f  %d w %f\n", narr1, parr1->weight, narr2, parr2->weight);
 
             // write event line if needed
             if (!(parr1->dd_event_id_1 == dd_event_id_1

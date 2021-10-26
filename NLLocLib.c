@@ -141,10 +141,10 @@ int last_matrix_alloc_size = -1;
 int Locate(int ngrid, char* fn_loc_obs, char* fn_root_out, int numArrivalsReject, int return_locations, int return_oct_tree_grid, int return_scatter_sample, LocNode **ploc_list_head) {
 
     int istat, n, narr;
-    char fnout[FILENAME_MAX];
+    char fnout[4 * MAXLINE];
 
     FILE *fpio;
-    char fname[FILENAME_MAX];
+    char fname[4 * MAXLINE];
     float *fdata = NULL;
     float ftemp;
     int iSizeOfFdata;
@@ -647,10 +647,11 @@ int Locate(int ngrid, char* fn_loc_obs, char* fn_root_out, int numArrivalsReject
 
     if (LocGridSave[ngrid]) {
         /* calculate magnitudes */
-        Hypocenter.amp_mag = MAGNITUDE_NULL;
+        // 20180907 AJL - following 4 lines moved to NLLoc() since may be modified when reading observations
+        /*Hypocenter.amp_mag = MAGNITUDE_NULL;
         Hypocenter.num_amp_mag = 0;
         Hypocenter.dur_mag = MAGNITUDE_NULL;
-        Hypocenter.num_dur_mag = 0;
+        Hypocenter.num_dur_mag = 0;*/
         // 20121015 AJL - bug fix
         //for (n = 0; n < MAX_NUM_MAG_METHODS; n++)
         for (n = 0; n < NumMagnitudeMethods; n++)
@@ -681,7 +682,7 @@ int Locate(int ngrid, char* fn_loc_obs, char* fn_root_out, int numArrivalsReject
                 && Hypocenter.ellipsoid.len3 <= Ell_Len3_Max
                 && Hypocenter.z >= Hypo_Depth_Min
                 && Hypocenter.z <= Hypo_Depth_Max) {
-            UpdateStaStat(ngrid, Arrival, NumArrivals, P_ResidualMax, S_ResidualMax, Hypo_Dist_Max);
+            UpdateStaStat(ngrid, Arrival, NumArrivals, P_ResidualMax, S_ResidualMax, Hypo_Dist_Max, 1.0);
             //printf("INSTALLED in Stat Table: ");
         } else {
             //printf("NOT INSTALLED in Stat Table: ");
@@ -883,12 +884,12 @@ int SaveLocation(HypoDesc* hypo, int ngrid, char* fnobs, char *fnout, int numArr
         char* typename, int isave_phases, GaussLocParams * gauss_par) {
     int istat;
     char *pchr;
-    char sys_command[MAXLINE_LONG];
-    char fname[FILENAME_MAX], frootname[FILENAME_MAX];
+    char sys_command[2 * FILENAME_MAX];
+    char fname[2 * FILENAME_MAX], frootname[2 * FILENAME_MAX];
     FILE *fp_tmp;
 
     /* set signature string */
-    sprintf(hypo->signature, "%s   obs:%s   %s:v%s(%s)  run:%s",
+    sprintf(hypo->signature, "%s   obs:%s   %s:v%s(%s)   run:%s",
             LocSignature, fnobs, prog_name, PVER, PDATE, CurrTimeStr());
     while ((pchr = strchr(hypo->signature, '\n')))
         *pchr = ' ';
@@ -1144,7 +1145,9 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
 
     nll_putmsg(4, "Dummy message");
 
-    while ((istat = GetNextObs(fp_obs, arrival + nobs, ftype_obs, ntry++ == 0)) != EOF) {
+    // 20180907 AJL - added phypo to recover location information (e.g. magntiude) from observation file
+    // 20180907 AJL while ((istat = GetNextObs(fp_obs, arrival + nobs, ftype_obs, ntry++ == 0)) != EOF) {
+    while ((istat = GetNextObs(phypo, fp_obs, arrival + nobs, ftype_obs, ntry++ == 0)) != EOF) {
 
 
         if (istat == OBS_FILE_FORMAT_ERROR) {
@@ -1777,6 +1780,9 @@ void InitializeArrivalFields(ArrivalDesc * arrival) {
 
     arrival->station_weight = 1.0;
 
+    // 20180608 AJL - bug fix
+    arrival->tt_error = 0.0;
+
 
     //DD
     if (nll_mode != MODE_DIFFERENTIAL) {
@@ -2179,7 +2185,7 @@ int ExtractFilenameInfo(char *filename, char *type_obs) {
 
 /** function to read arrival from observation file */
 
-int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) {
+int GetNextObs(HypoDesc* phypo, FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst) {
 
     int istat = 0, iloop;
     char *cstat;
@@ -4572,50 +4578,71 @@ IM PD31 BHN --	0.378028	236.911	Sn	2013-09-21T13:16:55.11Z	manual	0.00	0.0340
 
         /* example:
 Event:
-    Public ID              texnet2017gqxp
+    Public ID              texnet2017qjsf
     Type                   earthquake
     Description
       region name: Western Texas
 Origin:
-    Date                   2017-04-05
-    Time                   15:18:54.087
-    Latitude                31.5335 deg  +/-   2.8 km
-    Longitude             -103.7448 deg  +/-   3.7 km
-    Depth                      0.0 km   +/-   2.1 km
+    Date                   2017-08-21
+    Time                   23:59:32.064
+    Latitude                31.11088 deg  +/-    0.943 km
+    Longitude             -103.21398 deg  +/-    1.163 km
+    Depth                     10.065 km   +/-    2.882 km
     Agency                 TXNet
     Mode                   manual
     Status                 final
-    Residual RMS              0.73 s
-    Azimuthal gap              88 deg
+    Residual RMS               0.306 s
+    Azimuthal gap               70.2 deg
 
 3 Network magnitudes:
-    ML        0.93            2 preferred
-    MLv       0.90            3
-    M         0.91            3
+    ML        2.04 +/- 0.04   7 preferred
+    MLv       2.38 +/- 0.14   9
+    M         2.26            9
 
-18 Phase arrivals:
-    sta  net   dist azi  phase   time         res     wt  sta
-    PECS  TX    0.2 213  P       15:18:57.657  -0.1 M  1.5  PECS
-    PECS  TX    0.2 213  S       15:19:00.866   0.4 M  1.4  PECS
-    PB02  TX    0.2 122  S       15:19:01.446  -0.5 M  1.3  PB02
-    HTMS  SC    0.9   6  P       15:19:12.251   0.1 M  1.5  HTMS
-    ALPN  TX    1.2 175  S       15:19:29.664  -2.9 MX 0.0  ALPN
-    ODSA  TX    1.2  60  P       15:19:19.587   3.0 MX 0.1  ODSA
-    ODSA  TX    1.2  60  S       15:19:32.332  -0.6 M  1.2  ODSA
-    VHRN  TX    1.3 235  P       15:19:18.180  -0.8 M  1.0  VHRN
-    VHRN  TX    1.3 235  S       15:19:35.733  -1.3 M  0.6  VHRN
-    DAG   SC    1.3 323  P       15:19:20.635   1.1 M  1.0  DAG
-    MNTX  US    1.4 277  S       15:19:40.423  -0.2 MX 0.0  MNTX
-    SAND  TX    2.1 138  S       15:19:59.042   0.6 M  1.3  SAND
-    TX31  IM    2.2 178  P       15:19:32.265   0.4 M  1.4  TX31
-    TX31  IM    2.2 178  S       15:20:02.066   1.3 M  0.9  TX31
-    TX32  IM    2.2 178  S       15:20:01.922   1.1 MX 0.0  TX32
-    OZNA  TX    2.3 105  P       15:19:39.487   5.9 MX 0.0  OZNA
-    OZNA  TX    2.3 105  S       15:20:05.104   1.3 M  0.9  OZNA
-    FW07  TX    5.2  75  P       15:20:16.860   4.0 AX 0.0  FW07
+20 Phase arrivals:
+    sta   net      dist   azi  phase   time             res     wt  sta
+    PB08  TX     38.669 129.0  P       23:59:39.396  -0.044 M  1.3  PB08
+    PB08  TX     38.669 129.0  S       23:59:46.382   1.408 MX 0.0  PB08
+    PB02  TX     44.113 318.6  P       23:59:42.210   1.903 MX 0.0  PB02
+    PB02  TX     44.113 318.6  S       23:59:47.113   0.623 M  0.6  PB02
+    MNHN  TX     49.214  58.8  P       23:59:41.457   0.318 M  1.1  MNHN
+    MNHN  TX     49.214  58.8  S       23:59:47.759  -0.187 M  1.1  MNHN
+    PECS  TX     69.203 294.6  P       23:59:44.397  -0.078 M  1.3  PECS
+    PECS  TX     69.203 294.6  S       23:59:53.018  -0.767 M  0.4  PECS
+    ALPN  TX     90.224 204.9  P       23:59:48.309   0.260 M  1.2  ALPN
+    ALPN  TX     90.224 204.9  S       23:59:59.725  -0.315 M  1.0  ALPN
+    ODSA  TX    126.621  27.7  P       23:59:54.041   0.088 M  1.2  ODSA
+    ODSA  TX    126.621  27.7  S       00:00:09.858  -0.517 M  0.7  ODSA
+    CL2B  SC    144.494 332.5  P       23:59:57.516   0.588 M  0.7  CL2B
+    CL7   SC    156.814 337.3  P       23:59:58.850  -0.107 M  1.2  CL7
+    HTMS  SC    157.709 343.6  P       23:59:59.155   0.013 M  1.2  HTMS
+    GDL2  SC    165.061 317.2  P       00:00:00.116  -0.163 M  1.1  GDL2
+    SAND  TX    168.584 139.6  P       00:00:01.024   0.439 M  0.9  SAND
+    VHRN  TX    171.704 257.9  P       00:00:01.384   0.241 M  1.1  VHRN
+    VHRN  TX    171.704 257.9  S       00:00:22.569  -0.389 M  0.8  VHRN
+    TX31  IM    200.960 190.8  P       00:00:06.262   1.544 MX 0.0  TX31
 
-0 Station magnitudes:
-    sta  net   dist azi  type   value   res        amp per
+18 Station magnitudes:
+    sta   net      dist   azi  type   value   res        amp  per
+    PB08  TX     38.669 129.0  ML      2.06  0.02    1.12763
+    PB08  TX     38.669 129.0  MLv     2.02 -0.36   0.587801
+    MNHN  TX     49.214  58.8  ML      2.09  0.05   0.870497
+    MNHN  TX     49.214  58.8  MLv     2.30 -0.08   0.559911
+    PECS  TX     69.203 294.6  ML      1.99 -0.05   0.482742
+    PECS  TX     69.203 294.6  MLv     2.25 -0.12   0.257526
+    ALPN  TX     90.224 204.9  ML      1.94 -0.10   0.304913
+    ALPN  TX     90.224 204.9  MLv     2.45  0.07   0.311978
+    ODSA  TX    126.621  27.7  ML      2.08  0.04   0.284525
+    ODSA  TX    126.621  27.7  MLv     2.15 -0.22   0.102733
+    CL2B  SC    144.494 332.5  MLv     2.51  0.14   0.200041
+    CL7   SC    156.814 337.3  MLv     2.64  0.26   0.230992
+    HTMS  SC    157.709 343.6  MLv     2.66  0.28   0.238286
+    GDL2  SC    165.061 317.2  MLv     2.36 -0.02   0.109993
+    SAND  TX    168.584 139.6  ML      2.05  0.01   0.196648
+    SAND  TX    168.584 139.6  MLv     2.44  0.07   0.130226
+    VHRN  TX    171.704 257.9  ML      2.02 -0.02   0.172512
+    VHRN  TX    171.704 257.9  MLv     2.29 -0.09   0.0844888
+
 
          */
 
@@ -4636,7 +4663,7 @@ Origin:
         if (!in_hypocenter_event) {
             // assume may already be in "Event" block
             // find date
-            while (strncmp(line, "    Date", 8) != 0) {
+            while (strstr(line, "Date") == NULL) {
                 // read next line
                 cstat = fgets(line, MAXLINE_LONG, fp_obs);
                 //printf("2 %s", line);
@@ -4649,14 +4676,67 @@ Origin:
             }
             // read hypocenter date
             //    Date                   2017-08-01
-            istat = ReadFortranInt(line, 28, 4, &EventTime.year);
-            istat += ReadFortranInt(line, 33, 2, &EventTime.month);
-            istat += ReadFortranInt(line, 36, 2, &EventTime.day);
+            istat = sscanf(line, " Date %d-%d-%d", &EventTime.year, &EventTime.month, &EventTime.day);
+
             if (istat == 3) {
                 in_hypocenter_event = 1;
+
+                // find time line
+                //     Time                   23:59:32.064
+                int ifound = 1;
+                while (strstr(line, "Time") == NULL) {
+                    // read next line
+                    cstat = fgets(line, MAXLINE_LONG, fp_obs);
+                    //printf("DEBUG: TEXNET_BULLETIN preferred magnitude: <%s>\n", line);
+                    //printf("3 %s", line);
+                    if (cstat == NULL)
+                        return (OBS_FILE_END_OF_INPUT);
+                    if (strncmp(line, "Event:", 6) == 0) {
+                        // end of event
+                        return (OBS_FILE_END_OF_EVENT);
+                    }
+                    if (strstr(line, "Phase") != NULL) {
+                        ifound = 0;
+                        break;
+                    }
+                }
+                if (ifound) {
+                    // read time
+                    //     Time                   23:59:32.064
+                    istat = sscanf(line, " Time %d:%d:%lf", &EventTime.hour, &EventTime.min, &EventTime.sec);
+                    //printf("DEBUG: TEXNET_BULLETIN Time: %2.2d:%2.2d:%05.2f\n", EventTime.hour, EventTime.min, EventTime.sec);
+                }
+
+                // find preferred magnitude line
+                //        ML        0.99 +/- 0.11   4 preferred
+                ifound = 1;
+                while (strstr(line, "preferred") == NULL) {
+                    // read next line
+                    cstat = fgets(line, MAXLINE_LONG, fp_obs);
+                    //printf("DEBUG: TEXNET_BULLETIN preferred magnitude: <%s>\n", line);
+                    //printf("3 %s", line);
+                    if (cstat == NULL)
+                        return (OBS_FILE_END_OF_INPUT);
+                    if (strncmp(line, "Event:", 6) == 0) {
+                        // end of event
+                        return (OBS_FILE_END_OF_EVENT);
+                    }
+                    if (strstr(line, "Phase") != NULL) {
+                        ifound = 0;
+                        break;
+                    }
+                }
+                if (ifound) {
+                    // read magnitude
+                    //        ML        0.99 +/- 0.11   4 preferred
+                    istat = sscanf(line, "%*s %lf %*s %*lf %d", &phypo->amp_mag, &phypo->num_amp_mag);
+                    //printf("DEBUG: TEXNET_BULLETIN preferred magnitude: %lf %d\n", phypo->amp_mag, phypo->num_amp_mag);
+
+                }
+
                 // find phases lines
                 //    sta  net   dist azi  phase   time         res     wt  sta
-                while (strncmp(line, "    sta  net", 12) != 0) {
+                while (strncmp(line, "    sta", 7) != 0) {
                     // read next line
                     cstat = fgets(line, MAXLINE_LONG, fp_obs);
                     //printf("3 %s", line);
@@ -4696,32 +4776,36 @@ Origin:
          */
 
         // read phase time reading
-        istat = ReadFortranString(line, 5, 5, arrival->label);
+        istat = sscanf(line, "%s %*s %*f %*f %s %d:%d:%lf %*f %s",
+                arrival->label, arrival->phase, &arrival->hour, &arrival->min, &arrival->sec, chrtmp);
+        //istat = ReadFortranString(line, 5, 5, arrival->label);
         TrimString(arrival->label);
-        istat += ReadFortranString(line, 26, 7, arrival->phase);
+        //istat += ReadFortranString(line, 26, 7, arrival->phase);
         TrimString(arrival->phase);
-        istat += ReadFortranInt(line, 34, 2, &arrival->hour);
-        // ISC_IMS1.0 uses 00h for phases arriving after 24h of day of event !!!
-        //if (arrival->hour < EventTime.hour)
-        //    arrival->hour += 24;
-        //
-        istat += ReadFortranInt(line, 37, 2, &arrival->min);
-        istat += ReadFortranReal(line, 40, 6, &arrival->sec);
-        //istat += ReadFortranString(line, 101, 1, arrival->first_mot);
-        //istat += ReadFortranString(line, 102, 1, arrival->onset);
+        //istat += ReadFortranInt(line, 34, 2, &arrival->hour);
         // set weight, check for P - reset weight
         if (strcmp(arrival->phase, "P") == 0)
             arrival->quality = 0;
         else
             arrival->quality = 1;
 
-        if (istat != 5) {
+        //printf("4A %s %s %d:%d:%lf %s\n",
+        //        arrival->label, arrival->phase, arrival->hour, arrival->min, arrival->sec, chrtmp);
+        if (istat != 6) {
             return (OBS_FILE_INVALID_PHASE);
         }
+        //printf("4B %s %s %d:%d:%lf %s\n",
+        //        arrival->label, arrival->phase, arrival->hour, arrival->min, arrival->sec, chrtmp);
 
         arrival->year = EventTime.year;
         arrival->month = EventTime.month;
         arrival->day = EventTime.day;
+
+        // check for arrival time over day boundary relative to event time
+        if (arrival->hour == 0 && EventTime.hour == 23) {
+            arrival->hour = 24;
+            printf("DEBUG: TEXNET_BULLETIN Time past day bndry -> %2.2d:%2.2d:%05.2f\n", arrival->hour, arrival->min, arrival->sec);
+        }
 
 
         // convert quality to error
@@ -4733,8 +4817,8 @@ Origin:
 
         if (strcmp(ftype_obs, "TEXNET_BULLETIN__ZERO_WT_X") == 0) {
             // check if phase is excluded for location
-            istat = ReadFortranString(line, 54, 1, chrtmp);
-            if (istat == 1 && strcmp(chrtmp, "X") == 0) {
+            //istat = ReadFortranString(line, 54, 1, chrtmp);
+            if (strlen(chrtmp) > 1 && chrtmp[1] == 'X') {
                 arrival->apriori_weight = 0.0;
             }
         }
@@ -12243,10 +12327,12 @@ int WriteStaStatTable(int ntable, FILE *fpio,
 /** function to update hashtable */
 
 void UpdateStaStat(int ntable, ArrivalDesc *arrival, int num_arrivals,
-        double p_residual_max, double s_residual_max, double hypo_dist_max) {
+        double p_residual_max, double s_residual_max, double hypo_dist_max, double weight) {
     int narr;
     StaStatNode *np;
-    double weight = 1.0;
+
+    // 20181005 AJL - moved to function argument
+    //double weight = 1.0;
 
     for (narr = 0; narr < num_arrivals; narr++) {
         if (

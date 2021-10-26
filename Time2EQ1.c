@@ -51,9 +51,9 @@
 
 /* defines */
 
-#define MODE_SRCE_TO_STA	0
-#define MODE_STA_TO_SRCE	1
-#define MODE_UNDEF		-1
+#define MODE_SRCE_TO_STA 0
+#define MODE_STA_TO_SRCE 1
+#define MODE_UNDEF  -1
 
 /* globals  */
 char EventStr[MAXLINE], fn_hypo_output[MAXLINE], fn_simulps_output[MAXLINE], fn_invc_output[MAXLINE];
@@ -64,9 +64,9 @@ double VpVsRatio;
 int NumStations;
 
 /* mechanism */
-#define  MECH_NONE 		0
-#define  MECH_DOUBLE 		1
-#define  MECH_ISOTROPIC 	2
+#define  MECH_NONE   0
+#define  MECH_DOUBLE   1
+#define  MECH_ISOTROPIC  2
 int imech;
 char mech_type[11];
 double mech_phi, mech_del, mech_lam;
@@ -90,7 +90,7 @@ int GetTime2EQ_Files(char*);
 int get_vp_vs(char* line1);
 double CalcArrivalTime(FILE*, GridDesc*, SourceDesc*, StationDesc*);
 double AddNoise(double arrival_time, StationDesc* psta);
-int CalcFirstMotion(char *, GridDesc*, SourceDesc*, StationDesc*);
+int CalcFirstMotion(char *, GridDesc*, SourceDesc*, StationDesc*, int);
 int WritePhaseArrival(double, int, FILE*, FILE*, FILE*, FILE*, FILE*, FILE*, SourceDesc*,
         StationDesc*, int);
 int get_mech(char*);
@@ -167,7 +167,7 @@ int main(int argc, char *argv[]) {
     if (message_flag >= 3)
         test_rand_int();
     if (message_flag >= 3)
-        TestGaussDev();
+        test_normal_dist_deviate();
 
 
 
@@ -312,12 +312,13 @@ int main(int argc, char *argv[]) {
             else
                 nll_putmsg(2, MsgStr_sta);
             ipolarity = 0;
-            if (imech == MECH_DOUBLE &&
-                    strncmp((Station + nsta)->phs[0].label, "P", 1) == 0) {
-                if ((ipolarity = CalcFirstMotion(filename_angle,
-                        &grid0, Event, Station + nsta))
-                        == 0)
-                    /*nll_puterr("ERROR: calculating polarity.")*/;
+            if (imech == MECH_DOUBLE) {
+                int isP = strncmp((Station + nsta)->phs[0].label, "P", 1) == 0;
+                ipolarity = CalcFirstMotion(filename_angle, &grid0, Event, Station + nsta, isP);
+                if (!isP) {
+                    // not P, no polarity possible
+                    ipolarity = 0;
+                }
             } else if (imech == MECH_ISOTROPIC) {
                 ipolarity = 1;
             }
@@ -387,7 +388,7 @@ double AddNoise(double arrival_time, StationDesc* psta) {
     /* add noise */
 
     if (strcmp(psta->phs[0].error_type, "GAU") == 0)
-        noise = psta->phs[0].error * GaussDev();
+        noise = psta->phs[0].error * normal_dist_deviate();
     else if (strcmp(psta->phs[0].error_type, "BOX") == 0)
         noise = get_rand_double(-(psta->phs[0].error), psta->phs[0].error);
     else if (strcmp(psta->phs[0].error_type, "FIX") == 0)
@@ -407,10 +408,10 @@ double AddNoise(double arrival_time, StationDesc* psta) {
 
 /*** function to calc first motion from angle grid file */
 
-int CalcFirstMotion(char *filename, GridDesc* ptgrid,
-        SourceDesc* pevent, StationDesc* psta) {
+int CalcFirstMotion(char *filename, GridDesc* ptgrid, SourceDesc* pevent, StationDesc* psta, int isP) {
 
-    double yval_grid, azim, radamp;
+    double yval_grid, azim;
+    double radamp = 0.0;
     int ipolarity = 0;
     double ray_azim, ray_dip;
     int ray_qual;
@@ -435,11 +436,13 @@ int CalcFirstMotion(char *filename, GridDesc* ptgrid,
 
     /* calc radiation amplitude and polarity */
 
-    radamp = calc_rad(ray_dip * cRPD, ray_azim * cRPD, 'P');
+    if (isP) {
+        radamp = calc_rad(ray_dip * cRPD, ray_azim * cRPD, 'P');
+        ipolarity = radamp < 0.0 ? -1 : 1;
+    }
 
-    ipolarity = radamp < 0.0 ? -1 : 1;
-
-    printf("FM: Sta: %s  ray_dip %.1lf  ray_azim %.1lf  radamp %.2le  ipol %d\n", psta->label, ray_dip, ray_azim, radamp, ipolarity);
+    printf("FM: Sta: %s  Pha: %s  ray_dip %.1lf  ray_azim %.1lf  radamp %.2le  ipol %d\n",
+            psta->label, psta->phs[0].label, ray_dip, ray_azim, radamp, ipolarity);
 
     return (ipolarity);
 
@@ -500,7 +503,7 @@ int WritePhaseArrival(double arrival_time, int ipolarity,
 
     /* write arrival time to NLLoc output file */
 
-    PhaseFormat = FORMAT_PHASE_2;   // 20110105 AJL - to allow long station names
+    PhaseFormat = FORMAT_PHASE_2; // 20110105 AJL - to allow long station names
     if (WriteArrival(fpout, parr, IO_ARRIVAL_OBS) < 0) {
         nll_puterr("ERROR: writing arrival time to disk.\n");
         return (-1);

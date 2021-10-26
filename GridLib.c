@@ -74,9 +74,12 @@ void SetConstants(void) {
     strcpy(prog_copyright, PCOPYRIGHT);
     message_flag = 0;
 
-    cPI = 4. * atan(1.); /* PI */
+    // 20171122 AJL  cPI = 4. * atan(1.); /* PI */
+    cPI = M_PI; /* PI */
     cRPD = cPI / 180.; /* radians per degree */
-    c111 = 10000.0 / 90.0; /* kilometers per degree */
+    // 20171122 AJL - changed km/deg scaling to be based on sphere with radius 6371, average Earth radius.
+    //c111 = 10000.0 / 90.0; /* kilometers per degree */
+    c111 = DEG2KM;
 
     fp_include = NULL; /* set include file ptr */
 
@@ -196,7 +199,7 @@ void SwapBackIncludeFP(FILE **fp_io) {
 
 }
 
-/** function to read source params fom input line */
+/** function to read source params from input line */
 
 int GetNextSource(char* in_line) {
     int istat;
@@ -672,6 +675,53 @@ int get_transform(int n_proj, char* in_line) {
 
         if (ierr < 0 || istat != 5) {
             nll_puterr("ERROR: reading TRANS_MERC transformation parameters");
+            return (-1);
+        }
+
+    } else if (strcmp(map_trans_type[n_proj], "AZIMUTHAL_EQUIDIST") == 0) {
+
+        // 20171120 AJL - added AZIMUTHAL EQUIDISTANT PROJECTION
+
+        map_itype[n_proj] = MAP_TRANS_AZ_EQUID;
+        istat = sscanf(in_line, "%s %s %lf %lf %lf",
+                map_trans_type[n_proj], map_ref_ellipsoid[n_proj],
+                &map_orig_lat[n_proj], &map_orig_long[n_proj],
+                &map_rot[n_proj]);
+
+        ierr = 0;
+        if (checkRangeDouble("TRANS",
+                "LatOrig", map_orig_lat[n_proj], 1, -90.0, 1, 90.0) != 0)
+            ierr = -1;
+        if (checkRangeDouble("TRANS",
+                "LongOrig", map_orig_long[n_proj], 1, -180.0, 1, 180.0) != 0)
+            ierr = -1;
+        if (checkRangeDouble("TRANS",
+                "RotCW", map_rot[n_proj], 1, -360.0, 1, 360.0) != 0)
+            ierr = -1;
+
+        angle = -cRPD * map_rot[n_proj];
+        map_cosang[n_proj] = cos(angle);
+        map_sinang[n_proj] = sin(angle);
+
+        // initialize GMT projection values
+        if (map_setup_proxy(n_proj, map_ref_ellipsoid[n_proj]) < 0) {
+            nll_puterr(
+                    "ERROR: initializing general transformation parameters, RefEllipsoid may be invalid");
+            return (-1);
+        }
+
+        // initialize projection
+        vazeqdist(n_proj, map_orig_long[n_proj], map_orig_lat[n_proj]);
+
+        sprintf(MapProjStr[n_proj],
+                "TRANSFORM  %s RefEllipsoid %s  LatOrig %lf  LongOrig %lf  RotCW %lf",
+                map_trans_type[n_proj], map_ref_ellipsoid[n_proj],
+                map_orig_lat[n_proj], map_orig_long[n_proj],
+                map_rot[n_proj]);
+        nll_putmsg(3, MapProjStr[n_proj]);
+
+        if (ierr < 0 || istat != 5) {
+            nll_puterr("ERROR: reading AZIMUTHAL_EQUIDIST transformation parameters");
             return (-1);
         }
 
@@ -1549,7 +1599,7 @@ int IsGrid2DBigEnough(GridDesc* pgrid_3D, GridDesc* pgrid_2D,
     return (1);
 }
 
-/** function to calculate epicentral (horizontal) distance from a source to an x-y poistion */
+/** function to calculate epicentral (horizontal) distance from a source to an x-y position */
 
 double GetEpiDist(SourceDesc* psrce, double xval, double yval) {
     double xtmp, ytmp;
@@ -1565,7 +1615,7 @@ double GetEpiDist(SourceDesc* psrce, double xval, double yval) {
     }
 }
 
-/** function to calculate epicentral (horizontal) distance from a station to an x-y poistion */
+/** function to calculate epicentral (horizontal) distance from a station to an x-y position */
 
 double GetEpiDistSta(StationDesc* psta, double xval, double yval) {
     double xtmp, ytmp;
@@ -1615,6 +1665,21 @@ double GetEpiAzimSta(StationDesc* psta, double xval, double yval) {
             azim += 360.0;
 
         return (azim);
+    }
+}
+
+/** function to calculate distance between 2 XYZ points */
+
+double Dist2D(double x1, double x2, double y1, double y2) {
+
+    if (GeometryMode == MODE_GLOBAL) {
+        return (GCDistance(y1, x1, y2, x2));
+        //return(EllipsoidDistance(yval, xval, psta->y, psta->x));
+    } else {
+        double dx, dy;
+        dx = x1 - x2;
+        dy = y1 - y2;
+        return (sqrt(dx * dx + dy * dy));
     }
 }
 
@@ -1914,7 +1979,7 @@ int ReadGrid3dHdr(GridDesc* pgrid, SourceDesc* psrce, char* filename, char* file
     NumFilesOpen++;
 
 
-    if (ReadGrid3dHdr_grid_description(fpio, pgrid) < 0) {
+    if (ReadGrid3dHdr_grid_description(fpio, pgrid, fname) < 0) {
         fclose(fpio);
         NumFilesOpen--;
         return (-1);
@@ -1978,11 +2043,11 @@ int ReadGrid3dHdr(GridDesc* pgrid, SourceDesc* psrce, char* filename, char* file
 
 /** function to read grid header file grid description line ***/
 
-int ReadGrid3dHdr_grid_description(FILE *fpio, GridDesc * pgrid) {
+int ReadGrid3dHdr_grid_description(FILE *fpio, GridDesc *pgrid, char *fname) {
 
     char line[MAXLINE_LONG];
     if (fgets(line, MAXLINE_LONG, fpio) == NULL) {
-        nll_puterr("ERROR: reading grid header file.");
+        nll_puterr2("ERROR: reading grid header file: ", fname);
         return (-1);
     }
     strcpy(pgrid->float_type, "FLOAT");
@@ -2057,7 +2122,7 @@ int OpenGrid3dFile(char *fname, FILE **fp_grid, FILE **fp_hdr,
     /* read header file */
 
     pgrid->iSwapBytes = iSwapBytes;
-    if (ReadGrid3dHdr_grid_description(*fp_hdr, pgrid) < 0) {
+    if (ReadGrid3dHdr_grid_description(*fp_hdr, pgrid, fn_hdr) < 0) {
         fclose(*fp_hdr);
         NumGridBufFilesOpen--;
         NumFilesOpen--;
@@ -3502,6 +3567,29 @@ int GetHypLoc(FILE *fpio, const char* filein, HypoDesc* phypo,
             /* Nhyp n */
             if (sscanf(line, "%*s %*s %ld", &phypo->event_id) == EOF)
                 goto eof_exit;
+
+
+        } else if (strncmp(line, "QML_OriginQuality", 12) == 0) { // 20181017 AJL - added
+
+            if (sscanf(line,
+                    "QML_OriginQuality  assocPhCt %d  usedPhCt %*d  assocStaCt %d  usedStaCt %d  depthPhCt %d"
+                    "  stdErr %*lg  azGap %*lg  secAzGap %lg  gtLevel %s  minDist %lg maxDist %lg medDist %lg",
+                    &phypo->associatedPhaseCount, &phypo->associatedStationCount, &phypo->usedStationCount, &phypo->depthPhaseCount,
+                    &phypo->gap_secondary, phypo->groundTruthLevel, &phypo->minimumDistance, &phypo->maximumDistance, &phypo->medianDistance) == EOF)
+                goto eof_exit;
+
+        } else if (strncmp(line, "QML_OriginUncertainty", 12) == 0) { // 20181017 AJL - added
+
+            double azMaxHorUnc;
+            if (sscanf(line,
+                    "QML_OriginUncertainty  horUnc %*lg  minHorUnc %lg  maxHorUnc %lg  azMaxHorUnc %lg",
+                    // 20100617 AJL - horizontalUncertainty: not clear what this is, ignore
+                    &phypo->ellipse.len1, &phypo->ellipse.len2, &azMaxHorUnc) == EOF)
+                goto eof_exit;
+            phypo->ellipse.az1 = azMaxHorUnc - 90.0;
+            if (phypo->ellipse.az1 <= 0.0)
+                phypo->ellipse.az1 += 360.0;
+
         } else if (strncmp(line, "PHASE", 5) == 0) {
 
             /* read arrival/phase parameters */
@@ -3744,7 +3832,7 @@ int ReadArrival(char* line, ArrivalDesc* parr, int iReadType) {
     if (GeometryMode == MODE_GLOBAL)
         parr->dist /= KM2DEG; // always store in memory in km
 
-    /* convert aziumuths to grid coords direction */
+    /* convert azimuths to grid coords direction */
     parr->azim = latlon2rectAngle(0, parr->azim);
     parr->ray_azim = latlon2rectAngle(0, parr->ray_azim);
 
@@ -3819,7 +3907,7 @@ int WriteArrival(FILE* fpio, ArrivalDesc* parr, int iWriteType) {
 
     if (iWriteType == IO_ARRIVAL_ALL) {
 
-        /* convert ray aziumuth to geographic direction */
+        /* convert ray azimuth to geographic direction */
 
         sta_azim = rect2latlonAngle(0, parr->azim);
         ray_azim = rect2latlonAngle(0, parr->ray_azim);
@@ -4059,6 +4147,21 @@ double getGMTJVAL(int n_proj, char* jval_string, double xlen, double vxmax, doub
 
         return (gmt_scale);
 
+    } else if (map_itype[n_proj] == MAP_TRANS_AZ_EQUID) {
+
+        /* -Je|E<lon0>/<lat0>[/<horizon>]/<scale>|<width> (Azimuthal Equidistant)
+             <lon0>/<lat0> is the center of the projection.
+             <horizon> is max distance from center of the projection (<= 180, default 180).
+             <scale> can also be given as <radius>/<lat>, where <radius> is the distance
+             in cm to the oblique parallel <lat>.
+         */
+
+        gmt_scale = (ylen / (vymax - vymin)); // * (xmaxrect0 - xminrect0) / (xmaxrect - xminrect);
+        sprintf(jval_string, "-JE%lf/%lf/180/%lf",
+                map_orig_long[n_proj], map_orig_lat[n_proj], xlen);
+
+        return (gmt_scale);
+
     }
 
     return (-1.0);
@@ -4169,6 +4272,16 @@ int latlon2rect(int n_proj, double dlat, double dlong, double* pxrect, double* p
 
         return (0);
 
+    } else if (map_itype[n_proj] == MAP_TRANS_AZ_EQUID) {
+
+        azeqdist(n_proj, dlong, dlat, &xtemp, &ytemp);
+        xtemp /= 1000.0; /* m -> km */
+        ytemp /= 1000.0; /* m -> km */
+        *pxrect = xtemp * map_cosang[n_proj] - ytemp * map_sinang[n_proj];
+        *pyrect = ytemp * map_cosang[n_proj] + xtemp * map_sinang[n_proj];
+
+        return (0);
+
     }
 
     return (-1);
@@ -4270,6 +4383,18 @@ int rect2latlon(int n_proj, double xrect, double yrect, double* pdlat, double* p
 
         return (0);
 
+    } else if (map_itype[n_proj] == MAP_TRANS_AZ_EQUID) {
+
+        xtemp = xrect * map_cosang[n_proj] + yrect * map_sinang[n_proj];
+        ytemp = yrect * map_cosang[n_proj] - xrect * map_sinang[n_proj];
+        iazeqdist(n_proj, pdlong, pdlat, xtemp * 1000.0, ytemp * 1000.0);
+        if (*pdlong < -180.0)
+            *pdlong += 360.0;
+        else if (*pdlong > 180.0)
+            *pdlong -= 360.0;
+
+        return (0);
+
     }
 
     return (-1);
@@ -4283,7 +4408,8 @@ double rect2latlonAngle(int n_proj, double rectAngle) {
     if (map_itype[n_proj] == MAP_TRANS_SIMPLE ||
             map_itype[n_proj] == MAP_TRANS_SDC ||
             map_itype[n_proj] == MAP_TRANS_LAMBERT ||
-            map_itype[n_proj] == MAP_TRANS_TM) {
+            map_itype[n_proj] == MAP_TRANS_TM ||
+            map_itype[n_proj] == MAP_TRANS_AZ_EQUID) {
         angle = rectAngle - map_rot[n_proj];
         if (angle < 0.0)
             angle += 360.0;
@@ -4302,7 +4428,8 @@ double latlon2rectAngle(int n_proj, double latlonAngle) {
     if (map_itype[n_proj] == MAP_TRANS_SIMPLE ||
             map_itype[n_proj] == MAP_TRANS_SDC ||
             map_itype[n_proj] == MAP_TRANS_LAMBERT ||
-            map_itype[n_proj] == MAP_TRANS_TM) {
+            map_itype[n_proj] == MAP_TRANS_TM ||
+            map_itype[n_proj] == MAP_TRANS_AZ_EQUID) {
         angle = latlonAngle + map_rot[n_proj];
         if (angle < 0.0)
             angle += 360.0;
@@ -4779,13 +4906,10 @@ int ReadTakeOffAnglesFile(char *fname, double xloc, double yloc, double zloc,
 
 }
 
-
-
 /** function to generate normally distributed deviate with zero mean and unit variance */
 
-/* modified from Numerical Recipies function gasdev.c */
+double normal_dist_deviate() {
 
-double GaussDev() {
     static int iset = 0;
     static float gset;
     double fac, r, v1, v2;
@@ -4808,12 +4932,12 @@ double GaussDev() {
 }
 
 
-/** function to test GaussDev function */
+/** function to test normal_dist_deviate function */
 
 #define NUM_BIN 21
 #define WIDTH 3.0
 
-void TestGaussDev() {
+void test_normal_dist_deviate() {
     long nmax = 210000;
     long n, m;
     long ibin[NUM_BIN];
@@ -4829,7 +4953,7 @@ void TestGaussDev() {
 
 
     for (n = 0; n < nmax; n++) {
-        test = GaussDev();
+        test = normal_dist_deviate();
         m = 0;
         while (test > binmax[m] && m < NUM_BIN - 1)
             m++;
@@ -4838,7 +4962,7 @@ void TestGaussDev() {
 
     sum_one_std = 0;
     fprintf(stdout,
-            "\nGaussDev function test (samples= %ld)\n", nmax);
+            "\nnormal_dist_deviate function test (samples= %ld)\n", nmax);
     fprintf(stdout, "  Bin -Inf,%lf  N=%ld\n", binmax[0], ibin[0]);
     for (n = 1; n < NUM_BIN - 1; n++) {
         fprintf(stdout,

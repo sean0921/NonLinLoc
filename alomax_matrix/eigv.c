@@ -423,7 +423,8 @@ int tql2 ( int n, double d[], double e[], double z[] )
 {
   double c;
   double c2;
-  double c3;
+  // 20171120 AJL   double c3;
+  double c3 = 0.0;
   double dl1;
   double el1;
   double f;
@@ -442,7 +443,8 @@ int tql2 ( int n, double d[], double e[], double z[] )
   double p;
   double r;
   double s;
-  double s2;
+  // 20171120 AJL   double s2;
+  double s2 = 0.0;
   double t;
   double tst1;
   double tst2;

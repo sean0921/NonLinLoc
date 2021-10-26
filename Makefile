@@ -15,7 +15,6 @@ else
 BINDIR=.
 endif
 
-CC=gcc
 
 #
 GRID_FLOAT=
@@ -23,10 +22,18 @@ GRID_FLOAT=
 #GRID_FLOAT=-D GRID_FLOAT_TYPE_DOUBLE
 
 
+CC=gcc
+#
+# for portland group c compiler "pgcc" on a x86_64 linux system:
+#CC=pgcc
+#export CCFLAGS_BASIC = -fast -m64 -DADD64BIT
+
+
 # Linux, Mac OS X ?
 CCFLAGS_BASIC =  -Wall -std=gnu99 ${GRID_FLOAT}
 # Mac OS X ?
 #CCFLAGS_BASIC =  -Wall -D__APPLE__
+#
 #
 # optimized
 export CCFLAGS = -O3 $(CCFLAGS_BASIC)
@@ -298,9 +305,9 @@ mag_func_test.o : mag_func_test.c NLLocLib.h GridLib.h
 OBJS13 = ${GRID_LIB_OBJS} velmod.o
 Vel2Grid3D_ : $(BINDIR)/Vel2Grid3D
 $(BINDIR)/Vel2Grid3D : Vel2Grid3D.o $(OBJS13)
-	gcc Vel2Grid3D.o  $(OBJS13) $(CCFLAGS) -o $(BINDIR)/Vel2Grid3D -lm
+	${CC} Vel2Grid3D.o  $(OBJS13) $(CCFLAGS) -o $(BINDIR)/Vel2Grid3D -lm
 Vel2Grid3D.o : Vel2Grid3D.c GridLib.h
-	gcc $(CCFLAGS) -c Vel2Grid3D.c
+	${CC} $(CCFLAGS) -c Vel2Grid3D.c
 # --------------------------------------------------------------------------
 
 
@@ -310,9 +317,9 @@ Vel2Grid3D.o : Vel2Grid3D.c GridLib.h
 OBJS14 = ${GRID_LIB_OBJS}
 interface2fmm_ : $(BINDIR)/interface2fmm
 $(BINDIR)/interface2fmm : interface2fmm.o $(OBJS14)
-	gcc interface2fmm.o  $(OBJS14) $(CCFLAGS) -o $(BINDIR)/interface2fmm -lm
+	${CC} interface2fmm.o  $(OBJS14) $(CCFLAGS) -o $(BINDIR)/interface2fmm -lm
 interface2fmm.o : interface2fmm.c GridLib.h
-	gcc $(CCFLAGS) -c interface2fmm.c
+	${CC} $(CCFLAGS) -c interface2fmm.c
 # --------------------------------------------------------------------------
 
 
@@ -322,9 +329,9 @@ interface2fmm.o : interface2fmm.c GridLib.h
 OBJS15 = ${GRID_LIB_OBJS}
 fmm2grid_ : $(BINDIR)/fmm2grid
 $(BINDIR)/fmm2grid : fmm2grid.o $(OBJS15)
-	gcc fmm2grid.o  $(OBJS15) $(CCFLAGS) -o $(BINDIR)/fmm2grid -lm
+	${CC} fmm2grid.o  $(OBJS15) $(CCFLAGS) -o $(BINDIR)/fmm2grid -lm
 fmm2grid.o : fmm2grid.c GridLib.h
-	gcc $(CCFLAGS) -c fmm2grid.c
+	${CC} $(CCFLAGS) -c fmm2grid.c
 # --------------------------------------------------------------------------
 
 

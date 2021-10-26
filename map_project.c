@@ -94,8 +94,8 @@
 
 #include "map_project.h"
 
-#define PI_2 (2.0 * M_PI)
-#define D2R (M_PI / 180.0)
+#define PI_2 (2.0*M_PI)
+#define D2R (M_PI/180.0)
 #define R2D (180.0/M_PI)
 
 #define SMALL 1.0e-10
@@ -140,7 +140,7 @@ struct ELLIPSOID ellipse[N_ELLIPSOIDS] = {
 
 
 // number of projections supported
-#define NUM_PROJ_MAX 2
+#define NUM_PROJ_MAX 10
 
 double EQ_RAD[NUM_PROJ_MAX];
 double ECC[NUM_PROJ_MAX], ECC2[NUM_PROJ_MAX], ECC4[NUM_PROJ_MAX], ECC6[NUM_PROJ_MAX];
@@ -304,14 +304,9 @@ double *lon, *lat, x, y;
     return (0);
 }
 
-
-
-
 /* Transverse Mercator Projection (TM) */
 
 struct TRANS_MERCATOR {
-
-
     BOOLEAN north_pole; /* TRUE if projection is on northern hemisphere, FALSE on southern */
 
     double central_meridian; // Central meridian for projection
@@ -370,8 +365,7 @@ int map_init_tm(int n_proj) {
     return (search);
 }*/
 
-void vtm(int n_proj, double lon0, double lat0)
-{
+void vtm(int n_proj, double lon0, double lat0) {
     /* Set up an TM projection */
     double e1;
 
@@ -555,9 +549,160 @@ double *lon, *lat, x, y;
 
 // utm init function
 // created by ALomax to enable setting of north_pole flag
-void vutm(int n_proj, double lon0, int lat0)
-{
+
+void vutm(int n_proj, double lon0, int lat0) {
     vtm(n_proj, lon0, lat0);
     TransverseMercator[n_proj].north_pole = lat0 >= 0.0 ? 1 : 0;
 }
 
+/* Azimuthal Equidistant Projection (AE) */
+
+struct AZIMUTHAL_EQUIDIST {
+    BOOLEAN north_pole; /* TRUE if projection is on northern hemisphere, FALSE on southern */
+
+    double central_meridian; // Central meridian (longitude) for projection
+    double pole; // Central latitude for projection
+    double sinp;
+    double cosp;
+
+};
+struct AZIMUTHAL_EQUIDIST AzimuthalEquidistant[NUM_PROJ_MAX];
+
+
+/*
+ *	TRANSFORMATION ROUTINES FOR THE AZIMUTHAL EQUIDISTANT PROJECTION
+ */
+
+/*
+int map_init_azeqdist () {
+        BOOLEAN search;
+        double xmin, xmax, ymin, ymax, dummy, radius;
+
+        gmt_set_spherical ();	// PW: Force spherical for now
+
+        if (project_info.units_pr_degree) {
+                vazeqdist (0.0, 90.0);
+                azeqdist (0.0, project_info.pars[3], &dummy, &radius);
+                if (radius == 0.0) radius = M_PI * EQ_RAD;
+                project_info.x_scale = project_info.y_scale = fabs (project_info.pars[2] / radius);
+        }
+        else
+                project_info.x_scale = project_info.y_scale = project_info.pars[2];
+
+        vazeqdist (project_info.pars[0], project_info.pars[1]);
+        forward = (PFI)azeqdist;		inverse = (PFI)iazeqdist;
+
+        if (fabs (project_info.pars[1]) == 90.0) {
+                project_info.polar = TRUE;
+                project_info.north_pole	= (project_info.pars[1] == 90.0);
+        }
+
+        if (!project_info.region) {	// Rectangular box given
+                (*forward) (project_info.w, project_info.s, &xmin, &ymin);
+                (*forward) (project_info.e, project_info.n, &xmax, &ymax);
+
+                outside = (PFI) rect_outside;
+                crossing = (PFI) rect_crossing;
+                overlap = (PFI) rect_overlap;
+                map_clip = (PFI) rect_clip;
+                left_edge = (PFD) left_rect;
+                right_edge = (PFD) right_rect;
+                frame_info.check_side = !gmtdefs.oblique_anotation;
+                frame_info.horizontal = (fabs (project_info.pars[1]) < 60.0 && fabs (project_info.n - project_info.s) < 30.0);
+                search = TRUE;
+        }
+        else {
+                if (project_info.polar && (project_info.n - project_info.s) < 180.0) {	// Polar aspect
+                        if (!project_info.north_pole && project_info.s == -90.0) project_info.edge[0] = FALSE;
+                        if (project_info.north_pole && project_info.n == 90.0) project_info.edge[2] = FALSE;
+                        if ((fabs (project_info.w - project_info.e) == 360.0 || project_info.w == project_info.e)) project_info.edge[1] = project_info.edge[3] = FALSE;
+                        outside = (PFI) polar_outside;
+                        crossing = (PFI) wesn_crossing;
+                        overlap = (PFI) wesn_overlap;
+                        map_clip = (PFI) wesn_clip;
+                        frame_info.horizontal = TRUE;
+                        gmtdefs.n_lat_nodes = 2;
+                        xy_search (&xmin, &xmax, &ymin, &ymax);
+                }
+                else {	// Global view only, force wesn = 0/360/-90/90
+                        frame_info.anot_int[0] = frame_info.anot_int[1] = 0.0;		// No annotations for global mode
+                        frame_info.frame_int[0] = frame_info.frame_int[1] = 0.0;	// No tickmarks for global mode
+                        project_info.w = 0.0;
+                        project_info.e = 360.0;
+                        project_info.s = -90.0;
+                        project_info.n = 90.0;
+                        xmin = ymin = -M_PI * EQ_RAD;
+                        xmax = ymax = -xmin;
+                        outside = (PFI) eqdist_outside;
+                        crossing = (PFI) eqdist_crossing;
+                        overlap = (PFI) radial_overlap;
+                        map_clip = (PFI) radial_clip;
+                        gmtdefs.basemap_type = 1;
+                }
+                search = FALSE;
+                left_edge = (PFD) left_circle;
+                right_edge = (PFD) right_circle;
+        }
+
+        map_setinfo (xmin, xmax, ymin, ymax, project_info.pars[2]);
+        project_info.r = 0.5 * project_info.xmax;
+
+        return (search);
+}*/
+
+void vazeqdist(int n_proj, double lon0, double lat0) {
+    /* Set up azimuthal equidistant projection */
+
+    AzimuthalEquidistant[n_proj].central_meridian = lon0;
+    AzimuthalEquidistant[n_proj].pole = lat0;
+    AzimuthalEquidistant[n_proj].sinp = sin(lat0 * D2R);
+    AzimuthalEquidistant[n_proj].cosp = cos(lat0 * D2R);
+}
+
+void azeqdist(int n_proj, double lon, double lat, double *x, double *y) {
+    /* Convert lon/lat to azimuthal equidistant x/y */
+    double k, dlon, cc, c, clat, clon, slat;
+
+    while ((lon - AzimuthalEquidistant[n_proj].central_meridian) < -180.0) lon += 360.0;
+    while ((lon - AzimuthalEquidistant[n_proj].central_meridian) > 180.0) lon -= 360.0;
+    dlon = (lon - AzimuthalEquidistant[n_proj].central_meridian) * D2R;
+    lat *= D2R;
+    slat = sin(lat);
+    clat = cos(lat);
+    clon = cos(dlon);
+
+    cc = AzimuthalEquidistant[n_proj].sinp * slat + AzimuthalEquidistant[n_proj].cosp * clat * clon;
+    if (fabs(cc) >= 1.0)
+        *x = *y = 0.0;
+    else {
+        c = acos(cc);
+        k = EQ_RAD[n_proj] * c / sin(c);
+        *x = k * clat * sin(dlon);
+        *y = k * (AzimuthalEquidistant[n_proj].cosp * slat - AzimuthalEquidistant[n_proj].sinp * clat * clon);
+    }
+}
+
+void iazeqdist(int n_proj, double *lon, double *lat, double x, double y) {
+    /* Convert azimuthal equidistant x/yto lon/lat */
+    double rho, c, sin_c, cos_c;
+
+    rho = hypot(x, y);
+
+    if (rho == 0.0) {
+        *lat = AzimuthalEquidistant[n_proj].pole;
+        *lon = AzimuthalEquidistant[n_proj].central_meridian;
+    } else {
+        c = rho / EQ_RAD[n_proj];
+        sin_c = sin(c);
+        cos_c = cos(c);
+        *lat = asin(cos_c * AzimuthalEquidistant[n_proj].sinp + (y * sin_c * AzimuthalEquidistant[n_proj].cosp / rho)) * R2D;
+        if (AzimuthalEquidistant[n_proj].pole == 90.0)
+            *lon = AzimuthalEquidistant[n_proj].central_meridian + R2D * atan2(x, -y);
+        else if (AzimuthalEquidistant[n_proj].pole == -90.0)
+            *lon = AzimuthalEquidistant[n_proj].central_meridian + R2D * atan2(x, y);
+        else
+            *lon = AzimuthalEquidistant[n_proj].central_meridian +
+                R2D * atan2(x * sin_c, (rho * AzimuthalEquidistant[n_proj].cosp * cos_c - y * AzimuthalEquidistant[n_proj].sinp * sin_c));
+        if ((*lon) <= -180) (*lon) += 360.0;
+    }
+}

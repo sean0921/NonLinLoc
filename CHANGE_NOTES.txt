@@ -432,8 +432,14 @@ Following  not added to 6.00 doc :
 	#        grd2xyz topo.grd -ZTLd > topo.grd.bin
 
 
+New version 7.00 posted to web =================================
 
 
+20171120 NLL - Added: AZIMUTHAL_EQUIDIST transform mode added.  (Azimuthal Equidistant projection) 
+
+20171122 NLL - Changed all PI and related (e.g. degree <-> radians conversions) to be based on math.h -> M_PI
+
+20180403 NLL - Added LOCFIXOTIME year month day hour min sec
 
 
 

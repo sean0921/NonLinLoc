@@ -148,7 +148,7 @@ int PlotFocalMechanism(char view_type, double scale, double magnitude, FocalMech
         FILE* fp_io, char *plt_code, char *linecolor, char *fillcolor,
         double horiz_min, double horiz_max, double vert_min, double vert_max, double plot_scale);
 int addStations(SourceDesc *stations, int numStations, ArrivalDesc *arrival, int nArrivals);
-int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
+int ConvertResids2MapGMT(char cdatatype, char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
         SourceDesc* staList, int nstations, double, int);
 void genResidualGMT(FILE* fp_out, char* xtra_args, double resid,
         double x, double y, double scale);
@@ -197,11 +197,11 @@ int main(int argc, char *argv[]) {
 
     // count non option arguments
     int argc_non_opt = 0;
-        for (narg = 0; narg < argc; narg++) {
-            if (argv[narg][0] != '-') {
-                argc_non_opt++;
-            }
+    for (narg = 0; narg < argc; narg++) {
+        if (argv[narg][0] != '-') {
+            argc_non_opt++;
         }
+    }
 
 
     clatlongmode = '\0';
@@ -404,9 +404,9 @@ void usage() {
     disp_usage(PNAME,
             "<controlfile> <gridroot> <outroot> VL [G][S][Ennndx][M] lat1 long1 lat2 long2 [length_units]");
     disp_usage(PNAME,
-            "<controlfile> <gridroot> <outroot> H [G][S][Ennndx][M][Rphases/scale] iz [length_units]");
+            "<controlfile> <gridroot> <outroot> H [G][S][Ennndx][M][R|Cphase/scale/min_n_rdgs] iz [length_units]");
     disp_usage(PNAME,
-            "<controlfile> <gridroot> <outroot> L [G][S][Ennndx][M][Rphases/scale] [ix iy iz] [length_units]");
+            "<controlfile> <gridroot> <outroot> L [G][S][Ennndx][M][R|Cphase/scale/min_n_rdgs] [ix iy iz] [length_units]");
     disp_usage(PNAME,
             "Options: -title <title>\n"
             "         -length-units <km, ...>\n"
@@ -471,7 +471,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 
     int istat, ihypo;
     char shift_str[MAXLINE], title_str[MAXLINE] = "\0";
-    char signature_str[2 * MAXLINE];
+    char signature_str[10 * MAXLINE];
     char cpt_str[MAXLINE], scale_label_str[MAXLINE];
     double scale, horiz_width, xlen, ylen, xshift, yshift;
     double xshift_cum = 0.0, yshift_cum = 0.0;
@@ -637,7 +637,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 
 
     // get residual scale
-    if (cdatatype == 'R') {
+    if (cdatatype == 'R' || cdatatype == 'C') {
         istat = 0;
         if (num_arg_elements <= 1)
             res_scale = 0.5;
@@ -645,15 +645,15 @@ int GenGMTCommands(char cplotmode, char cdatatype,
             istat = sscanf(arg_elements[1], "%lf", &res_scale);
         printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
         if (istat < 0)
-            nll_puterr("ERROR: Reading 2nd argument of 'R' datatype.");
+            nll_puterr("ERROR: Reading 2nd argument of 'R' or 'C' datatype.");
         istat = 0;
         if (num_arg_elements <= 2)
             res_min_num_readings = 1;
         else
             istat = sscanf(arg_elements[2], "%d", &res_min_num_readings);
-        printf("arg_elements[2] <%s>  RES MIN NUM RADINGS: %d\n", arg_elements[2], res_min_num_readings);
+        printf("arg_elements[2] <%s>  RES MIN NUM READINGS: %d\n", arg_elements[2], res_min_num_readings);
         if (istat < 0)
-            nll_puterr("ERROR: Reading 3rd argument of 'R' datatype.");
+            nll_puterr("ERROR: Reading 3rd argument of 'R' or 'C' datatype.");
 
     }
 
@@ -684,6 +684,12 @@ int GenGMTCommands(char cplotmode, char cdatatype,
                     PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
                     0.75, 0.96, HYPO_FONT_SIZE,
                     0, TITLE_FONT, 2, arg_elements[0], "Residuals");
+        } else if (cdatatype == 'C') {
+            fprintf(fp_gmt,
+                    "pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s %s\nEND\n\n",
+                    PLOT_WIDTH, PLOT_HEIGHT, fn_ps_output,
+                    0.75, 0.96, HYPO_FONT_SIZE,
+                    0, TITLE_FONT, 2, arg_elements[0], "StaCorr");
         }
 
     } // PLOT_LEGEND_LINE
@@ -768,7 +774,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 
     /* plot scales */
 
-    if (cdatatype != 'S' && cdatatype != 'E' && cdatatype != 'M' && cdatatype != 'R') {
+    if (cdatatype != 'S' && cdatatype != 'E' && cdatatype != 'M' && cdatatype != 'R' && cdatatype != 'C') {
 
         if (pgrid0->type == GRID_PROB_DENSITY) {
             strcpy(cpt_str, "conflev.");
@@ -829,7 +835,7 @@ int GenGMTCommands(char cplotmode, char cdatatype,
         yshift_cum += syshift;
     }
 
-    if (cdatatype == 'R') {
+    if (cdatatype == 'R' || cdatatype == 'C') {
 
         // plot legend
 
@@ -841,10 +847,17 @@ int GenGMTCommands(char cplotmode, char cdatatype,
         xres = grid0.origx + (-xshift_cum + PLOT_WIDTH / 2.0) / scale;
         genResidualGMT(fp_gmt, "-N", res_legend_mag, xres + xres_shift, yres, res_scale);
         sprintf(res_legend_mag_string, "+%.2f sec", res_legend_mag);
-        fprintf(fp_gmt,
-                "pstext $JVAL $RVAL $BVAL -N -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s Residuals      %s\nEND\n\n",
-                fn_ps_output, xres - 0.25, yres,
-                HYPO_FONT_SIZE, 0, STA_FONT, 7, arg_elements[0], res_legend_mag_string);
+        if (cdatatype == 'R') {
+            fprintf(fp_gmt,
+                    "pstext $JVAL $RVAL $BVAL -N -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s Residuals      %s\nEND\n\n",
+                    fn_ps_output, xres - 0.25, yres,
+                    HYPO_FONT_SIZE, 0, STA_FONT, 7, arg_elements[0], res_legend_mag_string);
+        } else {
+            fprintf(fp_gmt,
+                    "pstext $JVAL $RVAL $BVAL -N -K -O << END >> %s.ps\n%lf %lf %d %d %d %d %s StaCorr      %s\nEND\n\n",
+                    fn_ps_output, xres - 0.25, yres,
+                    HYPO_FONT_SIZE, 0, STA_FONT, 7, arg_elements[0], res_legend_mag_string);
+        }
         // negative residual
         xres += (PLOT_WIDTH / 5.0) / scale;
         genResidualGMT(fp_gmt, "-N", -res_legend_mag, xres + xres_shift, yres, res_scale);
@@ -860,8 +873,9 @@ int GenGMTCommands(char cplotmode, char cdatatype,
 
     /* end plot */
 
-    sprintf(signature_str, "%s   %s:v%s %s",
-            Hypo.signature, PNAME, PVER, CurrTimeStr());
+    printf("Signature: %s   %s:v%s %s", Hypo.signature, PNAME, PVER, CurrTimeStr());
+
+    sprintf(signature_str, "%s   %s:v%s %s", Hypo.signature, PNAME, PVER, CurrTimeStr());
 
     fprintf(fp_gmt,
             "pstext -R0.5/1.0/0.5/1.0 -Bf10 -JX%lf/%lf -X%lf -Y%lf -O << END >> %s.ps\n%lf %lf %d %d %d %d %s\nEND\n\n",
@@ -926,7 +940,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         float fval;
     }
     byteval;
-    */
+     */
 
 
 
@@ -1112,7 +1126,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         rect2latlon(proj_index_output, pgrid->origx + (double) ix1 * pgrid->dx,
                 (vert_min + vert_max) / 2.0, &vdummy, &vymin);
         if (message_flag > 0)
-            fprintf(stdout, "LongitudeXX Section: %lf\n", vymin);
+            fprintf(stdout, "Longitude Section: %lf\n", vymin);
         rect2latlon(proj_index_output, horiz_min, vert_min, &vymin, &vdummy);
         rect2latlon(proj_index_output, horiz_max, vert_max, &vymax, &vdummy);
         vxmin = horiz_min;
@@ -1166,7 +1180,7 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         rect2latlon(proj_index_output, pgrid->origx + (double) ix1 * pgrid->dx,
                 (horiz_min + horiz_max) / 2.0, &vdummy, &vxmin);
         if (message_flag > 0)
-            fprintf(stdout, "LongitudeXX Section: %lf\n", vxmin);
+            fprintf(stdout, "Longitude Section: %lf\n", vxmin);
         rect2latlon(proj_index_output, horiz_min, vert_min, &vxmin, &vdummy);
         rect2latlon(proj_index_output, horiz_max, vert_max, &vxmax, &vdummy);
         vymin = vert_min;
@@ -1284,6 +1298,9 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
             exit(-1);
         } else if (cdatatype == 'R') {
             nll_puterr("ERROR cannot have datatype = R with oblique Vertical section.");
+            exit(-1);
+        } else if (cdatatype == 'C') {
+            nll_puterr("ERROR cannot have datatype = C with oblique Vertical section.");
             exit(-1);
         }
         horiz_dgrid = pgrid->dx; // assume dx = dy
@@ -1680,28 +1697,6 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
 
     }
 
-    if (cdatatype == 'R') {
-
-        /* draw residuals */
-
-        if (cviewmode == 'H') {
-            sprintf(fn_nlloc_stat, "%s.stat", fnroot_input);
-            nresiduals = ConvertResids2MapGMT(
-                    fn_nlloc_stat, arg_elements[0], fp_gmt, Stations, NumStations, res_scale, res_min_num_readings);
-            if (num_arg_elements < 1 && message_flag > 0) {
-                nll_puterr(
-                        "ERROR: 'R' datatype string does not have all required arguments.");
-                exit(-1);
-            }
-            if (message_flag > 0)
-                fprintf(stdout,
-                    "PlotResiduals: %d plotted\n", nresiduals);
-
-
-        }
-
-    }
-
 
     /* plot stations */
 
@@ -1722,6 +1717,32 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
     if (cviewmode == 'H') {
         MapFiles2GMT(horiz_min, vert_min, horiz_max, vert_max,
                 fp_gmt, fn_ps_output, doLatLong, 0);
+    }
+
+    if (cdatatype == 'R' || cdatatype == 'C') {
+
+        /* draw residuals */
+
+        if (cviewmode == 'H') {
+            if (cdatatype == 'R') {
+                sprintf(fn_nlloc_stat, "%s.stat", fnroot_input);
+            } else {
+                sprintf(fn_nlloc_stat, "%s.stat_totcorr", fnroot_input);
+            }
+            nresiduals = ConvertResids2MapGMT(cdatatype,
+                    fn_nlloc_stat, arg_elements[0], fp_gmt, Stations, NumStations, res_scale, res_min_num_readings);
+            if (num_arg_elements < 1 && message_flag > 0) {
+                nll_puterr(
+                        "ERROR: 'R' or 'C' datatype string does not have all required arguments.");
+                exit(-1);
+            }
+            if (message_flag > 0)
+                fprintf(stdout,
+                    "PlotResidualsOrCorrections: %d plotted from %s\n", nresiduals, fn_nlloc_stat);
+
+
+        }
+
     }
 
 
@@ -2787,7 +2808,7 @@ int PlotFocalMechanism(char view_type, double scale, double magnitude, FocalMech
 /** function to convert residuals list to gmt psxy (residual at sta x,y) and pstext file  */
 
 
-int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
+int ConvertResids2MapGMT(char cdatatype, char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
         SourceDesc* staList, int nstations, double scale, int min_num_readings) {
     int istat, nRdg, nresid;
     int c = 0;
@@ -2810,10 +2831,17 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
     }
 
 
-    // find beginning of Total Phase Corrections list
-    do {
-        istat = fscanf(fp_in, "%s", label);
-    } while (istat != EOF && strstr(label, "Total") == NULL);
+    if (cdatatype == 'R') {
+        // find beginning of Average Phase Corrections list
+        do {
+            istat = fscanf(fp_in, "%s", label);
+        } while (istat != EOF && strstr(label, "Average") == NULL);
+    } else {
+        // find beginning of Total Phase Corrections list
+        do {
+            istat = fscanf(fp_in, "%s", label);
+        } while (istat != EOF && strstr(label, "Total") == NULL);
+    }
 
 
     /* read residuals */
@@ -2837,6 +2865,7 @@ int ConvertResids2MapGMT(char* fn_nlloc_stat, char* phaseID, FILE* fp_out,
                 break;
             //printf("%s %s %d %lf\n", staName, phase, nresid, resid);
 
+            //printf("resid: <%s> <%s> ==? <%s>\n", staName, phase, phaseID);
             if ((staloc = findStaLoc(staName, staList, nstations)) != NULL) {
                 //printf("resid: %s %s ==? %s\n", staName, phase, phaseID);
                 if (nresid >= min_num_readings && strstr(phaseID, phase) != NULL) {

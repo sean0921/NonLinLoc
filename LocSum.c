@@ -135,9 +135,10 @@ int SumLocations(int argc, char** argv) {
     char fn_grid_size[FILENAME_MAX];
     char fn_scatter[FILENAME_MAX];
     char fn_hyp_scat_out[FILENAME_MAX];
+    char fn_hyp_sum_out[FILENAME_MAX];
     char fn_root_out[FILENAME_MAX], fn_hypos_in[FILENAME_MAX],
             fn_scat_out[FILENAME_MAX];
-    FILE *fp_hypo, *fp_dummy, *fp_hyp_scat_out, *fp_scat_out,
+    FILE *fp_hypo, *fp_dummy, *fp_hyp_sum_out, *fp_hyp_scat_out, *fp_scat_out,
             *fp_scat_in, *fp_grid, *fp_hdr;
     float fdata[4], probmax = -VERY_LARGE_FLOAT;
 
@@ -252,11 +253,19 @@ int SumLocations(int argc, char** argv) {
 
 
 
+    /* open ascii hypocenter sum file */
+
+    sprintf(fn_hyp_sum_out, "%s.sum.hyp", fn_root_out);
+    if ((fp_hyp_sum_out = fopen(fn_hyp_sum_out, "w")) == NULL) {
+        nll_puterr("ERROR: opening hypocenter sum output file.");
+        return (-1);
+    }
+
     /* open ascii hypocenter/scatter file */
 
     sprintf(fn_hyp_scat_out, "%s.hyp", fn_root_out);
     if ((fp_hyp_scat_out = fopen(fn_hyp_scat_out, "w")) == NULL) {
-        nll_puterr("ERROR: opening scatter ascii output file.");
+        nll_puterr("ERROR: opening hypocenter/scatter ascii output file.");
         return (-1);
     }
 
@@ -367,6 +376,7 @@ int SumLocations(int argc, char** argv) {
 
             PhaseFormat = FORMAT_PHASE_2; // 20110105 AJL - to allow long station names
             WriteLocation(fp_hyp_scat_out, &Hypo, Arrival, NumArrivals, fn_hyp_scat_out, 1, 0, 0, &locgrid, 0);
+            WriteLocation(fp_hyp_sum_out, &Hypo, Arrival, NumArrivals, fn_hyp_sum_out, 0, 1, 0, &locgrid, 0);   // 20181017 AJL - added
 
             nLocWritten++;
 
@@ -456,6 +466,7 @@ int SumLocations(int argc, char** argv) {
 
     fclose(fp_scat_out);
     fclose(fp_hyp_scat_out);
+    fclose(fp_hyp_sum_out);
 
     /* write message */
     fprintf(stdout,

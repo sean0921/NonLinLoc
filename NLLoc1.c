@@ -101,7 +101,7 @@ int NLLoc
     int maxArrExceeded = 0;
     int n_file_root_count = 1;
     char fn_root_out[FILENAME_MAX], fname[FILENAME_MAX], fn_root_out_last[FILENAME_MAX];
-    char sys_command[MAXLINE_LONG];
+    char sys_command[2*FILENAME_MAX];
     char *chr;
     FILE *fp_obs = NULL, *fpio;
 
@@ -377,6 +377,11 @@ int NLLoc
                 nll_putmsg(1, MsgStr);
             }
 
+            // initialize hypo fields that may be modified when reading observations
+            Hypocenter.amp_mag = MAGNITUDE_NULL;
+            Hypocenter.num_amp_mag = 0;
+            Hypocenter.dur_mag = MAGNITUDE_NULL;
+            Hypocenter.num_dur_mag = 0;
 
             /* read next set of observations */
 

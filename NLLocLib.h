@@ -447,7 +447,7 @@ StaStatNode *InstallStaStatInTable(int, char*, char*, int, double,
 int FreeStaStatTable(int ntable);
 int WriteStaStatTable(int, FILE *, double, int, double,
         double, double, double, double, double, double, int);
-void UpdateStaStat(int, ArrivalDesc *, int, double, double, double);
+void UpdateStaStat(int, ArrivalDesc *, int, double, double, double, double );
 
 /** end of hashtable routines */
 /*------------------------------------------------------------*/
@@ -480,7 +480,7 @@ int GetNLLoc_Method(char*);
 int GetNLLoc_SearchType(char*);
 int GetNLLoc_FixOriginTime(char*);
 int GetObservations(FILE*, char*, char*, ArrivalDesc*, int*, int*, int*, int, HypoDesc*, int*, int*, int);
-int GetNextObs(FILE*, ArrivalDesc *, char*, int);
+int GetNextObs(HypoDesc* phypo, FILE*, ArrivalDesc *, char*, int);
 int IsGoodDate(int, int, int);
 int ReadArrivalSheets(int, ArrivalDesc*, double);
 int IsSameArrival(ArrivalDesc *, int, int, char *);

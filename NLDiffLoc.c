@@ -54,6 +54,7 @@ e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 
+#include <sys/stat.h>
 
 
 #include "GridLib.h"
@@ -69,6 +70,17 @@ e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 
+#ifndef DEG2RAD
+#define DEG2RAD (M_PI / 180.0)
+#endif
+
+
+
+#ifndef WIN32
+#include <signal.h>
+static void term_handler(int sig);
+#endif
+
 
 /*------------------------------------------------------------*/
 /* globals  */
@@ -79,10 +91,16 @@ EXTERN_TXT int NumHypocenterFree;
 #define  MAX_NUM_DIFF_HYPOCENTERS 1000
 EXTERN_TXT HypoDesc DiffHypocenters[MAX_NUM_DIFF_HYPOCENTERS];
 EXTERN_TXT int NumHypocenters;
-EXTERN_TXT double xcorr_uncertainty;
-EXTERN_TXT double cat_uncertainty;
+EXTERN_TXT double xcorr_uncertainty_P;
+EXTERN_TXT double cat_uncertainty_P;
+EXTERN_TXT double xcorr_uncertainty_S;
+EXTERN_TXT double cat_uncertainty_S;
 
 
+#define TEST_WIEGHT_LIKE_BY_MISFIT
+EXTERN_TXT double hypo_likelyhood_best = -1.0;
+EXTERN_TXT double hypo_misfit_best = -1.0;
+EXTERN_TXT int iHypo_hypo_likelyhood_best = -1;
 
 /*------------------------------------------------------------*/
 /* function declarations  */
@@ -96,6 +114,8 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
         ArrivalDesc *arrival,
         GridDesc* ptgrid, GaussLocParams* gauss_par,
         WalkParams* pMetrop, float* fdata);
+int clip(double *px, double *py, double *pz,
+        double xmin, double xmax, double ymin, double ymax, double zmin, double zmax);
 int DiffLocGetNextMetropolisSample(WalkParams* pMetrop, double dx, double xmin, double xmax,
         double ymin, double ymax, double zmin, double zmax,
         double* pxval, double* pyval, double* pzval, double* ptval);
@@ -112,9 +132,27 @@ double DiffLocCalcSolutionQuality_LN_NORM(double norm,
 double getTravelTimeDiff(ArrivalDesc* arrival, int narr, Vect3D hypo1, Vect3D hypo2);
 int DiffLocSaveBestLocation(int num_arr_total, int num_arr_loc, ArrivalDesc *arrival,
         GridDesc* ptgrid, GaussLocParams* gauss_par, int nHypo, int iGridType);
-int DiffLocMetropolisTest(double value_last, double value_new, double exp_last, double exp_new);
+int DiffLocMetropolisTest(double value_last, double value_new, double exp_last, double exp_new, int reverse_comparison);
 int SaveDiffTimeLinks(int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalDesc* arrival, FILE * fp_out);
 int SaveHypoDDRes(int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalDesc* arrival, FILE* fp_out);
+
+
+
+int requested_terminate = 0;
+#ifndef WIN32
+
+/** *************************************************************************
+ * term_handler:
+ * Signal handler routine.
+ ************************************************************************* **/
+static void term_handler(int sig) {
+
+    requested_terminate = 1;
+
+}
+#endif
+
+
 
 /*** program to perform global search differential event locations */
 
@@ -142,6 +180,23 @@ int main(int argc, char *argv[]) {
     FILE *fp_obs, *fp_out;
 
     char *ppath;
+
+#ifndef WIN32
+    // Signal handling, use POSIX calls with standardized semantics
+    struct sigaction sa;
+
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = SA_RESTART;
+
+    sa.sa_handler = term_handler;
+    sigaction(SIGINT, &sa, NULL);
+    sigaction(SIGQUIT, &sa, NULL);
+    sigaction(SIGTERM, &sa, NULL);
+
+    sa.sa_handler = SIG_IGN;
+    sigaction(SIGHUP, &sa, NULL);
+    sigaction(SIGPIPE, &sa, NULL);
+#endif
 
 
 
@@ -204,6 +259,10 @@ int main(int argc, char *argv[]) {
     // GLOBAL
     NumSources = 0;
 
+    // 20180619
+    Quality2Error[0] = Quality2Error[1] = Quality2Error[2] = Quality2Error[3] = -1.0;
+
+
     /* open control file */
     strcpy(fn_control, argv[1]);
     if ((fp_control = fopen(fn_control, "r")) == NULL) {
@@ -232,10 +291,13 @@ int main(int argc, char *argv[]) {
     // get path to output files
     strcpy(f_outpath, fn_path_output);
     if ((ppath = strrchr(f_outpath, '/')) != NULL
-            || (ppath = strrchr(f_outpath, '\\')) != NULL)
+            || (ppath = strrchr(f_outpath, '\\')) != NULL) {
         *(ppath + 1) = '\0';
-    else
+        // make sure output directory exists
+        mkdir(f_outpath, 0755);
+    } else {
         strcpy(f_outpath, "");
+    }
 
 
     // copy control file to output directory
@@ -261,16 +323,36 @@ int main(int argc, char *argv[]) {
         test_rand_int();
 
     /* set uncertainty weight */
-    xcorr_uncertainty = 0.01;
+    // xcorr P
+    xcorr_uncertainty_P = 0.01;
     if (Quality2Error[0] < SMALL_DOUBLE || Quality2Error[0] > 1000.0)
-        nll_puterr("WARNING: invalid LOCQUAL2ERR value, setting xcorr error to 0.01 sec");
+        nll_puterr("WARNING: invalid LOCQUAL2ERR[0] value, setting xcorr P error to 0.01 sec");
     else
-        xcorr_uncertainty = Quality2Error[0];
-    cat_uncertainty = 0.05;
+        xcorr_uncertainty_P = Quality2Error[0];
+    //xcorr S
+    xcorr_uncertainty_S = xcorr_uncertainty_P;
+    if (Quality2Error[2] < SMALL_DOUBLE || Quality2Error[2] > 1000.0)
+        nll_puterr("INFO: invalid or missing LOCQUAL2ERR[2] value, setting xcorr S error = xcorr P error");
+    else
+        xcorr_uncertainty_S = Quality2Error[2];
+    // catalog P
+    cat_uncertainty_P = 0.05;
     if (Quality2Error[1] < SMALL_DOUBLE || Quality2Error[1] > 1000.0)
-        nll_puterr("WARNING: invalid LOCQUAL2ERR value, setting cat error to 0.05 sec");
+        nll_puterr("WARNING: invalid LOCQUAL2ERR[1] value, setting cat P error to 0.05 sec");
     else
-        cat_uncertainty = Quality2Error[1];
+        cat_uncertainty_P = Quality2Error[1];
+    // catalog S
+    cat_uncertainty_S = cat_uncertainty_P;
+    if (Quality2Error[3] < SMALL_DOUBLE || Quality2Error[3] > 1000.0)
+        nll_puterr("INFO: invalid or missing LOCQUAL2ERR[3] value, setting cat S error = cat P error");
+    else
+        cat_uncertainty_S = Quality2Error[3];
+
+
+#ifdef TEST_WIEGHT_LIKE_BY_MISFIT
+    sprintf(MsgStr, "WARNING: TEST_WIEGHT_LIKE_BY_MISFIT is active - new, non-standard procedure!!!!!!");
+    nll_putmsg(1, MsgStr);
+#endif
 
 
     /* read each observation file */
@@ -342,6 +424,10 @@ int main(int argc, char *argv[]) {
 
     }
 
+    sprintf(MsgStr, "GeometryMode == MODE_GLOBAL (%d)", GeometryMode == MODE_GLOBAL);
+    nll_putmsg(1, MsgStr);
+
+
     iLocated = 0;
 
     /* set number of arrivals to be used in location */
@@ -352,8 +438,8 @@ int main(int argc, char *argv[]) {
 
     nll_putmsg(2, "");
     sprintf(MsgStr,
-            "... %d observations read, %d will be used for location (%s).",
-            NumArrivals + numArrivalsReject, NumArrivalsLocation - numArrivalsIgnore,
+            "... %d observations read, %d (%d S) will be used for location (%s).",
+            NumArrivals + numArrivalsReject, NumArrivalsLocation - numArrivalsIgnore, numSArrivalsLocation,
             fn_path_output);
     nll_putmsg(1, MsgStr);
 
@@ -395,6 +481,24 @@ int main(int argc, char *argv[]) {
 
 
     /* process arrivals */
+
+    for (narr = 0; narr < NumArrivals; narr++) {
+        if (IsPhaseID(Arrival[narr].phase, "P")) {
+            if (Arrival[narr].xcorr_flag) {
+                Arrival[narr].error = xcorr_uncertainty_P;
+            } else {
+                Arrival[narr].error = cat_uncertainty_P;
+            }
+        } else {
+            if (Arrival[narr].xcorr_flag) {
+                Arrival[narr].error = xcorr_uncertainty_S;
+            } else {
+                Arrival[narr].error = cat_uncertainty_S;
+
+            }
+        }
+
+    }
 
     /* add stations to station list */
 
@@ -485,9 +589,9 @@ int main(int argc, char *argv[]) {
 
     /* perform differential location */
 
-            sprintf(MsgStr,
-                    "Locating... (Files open: Tot:%d Buf:%d Hdr:%d  Alloc: %d  3DMem: used:%d/avail:%d/load:%d) ...",
-                    NumFilesOpen, NumGridBufFilesOpen, NumGridHdrFilesOpen, NumAllocations, Num3DGridReadToMemory, GridMemListSize, GridMemListTotalNumElementsAdded);
+    sprintf(MsgStr,
+            "Locating... (Files open: Tot:%d Buf:%d Hdr:%d  Alloc: %d  3DMem: used:%d/avail:%d/load:%d) ...",
+            NumFilesOpen, NumGridBufFilesOpen, NumGridHdrFilesOpen, NumAllocations, Num3DGridReadToMemory, GridMemListSize, GridMemListTotalNumElementsAdded);
     nll_putmsg(1, MsgStr);
 
     ngrid = 0;
@@ -535,10 +639,12 @@ cleanup:
     for (narr = 0; narr < NumArrivalsLocation; narr++) {
         //printf("DEBUG: narr %d %s  &(Arrival[narr].sheetdesc) %lx  &(.gdesc) %lx  .n_time_grid %d  .n_companion %d\n",
         //        narr, Arrival[narr].label, &(Arrival[narr].sheetdesc), &(Arrival[narr].gdesc), Arrival[narr].n_time_grid, Arrival[narr].n_companion);
-        DestroyGridArray(&(Arrival[narr].sheetdesc));
-        FreeGrid(&(Arrival[narr].sheetdesc));
-        NLL_DestroyGridArray(&(Arrival[narr].gdesc));
-        NLL_FreeGrid(&(Arrival[narr].gdesc));
+        if (Arrival[narr].n_companion < 0 && Arrival[narr].n_time_grid < 0 && !Arrival[narr].flag_ignore) { // 20170207 AJL - bug fix
+            DestroyGridArray(&(Arrival[narr].sheetdesc));
+            FreeGrid(&(Arrival[narr].sheetdesc));
+            NLL_DestroyGridArray(&(Arrival[narr].gdesc));
+            NLL_FreeGrid(&(Arrival[narr].gdesc));
+        }
     }
     NLL_FreeGridMemory();
 
@@ -639,7 +745,7 @@ cleanup:
 
 /*** function to read input file */
 
-int ReadNLDiffLoc_Input(FILE* fp_input) {
+int ReadNLDiffLoc_Input(FILE * fp_input) {
     int istat, iscan;
     char param[MAXLINE] = "\0";
     char line[MAXLINE_LONG], *fgets_return;
@@ -647,9 +753,6 @@ int ReadNLDiffLoc_Input(FILE* fp_input) {
     int flag_hypofile = 0, flag_search = 0;
     int flag_include = 1;
 
-
-
-    /* read each input line */
 
     /* read each input line */
 
@@ -719,8 +822,6 @@ int ReadNLDiffLoc_Input(FILE* fp_input) {
     if (!flag_search)
         nll_puterr("ERROR: reading i/o file (DLOC_SEARCH) params.");
 
-
-
     return (flag_hypofile && flag_search);
 
 }
@@ -737,6 +838,7 @@ int GetNLDiffLoc_HypFile(char* line1) {
     nll_putmsg(2, MsgStr);
 
     if (istat != 4)
+
         return (-1);
 
     return (0);
@@ -786,6 +888,7 @@ int GetNLDiffLoc_SearchType(char* line1) {
 
         if (istat < 7)
             return (-1);
+
         if (istat == 7) // MetStepMax not initialized
             MetStepMax = DBL_MAX;
 
@@ -815,51 +918,74 @@ int GetHypocenters(char* fn_hypos, char* ftype_hypos, HypoDesc* Hypos, int max_n
         NumFilesOpen++;
     }
 
-    if (strcmp(ftype_hypos, "NLLOC_SUM") == 0) {
 
-        while (nHypos < max_num_hypos) {
+    while (nHypos < max_num_hypos) {
+        if (strcmp(ftype_hypos, "NLLOC_SUM") == 0) {
             istat = GetHypLoc(pHypoFile, fn_hypos, &Hypos[nHypos],
                     NULL, NULL, 0, NULL, -1);
             if (istat < 0)
                 break;
-            // initialize some hypo fields
-            latlon2rect(0, Hypos[nHypos].dlat, Hypos[nHypos].dlong, &(Hypos[nHypos].x), &(Hypos[nHypos].y));
-            Hypos[nHypos].z = Hypos[nHypos].depth;
-            Hypos[nHypos].dotime = 0.0;
-
-            Hypos[nHypos].flag_ignore = 1;
-            // increment index
-            nHypos++;
-        }
-        if (nHypos >= max_num_hypos) {
-            sprintf(MsgStr, "WARNING: maximum number of hypocenters exceeded: %d", max_num_hypos);
-            nll_putmsg(1, MsgStr);
-        }
-
-    } else if (strcmp(ftype_hypos, "HYPODD_INIT") == 0) {
-
-        while (nHypos < max_num_hypos) {
+        } else if (strcmp(ftype_hypos, "HYPODD_INIT") == 0) {
             istat = ReadHypoDDInitHypo(pHypoFile, &Hypos[nHypos], 0);
             if (istat < 0)
                 break;
-            // initialize some hypo fields
-            Hypos[nHypos].flag_ignore = 1;
-            // increment index
-            nHypos++;
+        } else {
+
+            fclose(pHypoFile);
+            NumFilesOpen--;
+            nll_puterr2("ERROR: unrecognized hypocenters format: ", ftype_hypos);
+            return (-1);
+
         }
-        if (nHypos >= max_num_hypos) {
-            sprintf(MsgStr, "WARNING: maximum number of hypocenters exceeded: %d", max_num_hypos);
-            nll_putmsg(1, MsgStr);
+        // initialize some hypo fields
+        latlon2rect(0, Hypos[nHypos].dlat, Hypos[nHypos].dlong, &(Hypos[nHypos].x), &(Hypos[nHypos].y));
+        Hypos[nHypos].z = Hypos[nHypos].depth;
+        Hypos[nHypos].dotime = 0.0;
+#define TEST_FIXING_ALL_HYPO_TO_FIRST 0
+#define TEST_PERTURB_ALL_HYPOS 0
+#define TEST_FIXING_HYPO_DEPTH 1
+        if (TEST_FIXING_ALL_HYPO_TO_FIRST) {
+            sprintf(MsgStr, "WARNING: TEXT_FIXING_ALL_HYPO_TO_FIRST - only use for testing!!!!!!");
+            nll_putmsg(0, MsgStr);
+            Hypos[nHypos].dlat = Hypos[0].dlat;
+            Hypos[nHypos].dlong = Hypos[0].dlong;
+            Hypos[nHypos].depth = Hypos[0].depth;
+            latlon2rect(0, Hypos[nHypos].dlat, Hypos[nHypos].dlong, &(Hypos[nHypos].x), &(Hypos[nHypos].y));
+            Hypos[nHypos].z = Hypos[nHypos].depth;
+            Hypos[nHypos].dotime = 0.0;
+        }
+        if (TEST_PERTURB_ALL_HYPOS) {
+            double ds = 2.0; // km
+            sprintf(MsgStr, "WARNING: TEST_PERTURB_ALL_HYPOS - only use for testing!!!!!!");
+            nll_putmsg(0, MsgStr);
+            Hypos[nHypos].dlat += get_rand_double(-ds * KM2DEG, ds * KM2DEG);
+            Hypos[nHypos].dlong += get_rand_double(-ds * KM2DEG, ds * KM2DEG);
+            Hypos[nHypos].depth += get_rand_double(-ds, ds);
+            latlon2rect(0, Hypos[nHypos].dlat, Hypos[nHypos].dlong, &(Hypos[nHypos].x), &(Hypos[nHypos].y));
+            Hypos[nHypos].z = Hypos[nHypos].depth;
+            Hypos[nHypos].dotime = 0.0;
+        }
+        if (TEST_FIXING_HYPO_DEPTH) {
+            sprintf(MsgStr, "WARNING: TEST_FIXING_HYPO_DEPTH - only use for testing!!!!!!");
+            nll_putmsg(0, MsgStr);
+            // Hypos[nHypos].depth = 17.0;
+            Hypos[nHypos].depth = 0.5;
+            latlon2rect(0, Hypos[nHypos].dlat, Hypos[nHypos].dlong, &(Hypos[nHypos].x), &(Hypos[nHypos].y));
+            Hypos[nHypos].z = Hypos[nHypos].depth;
+            Hypos[nHypos].dotime = 0.0;
         }
 
-    } else {
-
-        fclose(pHypoFile);
-        NumFilesOpen--;
-        nll_puterr2("ERROR: unrecognized hypocenters format: ", ftype_hypos);
-        return (-1);
-
+        // initialize some hypo fields
+        Hypos[nHypos].flag_ignore = 1;
+        // increment index
+        nHypos++;
     }
+    if (nHypos >= max_num_hypos) {
+        sprintf(MsgStr, "WARNING: maximum number of hypocenters exceeded: %d", max_num_hypos);
+        nll_putmsg(1, MsgStr);
+    }
+
+
 
     fclose(pHypoFile);
     NumFilesOpen--;
@@ -868,6 +994,7 @@ int GetHypocenters(char* fn_hypos, char* ftype_hypos, HypoDesc* Hypos, int max_n
     sprintf(MsgStr, "Read %d initial hypocenters.", nHypos);
     nll_putmsg(1, MsgStr);
     if (message_flag > 1) {
+
         for (i = 0; i < nHypos; i++)
             WriteHypoDDInitHypo(stdout, &Hypos[i]);
     }
@@ -1141,7 +1268,7 @@ int LocateDiff(char* fn_obs, char* fn_path_output, int numArrivalsReject) {
                                                     && phypo->nreadings >= NRdgs_Min
                                                     && phypo->gap <= Gap_Max)
                                             UpdateStaStat(0, Arrival, NumArrivals,
-                                                    P_ResidualMax, S_ResidualMax);
+                                                    P_ResidualMax, S_ResidualMax, 1.0);
              */
 
         }
@@ -1206,6 +1333,7 @@ int LocateDiff(char* fn_obs, char* fn_path_output, int numArrivalsReject) {
 
     if (nSamplesTotal < 1) {
         nll_puterr("ERROR: no Metropolis sameples saved.");
+
         return (-1);
     }
 
@@ -1216,10 +1344,163 @@ int LocateDiff(char* fn_obs, char* fn_path_output, int numArrivalsReject) {
 
 }
 
+/*** function to update solution for single hypocenter
+ */
+
+void DiffLocUpdateAfterAccept(double misfit, double value, double dlike, int reverse_comparison, double xval, double yval, double zval, double tval,
+        HypoDesc* phypo, Vect3D *hyp_xyz, double *hyp_dt,
+        int nHypo,
+        double *hyp_value, double *hyp_dlike, double *hyp_dlike_sum, int *hyp_dlike_num_mean,
+        int *pnSamplesTotal, float* fdata) {
+
+    (*pnSamplesTotal)++;
+
+    (phypo->nSamples)++;
+
+    /* check for minimum misfit */
+    // 20180620 AJL
+#define TEST_AUTO_UPDATE_MetStartSave 0
+#if TEST_AUTO_UPDATE_MetStartSave
+    if (phypo->nSamples == MetStartSave || (phypo->nSamples > MetStartSave && misfit <= phypo->misfit)) {
+#else
+    if (misfit <= phypo->misfit) {
+#endif
+        phypo->probmax = dlike;
+        phypo->misfit = misfit;
+        // check for best
+        if (phypo->probmax > hypo_likelyhood_best) {
+            hypo_likelyhood_best = phypo->probmax;
+            hypo_misfit_best = phypo->misfit;
+            iHypo_hypo_likelyhood_best = nHypo;
+        }
+        if (!reverse_comparison) {
+            phypo->x = xval;
+            phypo->y = yval;
+            phypo->z = zval;
+            phypo->dotime = tval;
+        }
+        /*
+                                                for (narr = 0; narr < num_arrivals; narr++)
+                                                        arrival[narr].pred_travel_time_best =
+                                                                arrival[narr].pred_travel_time;
+         */
+    }
+    if (misfit > phypo->grid_misfit_max)
+        phypo->grid_misfit_max = misfit;
+
+    // update sample location
+    if (!reverse_comparison) {
+        hyp_xyz[nHypo].x = xval;
+        hyp_xyz[nHypo].y = yval;
+        hyp_xyz[nHypo].z = zval;
+        hyp_dt[nHypo] = tval;
+    } else {
+        hyp_xyz[nHypo].x = phypo->x;
+        hyp_xyz[nHypo].y = phypo->y;
+        hyp_xyz[nHypo].z = phypo->z;
+        hyp_dt[nHypo] = phypo->dotime;
+    }
+    hyp_value[nHypo] = value;
+    hyp_dlike[nHypo] = dlike;
+    hyp_dlike_sum[nHypo] += dlike;
+    hyp_dlike_num_mean[nHypo]++;
+
+    /* if saving samples */
+    if (phypo->nSamples > MetStartSave && phypo->nSamples % MetSkip == 0) {
+        // save sample to scatter file
+
+        fdata[(phypo->ipos)] = hyp_xyz[nHypo].x;
+        fdata[++(phypo->ipos)] = hyp_xyz[nHypo].y;
+        fdata[++(phypo->ipos)] = hyp_xyz[nHypo].z;
+        fdata[++(phypo->ipos)] = dlike;
+        ++(phypo->ipos);
+        ++(phypo->nScatterSaved);
+    }
+}
+
+/*** function to evaluate solution quality and update for single hypocenter
+ *
+ *  20180615 AJL - added to support common move for all hypocenters
+ */
 
 
+int DiffLocTestHypo(int reverse_comparison, double xval, double yval, double zval, double tval,
+        HypoDesc* phypo, Vect3D *hyp_xyz, double *hyp_dt,
+        int nHypo, int ntry, int maxNumTries, int nAcceptMax, int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalDesc* arrival,
+        double *hyp_value, double *hyp_dlike, double *hyp_dlike_sum, int *hyp_dlike_num_mean,
+        GaussLocParams* gauss_par, int itype, double temperature, double* potime, int isave,
+        int *pnSamplesTotal, float* fdata) {
 
+    double misfit;
+    static Vect3D hypo_test;
 
+    // calc new misfit or prob density
+    hypo_test.x = xval;
+    hypo_test.y = yval;
+    hypo_test.z = zval;
+    int nReject;
+    double value = DiffLocCalcSolutionQuality(hypo_test, tval,
+            nHypo, num_hypos, hypos,
+            num_arrivals, arrival, gauss_par,
+            itype, temperature, &misfit, potime, &nReject, isave);
+    //if (fabs(value) > 1.0)
+    //printf("TP 3 - nHypo  %d value %lf\n", nHypo, value);
+
+    if (nReject) {
+        return (-nReject);
+    }
+
+    double dlike = exp(value);
+
+    // apply Metropolis test
+    //iAccept = MetropolisTest(hyp_dlike[nHypo], dlike);
+    int iAccept = DiffLocMetropolisTest(hyp_value[nHypo], value, hyp_dlike[nHypo], dlike, reverse_comparison);
+
+#ifdef TEST_WIEGHT_LIKE_BY_MISFIT
+    if (!iAccept && ntry == maxNumTries && phypo->nSamples < nAcceptMax / 10) {
+        // accept anyway since previous likelihood may be larger than current due to misfit weighting, especially during early iterations
+        iAccept = 1;
+    }
+#endif
+    /* if not accepted, but at maxNumTries... */
+    /*DD
+                                    if (!iAccept && ntry[nHypo] == maxNumTries) {
+                                            // try accept anyway since may be stuck in a deep minima
+                                            if (numAcceptDeepMinima++ < 5) {
+                                                    iAccept = 1;
+            printf("Max Num Tries: accept deep minima\n");
+                                                    // try reducing step size
+                                                    currentMetStepFact /= 2.0;
+                                                    ntry[nHypo] = 0;
+            printf("            +: step ch: was %lf\n", pMetrop->dx);
+                                            }
+                                    }
+     */
+
+    if (iAccept) {
+        DiffLocUpdateAfterAccept(misfit, value, dlike, reverse_comparison, xval, yval, zval, tval,
+                phypo, hyp_xyz, hyp_dt,
+                nHypo,
+                hyp_value, hyp_dlike, hyp_dlike_sum, hyp_dlike_num_mean,
+                pnSamplesTotal, fdata);
+
+        return (1);
+
+    }
+
+    /*
+    if (message_flag >= 3 && writeMessage || ntry[nHypo] == maxNumTries - 1) {
+                    sprintf(MsgStr,
+    "Metropolis: n %d x %.2lf y %.2lf z %.2lf  dx %.2lf  li %.2le",
+    nSamplesTotal, pMetrop->x, pMetrop->y, pMetrop->z, pMetrop->dx, pMetrop->likelihood);
+                    nll_putmsg(3, MsgStr);
+                    writeMessage = 0;
+    }
+     */
+
+    return (0);
+
+}
 
 
 /*** function to perform Metropolis location */
@@ -1234,7 +1515,7 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
         GridDesc* ptgrid, GaussLocParams* gauss_par,
         WalkParams* pMetrop, float* fdata) {
 
-    int istat, itest;
+    int itest;
     int ntryTotal, nSamplesTotal, nAcceptMax, nAcceptMin;
     long int nGenerated;
     int maxNumTries = MAX_NUM_MET_TRIES;
@@ -1243,12 +1524,10 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
     int iGridType;
     int nReject, numClipped = 0, numGridReject = 0;
     int iBoundary = 0;
-    int iAccept = 0;
     double xval, yval, zval, tval;
     double currentMetStepFact;
 
-    double value, dlike;
-
+    double value;
     double misfit;
 
     double xmin, xmax, ymin, ymax, zmin, zmax;
@@ -1258,18 +1537,17 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
         iFinishedSome = 1;
 
     // DD
-    HypoDesc* phypo;
+    HypoDesc * phypo;
     int nHypo;
     //	char locStatComm[2 * MAXLINE];
-    Vect3D hypo_test;
     int imessage_modulo;
     // working arrays
     double hyp_value[NumHypocenters];
     double hyp_dlike[NumHypocenters];
     double hyp_dlike_sum[NumHypocenters];
     int hyp_dlike_num_mean[NumHypocenters];
-    Vect3D hyp_xyz[NumHypocenters];
-    double hyp_dt[NumHypocenters];
+    Vect3D hyp_test_xyz[NumHypocenters];
+    double hyp_test_dt[NumHypocenters];
     int hyp_fixed[NumHypocenters];
     int hyp_abort[NumHypocenters];
     int ntry[NumHypocenters];
@@ -1277,11 +1555,7 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
 
     char status_msg[MAXLINE_LONG] = "";
     int nLowAcc, iHypo;
-    double like_init_best = -1.0;
-    int iHypo_like_init_best = -1;
     int nHypoActive, nHypoActiveInit;
-
-
 
     // get solution quality at each sample on random walk
 
@@ -1301,12 +1575,12 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
         phypo = DiffHypocenters + nHypo;
         if (phypo->flag_ignore)
             continue;
-        hyp_xyz[nHypo].x = phypo->x;
-        hyp_xyz[nHypo].y = phypo->y;
-        hyp_xyz[nHypo].z = phypo->z;
-        hyp_dt[nHypo] = phypo->dotime;
+        hyp_test_xyz[nHypo].x = phypo->x;
+        hyp_test_xyz[nHypo].y = phypo->y;
+        hyp_test_xyz[nHypo].z = phypo->z;
+        hyp_test_dt[nHypo] = phypo->dotime;
         // init likelihood
-        value = DiffLocCalcSolutionQuality(hyp_xyz[nHypo], hyp_dt[nHypo],
+        value = DiffLocCalcSolutionQuality(hyp_test_xyz[nHypo], hyp_test_dt[nHypo],
                 nHypo, NumHypocenters, DiffHypocenters,
                 num_arr_loc, arrival, gauss_par,
                 iGridType, temperature, &misfit, NULL, &nReject, 0);
@@ -1340,17 +1614,24 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
         else
             printf("\n");
         hyp_abort[nHypo] = 0;
-        // check for best
-        if (phypo->probmax > like_init_best) {
-            like_init_best = phypo->probmax;
-            iHypo_like_init_best = nHypo;
-        }
         // count active
         if (!hyp_fixed[nHypo] && !phypo->flag_ignore)
             nHypoActive++;
     }
     nHypoActiveInit = nHypoActive;
-    printf("<<  like_init_best %e  nHypo %d\n", like_init_best, iHypo_like_init_best);
+
+    // check for best
+    for (nHypo = 0; nHypo < NumHypocenters; nHypo++) {
+        phypo = DiffHypocenters + nHypo;
+        if (phypo->flag_ignore)
+            continue;
+        if (phypo->probmax > hypo_likelyhood_best) {
+            hypo_likelyhood_best = phypo->probmax;
+            hypo_misfit_best = phypo->misfit;
+            iHypo_hypo_likelyhood_best = nHypo;
+        }
+    }
+    printf("<<  like_init_best %e  nHypo %d\n", hypo_likelyhood_best, iHypo_hypo_likelyhood_best);
 
     // set walk limits equal to grid limits
     xmin = ptgrid->origx;
@@ -1374,7 +1655,20 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
     nAcceptMin = 0;
     imessage_modulo = (200001 * NumHypocenters / num_arr_loc);
 
-    while (1) {
+    // 20180615 AJL - add common move for all hypocenters
+    double probCommonMoveAllHypos = 0.0 / (double) NumHypocenters;
+    //double probCommonMoveAllHypos = 0.01 / (double) NumHypocenters;
+    if (probCommonMoveAllHypos > 0.0) {
+        sprintf(MsgStr, "WARNING: common move for all hypocenters is active - new, non-standard procedure!!!!!!");
+        nll_putmsg(1, MsgStr);
+    }
+    int isCommonMoveAllHypos = 0;
+    double xCommonMove, yCommonMove, zCommonMove, tCommonMove;
+    double misfits[NumHypocenters];
+    double values[NumHypocenters];
+
+
+    while (!requested_terminate) {
 
         // set next hypocenter
         itest = 0;
@@ -1399,11 +1693,18 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
             break;
         //printf("TP 1 - nHypo %d\n", nHypo);
 
+        // 20180615 AJL - add common move for all hypocenters
+        // test for common move for all hypocenters if temperature has reached 1.0
+        if (probCommonMoveAllHypos > 0.0) {
+            //if (temperature < 1.00001)          // test only if temperature has reached 1.0
+            isCommonMoveAllHypos = get_rand_double(0.0, 1.0) < probCommonMoveAllHypos;
+        }
+
         // set met params
-        pMetrop->x = hyp_xyz[nHypo].x;
-        pMetrop->y = hyp_xyz[nHypo].y;
-        pMetrop->z = hyp_xyz[nHypo].z;
-        pMetrop->dt = hyp_dt[nHypo];
+        pMetrop->x = hyp_test_xyz[nHypo].x;
+        pMetrop->y = hyp_test_xyz[nHypo].y;
+        pMetrop->z = hyp_test_xyz[nHypo].z;
+        pMetrop->dt = hyp_test_dt[nHypo];
 
         // adjust met step as a function of last ntry for this hypo
         if (ntry[nHypo] <= TARGET_NUM_MET_TRIES && metrop_dx[nHypo] < MetStepMax) {
@@ -1415,7 +1716,7 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
             /* 20170221 AJL - modified to include temperature in test, to keep step size large at beginning of search
             if (metrop_dx[nHypo] < pMetrop->dx)
                 metrop_dx[nHypo] = pMetrop->dx;
-            */
+             */
             if (metrop_dx[nHypo] < temperature * pMetrop->dx)
                 metrop_dx[nHypo] = temperature * pMetrop->dx;
             //printf("DEBUG: DECREASE: metrop_dx[nHypo] %f\n", metrop_dx[nHypo]);
@@ -1429,7 +1730,8 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
             // failure to accept sample after maxNumTries
             if (ntry[nHypo] >= maxNumTries) {
                 if (iFinishedSome) {
-                    if (phypo->nSamples < (MetNumSamples * 9 / 10)) {
+                    // 20180516 AJL  if (phypo->nSamples < (MetNumSamples * 9 / 10)) {
+                    if (phypo->nSamples < ((MetNumSamples * 6) / 10)) {
                         if (message_flag > 0)
                             fprintf(stdout, "\n");
                         sprintf(MsgStr,
@@ -1485,15 +1787,19 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
                 temperature = 1.0;
 
 
-            istat = DiffLocGetNextMetropolisSample(pMetrop, temperature * metrop_dx[nHypo],
+            double step = temperature * metrop_dx[nHypo];
+            //if (isCommonMoveAllHypos) {
+            //    step = metrop_dx[nHypo];
+            //}
+            int iClip = DiffLocGetNextMetropolisSample(pMetrop, step,
                     xmin, xmax, ymin, ymax,
                     zmin, zmax, &xval, &yval, &zval, &tval);
-            if (istat > 0) {
-                phypo->numClipped += istat;
-                numClipped += istat;
+            if (iClip > 0) {
+                phypo->numClipped += iClip;
+                numClipped += iClip;
                 continue;
             }
-            //printf("TP 2 - istat %d\n", istat);
+            //printf("TP 2 - iClip %d\n", iClip);
 
             // re-calculate misfit for current sample, since other events may have moved
             /* seems to make little difference in hypoDD_example1 test,  but takes 2x time
@@ -1504,121 +1810,137 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
             hyp_dlike[nHypo] = exp(hyp_value[nHypo]);
              */
 
-            // calc new misfit or prob density
-            hypo_test.x = xval;
-            hypo_test.y = yval;
-            hypo_test.z = zval;
-            value = DiffLocCalcSolutionQuality(hypo_test, tval,
-                    nHypo, NumHypocenters, DiffHypocenters,
-                    num_arr_loc, arrival, gauss_par,
-                    iGridType, temperature, &misfit, NULL, &nReject, 0);
-            //if (fabs(value) > 1.0)
-            //printf("TP 3 - nHypo  %d value %lf\n", nHypo, value);
+            int iAccept = 0;
 
-            if (nReject) {
-
-                numGridReject++;
-                misfit = HUGE_MISFIT;
-                dlike = 0.0;
-                continue;
+            if (isCommonMoveAllHypos) {
+                // determine common move from set hypocenter move
+                xCommonMove = xval - hyp_test_xyz[nHypo].x;
+                yCommonMove = yval - hyp_test_xyz[nHypo].y;
+                zCommonMove = zval - hyp_test_xyz[nHypo].z;
+                tCommonMove = tval - hyp_test_dt[nHypo];
+                // get solution quality before shift and provisional shift of all hypocenters
+                double like_total_before_shift = 0.0;
+                double like_total_after_shift = 0.0;
+                int iclipped = 0;
+                for (int nhyp = 0; nhyp < NumHypocenters; nhyp++) {
+                    HypoDesc* phyp_check = DiffHypocenters + nhyp;
+                    if (hyp_fixed[nhyp] || phyp_check->flag_ignore || hyp_abort[nhyp] || phyp_check->nSamples > MetNumSamples) {
+                        continue;
+                    }
+                    hyp_test_xyz[nhyp].x = phyp_check->x;
+                    hyp_test_xyz[nhyp].y = phyp_check->y;
+                    hyp_test_xyz[nhyp].z = phyp_check->z;
+                    hyp_test_dt[nhyp] = phyp_check->dotime;
+                    value = DiffLocCalcSolutionQuality(hyp_test_xyz[nhyp], hyp_test_dt[nhyp],
+                            nhyp, NumHypocenters, DiffHypocenters,
+                            num_arr_loc, arrival, gauss_par,
+                            iGridType, temperature, &misfit, NULL, &nReject, 0);
+                    like_total_before_shift += exp(value);
+                    double x = phyp_check->x + xCommonMove;
+                    double y = phyp_check->y + yCommonMove;
+                    double z = phyp_check->z + zCommonMove;
+                    int iClip = clip(&x, &y, &z, xmin, xmax, ymin, ymax, zmin, zmax);
+                    if (iClip > 0) {
+                        iclipped = 1;
+                    }
+                    phyp_check->x = x;
+                    phyp_check->y = y;
+                    phyp_check->z = z;
+                    phyp_check->dotime += tCommonMove;
+                    hyp_test_xyz[nhyp].x = phyp_check->x;
+                    hyp_test_xyz[nhyp].y = phyp_check->y;
+                    hyp_test_xyz[nhyp].z = phyp_check->z;
+                    hyp_test_dt[nhyp] = phyp_check->dotime;
+                    if (!iclipped) {
+                        values[nhyp] = DiffLocCalcSolutionQuality(hyp_test_xyz[nhyp], hyp_test_dt[nhyp],
+                                nhyp, NumHypocenters, DiffHypocenters,
+                                num_arr_loc, arrival, gauss_par,
+                                iGridType, temperature, &misfit, NULL, &nReject, 0);
+                        misfits[nhyp] = misfit;
+                        like_total_after_shift += exp(values[nhyp]);
+                    }
+                }
+                int iAccept;
+                // check if any hypocenters clipped or stopped
+                if (iclipped) {
+                    iAccept = 0;
+                } else {
+                    iAccept = DiffLocMetropolisTest(like_total_before_shift, like_total_after_shift,
+                            like_total_before_shift, like_total_after_shift, 0);
+                }
+                if (iAccept) {
+                    double dlike = 0.0;
+                    for (int nhyp = 0; nhyp < NumHypocenters; nhyp++) {
+                        HypoDesc* phyp_check = DiffHypocenters + nhyp;
+                        if (hyp_fixed[nhyp] || phyp_check->flag_ignore || hyp_abort[nhyp] || phyp_check->nSamples > MetNumSamples) {
+                            continue;
+                        }
+                        DiffLocUpdateAfterAccept(misfits[nhyp], values[nhyp], dlike, 0,
+                                phyp_check->x, phyp_check->y, phyp_check->z, phyp_check->dotime,
+                                phyp_check, hyp_test_xyz, hyp_test_dt,
+                                nhyp,
+                                hyp_value, hyp_dlike, hyp_dlike_sum, hyp_dlike_num_mean,
+                                &nSamplesTotal, fdata);
+                        if (phyp_check->nSamples == MetNumSamples) {
+                            iFinishedSome = 1;
+                            nHypoActive--;
+                        }
+                        if (phyp_check->nSamples > nAcceptMax) {
+                            nAcceptMax = phyp_check->nSamples;
+                        }
+                    }
+                } else { // rejected
+                    // undo provisional shift of all hypocenters for rejected
+                    for (int nhyp = 0; nhyp < NumHypocenters; nhyp++) {
+                        HypoDesc* phyp_check = DiffHypocenters + nhyp;
+                        if (hyp_fixed[nhyp] || phyp_check->flag_ignore || hyp_abort[nhyp] || phyp_check->nSamples > MetNumSamples) {
+                            continue;
+                        }
+                        phyp_check->x -= xCommonMove;
+                        phyp_check->y -= yCommonMove;
+                        phyp_check->z -= zCommonMove;
+                        phyp_check->dotime -= tCommonMove;
+                    }
+                }
+                if (iclipped) {
+                    continue;
+                }
 
             } else {
-
-                dlike = exp(value);
-
-                /* apply Metropolis test */
-                //iAccept = MetropolisTest(hyp_dlike[nHypo], dlike);
-                iAccept = DiffLocMetropolisTest(hyp_value[nHypo], value, hyp_dlike[nHypo], dlike);
-
-                /* if not accepted, but at maxNumTries... */
-                /*DD
-                                                if (!iAccept && ntry[nHypo] == maxNumTries) {
-                                                        // try accept anyway since may be stuck in a deep minima
-                                                        if (numAcceptDeepMinima++ < 5) {
-                                                                iAccept = 1;
-                        printf("Max Num Tries: accept deep minima\n");
-                                                                // try reducing step size
-                                                                currentMetStepFact /= 2.0;
-                                                                ntry[nHypo] = 0;
-                        printf("            +: step ch: was %lf\n", pMetrop->dx);
-                                                        }
-                                                }
-                 */
-
-                if (iAccept) {
-
-                    nSamplesTotal++;
-                    if (nSamplesTotal % 1000 == 1)
-                        writeMessage = 1;
-
-                    (phypo->nSamples)++;
+                iAccept = DiffLocTestHypo(0, xval, yval, zval, tval,
+                        phypo, hyp_test_xyz, hyp_test_dt,
+                        nHypo, ntry[nHypo], maxNumTries, nAcceptMax, NumHypocenters, DiffHypocenters, num_arr_loc, arrival,
+                        hyp_value, hyp_dlike, hyp_dlike_sum, hyp_dlike_num_mean,
+                        gauss_par, iGridType, temperature, NULL, 0,
+                        &nSamplesTotal, fdata);
+                if (iAccept > 0) { // accepted
                     if (phypo->nSamples == MetNumSamples) {
                         iFinishedSome = 1;
                         nHypoActive--;
                     }
-                    if (phypo->nSamples > nAcceptMax)
+                    if (phypo->nSamples > nAcceptMax) {
                         nAcceptMax = phypo->nSamples;
-
-                    /* check for minimum misfit */
-                    if (misfit <= phypo->misfit) {
-                        phypo->probmax = dlike;
-                        phypo->misfit = misfit;
-                        phypo->x = xval;
-                        phypo->y = yval;
-                        phypo->z = zval;
-                        phypo->dotime = tval;
-                        /*
-                                                                for (narr = 0; narr < num_arr_loc; narr++)
-                                                                        arrival[narr].pred_travel_time_best =
-                                                                                arrival[narr].pred_travel_time;
-                         */
                     }
-                    if (misfit > phypo->grid_misfit_max)
-                        phypo->grid_misfit_max = misfit;
-
-                    /* update sample location */
-                    hyp_xyz[nHypo].x = xval;
-                    hyp_xyz[nHypo].y = yval;
-                    hyp_xyz[nHypo].z = zval;
-                    hyp_dt[nHypo] = tval;
-                    hyp_value[nHypo] = value;
-                    hyp_dlike[nHypo] = dlike;
-                    hyp_dlike_sum[nHypo] += dlike;
-                    hyp_dlike_num_mean[nHypo]++;
-
-                    /* if saving samples */
-                    if (phypo->nSamples > MetStartSave && phypo->nSamples % MetSkip == 0) {
-
-                        /* save sample to scatter file */
-                        fdata[(phypo->ipos)] = xval;
-                        fdata[++(phypo->ipos)] = yval;
-                        fdata[++(phypo->ipos)] = zval;
-                        fdata[++(phypo->ipos)] = dlike;
-                        ++(phypo->ipos);
-                        ++(phypo->nScatterSaved);
-                    }
-
-                    break;
-
                 }
+            }
 
-                /*
-                if (message_flag >= 3 && writeMessage || ntry[nHypo] == maxNumTries - 1) {
-                                sprintf(MsgStr,
-                "Metropolis: n %d x %.2lf y %.2lf z %.2lf  dx %.2lf  li %.2le",
-                nSamplesTotal, pMetrop->x, pMetrop->y, pMetrop->z, pMetrop->dx, pMetrop->likelihood);
-                                nll_putmsg(3, MsgStr);
-                                writeMessage = 0;
-                }
-                 */
 
+            if (iAccept > 0) { // accepted
+                if (nSamplesTotal % 1000 == 1)
+                    writeMessage = 1;
+                // no more try's if accepted
+                break;
+            } else if (iAccept < 0) { // rejected
+                numGridReject++;
+                //misfit = HUGE_MISFIT;
+                //dlike = 0.0;
             }
 
         }
+
         ntryTotal += ntry[nHypo];
 
     }
-
 
 
 
@@ -1652,6 +1974,7 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
         // maximum like hypo on edge of grid
         if ((iBoundary = isOnGridBoundary(phypo->x, phypo->y, phypo->z,
                 ptgrid, pMetrop->dx, pMetrop->dx, 0))) {
+
             sprintf(MsgStr,
                     "WARNING: max prob location on grid boundary %d, rejecting location.", iBoundary);
             nll_putmsg(1, MsgStr);
@@ -1676,6 +1999,47 @@ int DiffLocMetropolis(int num_arr_total, int num_arr_loc,
 }
 
 
+
+
+/*** function to do crude clip against grid boundary */
+
+/* clip needed because travel time lookup requires that
+                location is within initial search grid */
+
+int clip(double *px, double *py, double *pz,
+        double xmin, double xmax, double ymin, double ymax, double zmin, double zmax) {
+
+    int iClip = 0;
+
+    /* crude clip against grid boundary */
+    /* clip needed because travel time lookup requires that
+                    location is within initial search grid */
+    if (*px < xmin) {
+        *px = xmin;
+        iClip = 1;
+    } else if (*px > xmax) {
+        *px = xmax;
+        iClip = 1;
+    }
+    if (*py < ymin) {
+        *py = ymin;
+        iClip = 1;
+    } else if (*py > ymax) {
+        *py = ymax;
+        iClip = 1;
+    }
+    if (*pz < zmin) {
+        *pz = zmin;
+        iClip = 1;
+    } else if (*pz > zmax) {
+
+        *pz = zmax;
+        iClip = 1;
+    }
+
+    return (iClip);
+
+}
 
 
 /*** function to create next metropolis sample */
@@ -1703,38 +2067,29 @@ int DiffLocGetNextMetropolisSample(WalkParams* pMetrop, double dx, double xmin, 
 
     norm = dx / sqrt(valsum);
 
-    /* add step to last sample location */
+    // set xy factor if GLOBAL
+    double x_global_factor = 1.0;
+    double y_global_factor = 1.0;
+    if (GeometryMode == MODE_GLOBAL) {
+        double ycos = cos(pMetrop->y * DEG2RAD);
+        if (ycos > FLT_MIN) {
+            x_global_factor = KM2DEG / ycos;
+        }
+        y_global_factor = KM2DEG;
+    }
 
-    x = pMetrop->x + norm * valx;
-    y = pMetrop->y + norm * valy;
+    /* add step to last sample location */
+    x = pMetrop->x + x_global_factor * norm * valx;
+    y = pMetrop->y + y_global_factor * norm * valy;
     z = pMetrop->z + norm * valz;
     t = pMetrop->dt + norm * valt / pMetrop->velocity;
+
 
 
     /* crude clip against grid boundary */
     /* clip needed because travel time lookup requires that
                     location is within initial search grid */
-    if (x < xmin) {
-        x = xmin;
-        iClip = 1;
-    } else if (x > xmax) {
-        x = xmax;
-        iClip = 1;
-    }
-    if (y < ymin) {
-        y = ymin;
-        iClip = 1;
-    } else if (y > ymax) {
-        y = ymax;
-        iClip = 1;
-    }
-    if (z < zmin) {
-        z = zmin;
-        iClip = 1;
-    } else if (z > zmax) {
-        z = zmax;
-        iClip = 1;
-    }
+    iClip = clip(&x, &y, &z, xmin, xmax, ymin, ymax, zmin, zmax);
 
 
     /* update sample location */
@@ -1750,7 +2105,17 @@ int DiffLocGetNextMetropolisSample(WalkParams* pMetrop, double dx, double xmin, 
 
 /*** function to test new metropolis string */
 
-int DiffLocMetropolisTest(double value_last, double value_new, double exp_last, double exp_new) {
+int DiffLocMetropolisTest(double value_last, double value_new, double exp_last, double exp_new, int reverse_comparison) {
+
+    if (reverse_comparison) {
+        double temp = value_last;
+        value_last = value_new;
+        value_new = temp;
+        temp = exp_last;
+        exp_last = exp_new;
+        exp_new = temp;
+    }
+
 
     double prob;
 
@@ -1770,6 +2135,7 @@ int DiffLocMetropolisTest(double value_last, double value_new, double exp_last, 
 
     if ((prob = get_rand_double(0.0, 1.0)) < exp_new / exp_last)
         return (1);
+
     else
         return (0);
 
@@ -1795,6 +2161,7 @@ double DiffLocCalcSolutionQuality(
                 hypo_test, dtime, nHypo, num_hypos, hypos, num_arrivals, arrival,
                 gauss_par, itype, temperature, pmisfit, potime, pnReject, isave));
     } else {
+
         return (-1.0);
     }
 
@@ -1813,7 +2180,7 @@ double DiffLocCalcSolutionQuality_LN_NORM(double norm,
         int num_arrivals, ArrivalDesc* arrival,
         GaussLocParams* gauss_par, int itype, double temperature, double* pmisfit, double* potime, int* pnReject, int isave) {
 
-    int narr, nHypoOther;
+    int narr;
 
     double weight, weight_sum;
     double misfit_sum, misfit_like;
@@ -1830,6 +2197,7 @@ double DiffLocCalcSolutionQuality_LN_NORM(double norm,
     int n_compan;
     static char filename[FILENAME_MAX];
     HypoDesc* phypo = NULL;
+    HypoDesc* phypoOther = NULL;
 
 
     if (isave) {
@@ -1869,20 +2237,20 @@ double DiffLocCalcSolutionQuality_LN_NORM(double norm,
         // check if target hypo concerns this arrival and set hypocenter 1 and 2 coords
         //printf("nHypo %d parr->dd_event_index_1,2  %d,%d\n", nHypo, parr->dd_event_index_1, parr->dd_event_index_2);
         if (parr->dd_event_index_1 == nHypo) {
-            nHypoOther = parr->dd_event_index_2;
+            phypoOther = hypos + parr->dd_event_index_2;
             hypo1 = hypo_test;
-            hypo2.x = hypos[nHypoOther].x;
-            hypo2.y = hypos[nHypoOther].y;
-            hypo2.z = hypos[nHypoOther].z;
+            hypo2.x = phypoOther->x;
+            hypo2.y = phypoOther->y;
+            hypo2.z = phypoOther->z;
             dotime1 = dtime;
-            dotime2 = hypos[nHypoOther].dotime;
+            dotime2 = phypoOther->dotime;
         } else if (parr->dd_event_index_2 == nHypo) {
-            nHypoOther = parr->dd_event_index_1;
+            phypoOther = hypos + parr->dd_event_index_1;
             hypo2 = hypo_test;
-            hypo1.x = hypos[nHypoOther].x;
-            hypo1.y = hypos[nHypoOther].y;
-            hypo1.z = hypos[nHypoOther].z;
-            dotime1 = hypos[nHypoOther].dotime;
+            hypo1.x = phypoOther->x;
+            hypo1.y = phypoOther->y;
+            hypo1.z = phypoOther->z;
+            dotime1 = phypoOther->dotime;
             dotime2 = dtime;
         } else {
             continue;
@@ -1905,15 +2273,17 @@ double DiffLocCalcSolutionQuality_LN_NORM(double norm,
         // dr =   ( [Txcorr12-[OT1-OT2]] -   [dOT1 - dOT2] )    -  ( TT1 - TT2 )
         double_diff = (parr->dd_dtime - (dotime1 - dotime2)) - travel_time_diff;
 
-        // accumulate L2 misfit
+        // accumulate LN misfit
         weight = parr->weight;
+#ifdef TEST_WIEGHT_LIKE_BY_MISFIT
+        if (hypo_misfit_best > 0.0) {
+            weight *= hypo_misfit_best / phypoOther->misfit;
+        }
+#endif
         weight_sum += pow(weight, norm);
         mftemp = weight * fabs(double_diff);
         misfit_sum += pow(mftemp, norm);
-        if (parr->xcorr_flag)
-            misfit_like += pow(mftemp / (xcorr_uncertainty * temperature), norm);
-        else
-            misfit_like += pow(mftemp / (cat_uncertainty * temperature), norm);
+        misfit_like += pow(mftemp / (parr->error * temperature), norm);
 
         // if saving solution
         if (isave) {
@@ -1977,6 +2347,7 @@ double DiffLocCalcSolutionQuality_LN_NORM(double norm,
         *pmisfit = rms_misfit;
         return (ln_prob_density);
     } else {
+
         return (-1.0);
     }
 
@@ -2050,6 +2421,7 @@ double getTravelTimeDiff(ArrivalDesc* arrival, int narr, Vect3D hypo1, Vect3D hy
         if (travel_time2 < 0.0) {
             //printf("narr %d  travel_time2 %lf  yval_grid %lf  hypo2.z %lf  (arrival + narr)->tfact %f  ptgrid %s\n",
             //narr, travel_time2,  yval_grid, hypo2.z, (arrival + narr)->tfact, ptgrid->title);
+
             return (-LARGE_DOUBLE * 2.0);
         }
     }
@@ -2144,7 +2516,7 @@ int AssignEventIndexes(
                 sprintf(MsgStr,
                         "AssignEventIndexes: IGNORE arrival flag_ignore %s %s events: %ld %ld\n",
                         parr->label, parr->phase, parr->dd_event_id_1, parr->dd_event_id_2);
-                nll_putmsg(3, MsgStr);
+                nll_putmsg(0, MsgStr);
             }
             parr++;
             continue;
@@ -2189,12 +2561,12 @@ int AssignEventIndexes(
         } else {
             parr->flag_ignore = 9;
             nIgnore++;
-            if (message_flag >= 3) {
-                sprintf(MsgStr,
-                        "AssignEventIndexes: IGNORE events not found: %s %s events: %ld %ld\n",
-                        parr->label, parr->phase, parr->dd_event_id_1, parr->dd_event_id_2);
-                nll_putmsg(3, MsgStr);
-            }
+            //if (message_flag >= 3) {
+            sprintf(MsgStr,
+                    "AssignEventIndexes: IGNORE arrival %d %s %s: corresponding event(s) not found: events: %ld %ld\n",
+                    narr, parr->label, parr->phase, parr->dd_event_id_1, parr->dd_event_id_2);
+            nll_putmsg(0, MsgStr);
+            //}
         }
 
         parr++;
@@ -2208,7 +2580,7 @@ int AssignEventIndexes(
 
 /*** function to write differential time event links in GMT graphics xyz format */
 
-int SaveDiffTimeLinks(int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalDesc* arrival, FILE* fp_out) {
+int SaveDiffTimeLinks(int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalDesc* arrival, FILE * fp_out) {
 
     int narr;
     ArrivalDesc* parr;
@@ -2231,6 +2603,7 @@ int SaveDiffTimeLinks(int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalD
             continue;
         phypo2 = hypos + parr->dd_event_index_2;
         if (phypo2->flag_ignore)
+
             continue;
 
         fprintf(fp_out, "> %d %d\n", parr->dd_event_index_1, parr->dd_event_index_2);
@@ -2267,7 +2640,7 @@ NCCBR      0.0021439     38542     38520 1    0.9700    -2.560102    0.968049   
 NCCDO     -0.0002154     38542     38520 1    0.7200    -4.250846    0.713306     56.8
 ...
  */
-int SaveHypoDDRes(int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalDesc* arrival, FILE* fp_out) {
+int SaveHypoDDRes(int num_hypos, HypoDesc* hypos, int num_arrivals, ArrivalDesc* arrival, FILE * fp_out) {
 
     int narr;
     ArrivalDesc* parr;

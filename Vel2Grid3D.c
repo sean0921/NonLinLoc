@@ -682,10 +682,12 @@ int get_vg_inpfile(VelModel* vel_model, char* line1) {
         }
         vel_model->type = TYPEALBERTO;
     } else {
+        // # Note:  orig_x, orig_y, orig_z are no longer in use for SIMUL2K option, can be set to zero
+        /* 20180718 AJL - not needed
         if (sscanf(line1, "%*s %*s %lf %lf %lf", &vel_model->origx, &vel_model->origy, &vel_model->origz) != 3) {
             nll_puterr("ERROR: reading SIMUL2K 3D Velocity input parameters");
             return (-1);
-        }
+        }*/
         vel_model->type = TYPESIMUL;
     }
 

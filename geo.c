@@ -27,7 +27,7 @@ double GCDistance(double lat1, double lon1, double lat2, double lon2) {
 }
 
 double GCAzimuth(double lat1, double lon1, double lat2, double lon2) {
-    
+
     double lonA = lon1 * DE2RA;
     double latA = lat1 * DE2RA;
     double lonB = lon2 * DE2RA;
@@ -199,4 +199,43 @@ double EllipsoidDistance(double lat1, double lon1, double lat2, double lon2) {
             distance * cz * d / 6.0 - x) * d / 4.0 + cz) * sy * d + y) * c * ERAD * r;
 
     return distance;
+}
+
+
+/** calculate end point (latitude/longitude) given a starting point, distance (deg), and azimuth (deg).
+ *
+ * Adapted from:
+ *    http://openmap.bbn.com/doc/api/com/bbn/openmap/proj/GreatCircle.html
+ *
+ * Calculate point at azimuth and distance from another point.
+ * <p>
+ * Returns a LatLonPoint at arc distance `c' in direction `Az'
+ * from start point.
+ * <p>
+ *
+ * @param phi1 latitude in radians of start point
+ * @param lambda0 longitude in radians of start point
+ * @param c arc radius in radians (0 &lt; c &lt;= PI)
+ * @param Az azimuth (direction) east of north (-PI &lt;= Az &lt;
+ *        PI)
+ * @return LatLonPoint
+ *
+ */
+void PointAtGCDistanceAzimuth(double lat1, double lon1, double dist, double az, double* lat2, double* lon2) {
+
+    double phi1 = DE2RA * lat1;
+    double lambda0 = DE2RA * lon1;
+    double c = DE2RA * dist;
+    double Az = DE2RA * az;
+
+    double cosphi1 = cos(phi1);
+    double sinphi1 = sin(phi1);
+    double cosAz = cos(Az);
+    double sinAz = sin(Az);
+    double sinc = sin(c);
+    double cosc = cos(c);
+
+    *lat2 = RA2DE * asin(sinphi1 * cosc + cosphi1 * sinc * cosAz);
+    *lon2 = RA2DE * (atan2(sinc * sinAz, cosphi1 * cosc - sinphi1 * sinc * cosAz) + lambda0);
+
 }

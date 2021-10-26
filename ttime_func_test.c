@@ -61,7 +61,7 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
  *
  *  This demonstration program reads all input from a disk file.
  *
- *  The required travel-time grids must be present as *.buf and *.hyp disk files.
+ *  The required travel-time grids must be present as *.buf and *.hdr disk files.
  *
  */
 

@@ -919,7 +919,7 @@ int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, i
     double xnpoints = 0.0;
     double xval, yval, zval;
     double dx, dy, dz;
-    int isample_taken;
+    //int isample_taken;
 
     if (prtree->right != NULL)
         npoints = getScatterSampleResultTreeAtLevels(prtree->right, value_type, num_scatter, integral,
@@ -950,7 +950,7 @@ int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, i
         dy = pnode->ds.y / 2.0;
         dz = pnode->ds.z / 2.0;
 
-        isample_taken = 0;
+        //isample_taken = 0;
 
         //while (xnpoints > 0.0 /*&& npoints < num_scatter*/) {
         while (xnpoints > 0.0 && npoints < num_scatter) { // 20110118 AJL
@@ -963,7 +963,7 @@ int getScatterSampleResultTreeAtLevels(ResultTreeNode* prtree, int value_type, i
                 fdata[*pfdata_index + 3] = pnode->value;
                 //printf("npoints %d  *pfdata_index %d  value %lf  dx %g dy %g dz %g   x %g y %g z %g\n", npoints, *pfdata_index, pnode->value, dx, dy, dz, xval, yval, zval);
                 npoints++;
-                isample_taken = 1;
+                //isample_taken = 1;
                 *pfdata_index += 4;
             }
 

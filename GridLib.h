@@ -34,8 +34,8 @@ www.alomax.net
 
 
 #define PACKAGE  "NonLinLoc"
-#define PVER  "7.00.00"
-#define PDATE "27Oct2017"
+#define PVER  "7.00.02"
+#define PDATE "17Oct2018"
 /*#define PCOPYRIGHT "\nCopyright (C) 1999-2017 Anthony Lomax\n"*/
 #define PCOPYRIGHT "\0"
 
@@ -560,8 +560,8 @@ typedef struct {
     double tsp_min_max_diff; /* max P-S - min P-S (sec) */
 
     char label[MAXLINE]; /* char label */
-    char fileroot[2 * MAXLINE]; /* fileroot for original location */
-    char comment[2 * MAXLINE]; /* char comment */
+    char fileroot[4 * MAXLINE]; /* fileroot for original location */
+    char comment[4 * MAXLINE]; /* char comment */
     char signature[6 * MAXLINE]; /* char signature/program/date/etc */
     char searchInfo[2 * MAXLINE]; /* char search type dependent info */
 
@@ -681,14 +681,15 @@ EXTERN_TXT ArrivalDesc* Arrival;
 EXTERN_TXT HypoDesc Hypocenter;
 
 /* geographic transformations (lat/long <=> x/y) */
-#define NUM_PROJ_MAX   3
+#define NUM_PROJ_MAX   10
 #define MAP_TRANS_UNDEF  -1
 #define MAP_TRANS_NONE   0
 #define MAP_TRANS_GLOBAL  1
 #define MAP_TRANS_SIMPLE  2
 #define MAP_TRANS_LAMBERT  3
 #define MAP_TRANS_TM     4
-#define MAP_TRANS_SDC   5
+#define MAP_TRANS_AZ_EQUID     5
+#define MAP_TRANS_SDC   6
 EXTERN_TXT char map_trans_type[NUM_PROJ_MAX][MAXLINE]; /* name of projection */
 EXTERN_TXT int map_itype[NUM_PROJ_MAX]; /* int id of projection */
 EXTERN_TXT char MapProjStr[NUM_PROJ_MAX][2 * MAXLINE]; /* string description of proj params */
@@ -777,7 +778,7 @@ int WriteGrid3dBuf(GridDesc*, SourceDesc*, char*, char*);
 int WriteGrid3dHdr(GridDesc*, SourceDesc*, char*, char*);
 int ReadGrid3dBuf(GridDesc*, FILE*);
 int ReadGrid3dHdr(GridDesc*, SourceDesc*, char*, char*);
-int ReadGrid3dHdr_grid_description(FILE *fpio, GridDesc* pgrid);
+int ReadGrid3dHdr_grid_description(FILE *fpio, GridDesc* pgrid, char *fname);
 int ReadGrid3dBufSheet(GRID_FLOAT_TYPE *, GridDesc*, FILE*, int);
 GRID_FLOAT_TYPE ReadAbsGrid3dValue(FILE*, GridDesc*, double, double,
         double, int);
@@ -813,8 +814,8 @@ void* AllocateGrid_Cascading(GridDesc* pgrid, int allocate_buffer);
 void FreeGrid_Cascading(GridDesc * pgrid);
 
 /* statistics functions */
-double GaussDev();
-void TestGaussDev();
+double normal_dist_deviate();
+void test_normal_dist_deviate();
 int GenTraditionStats(GridDesc*, Vect3D*, Mtrx3D*, FILE*);
 Vect3D CalcExpectation(GridDesc*, FILE*);
 Mtrx3D CalcCovariance(GridDesc*, Vect3D*, FILE*);
@@ -852,6 +853,7 @@ double GetEpiDist(SourceDesc*, double, double);
 double GetEpiAzim(SourceDesc*, double, double);
 double GetEpiDistSta(StationDesc*, double, double);
 double GetEpiAzimSta(StationDesc*, double, double);
+double Dist2D(double, double, double, double);
 double Dist3D(double, double, double, double, double, double);
 double calcAveInterStationDistance(SourceDesc *stations, int numStations);
 int stationLocationIsKnown(double x, double y);
