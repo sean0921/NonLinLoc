@@ -542,7 +542,7 @@ int get_grid(char* input_line)
 
 	grid_in.iSwapBytes = 0;
 
-	convert_grid_type(&grid_in);
+	convert_grid_type(&grid_in, 1);
 	if (message_flag >= 2)
 		display_grid_param(&grid_in);
 
@@ -563,57 +563,60 @@ int get_grid(char* input_line)
 }
 
 
-/** function to convert grid type from char to numeric */
+/** function to convert grid type from char to numeric or v.v. */
 
-int convert_grid_type(GridDesc* pgrid)
+int convert_grid_type(GridDesc* pgrid, int char2numeric)
 {
 
+	int i;
+	
+	
+	int ntypes = 16;
+	//
+	static char char_types[][32] = {
+		"VELOCITY", "VELOCITY_METERS", 
+		"SLOWNESS", "SLOW_LEN", "VEL2", "SLOW2", "SLOW2_METERS", 
+		"TIME", "TIME2D", 
+		"ANGLE", "ANGLE2D", 
+		"PROB_DENSITY", "MISFIT", "LIKELIHOOD", 
+		"DEPTH", "COULOMB"
+	};
+	//
+	static int types[] = {
+		GRID_VELOCITY, GRID_VELOCITY_METERS, 
+		GRID_SLOWNESS, GRID_SLOW_LEN, GRID_VEL2, GRID_SLOW2, GRID_SLOW2_METERS, 
+		GRID_TIME, GRID_TIME_2D, 
+		GRID_ANGLE, GRID_ANGLE_2D, 
+		GRID_PROB_DENSITY, GRID_MISFIT, GRID_LIKELIHOOD, 
+		GRID_DEPTH, GRID_COULOMB
+	};
+	
+
+	
 	/* check grid type */
-
-	if (strcmp(pgrid->chr_type, "VELOCITY") == 0)
-		pgrid->type = GRID_VELOCITY;
-	else if (strcmp(pgrid->chr_type, "VELOCITY_METERS") == 0)
-		pgrid->type = GRID_VELOCITY_METERS;
-	else if (strcmp(pgrid->chr_type, "SLOWNESS") == 0)
-		pgrid->type = GRID_SLOWNESS;
-	else if (strcmp(pgrid->chr_type, "SLOW_LEN") == 0)
-		pgrid->type = GRID_SLOW_LEN;
-	else if (strcmp(pgrid->chr_type, "VEL2") == 0)
-		pgrid->type = GRID_VEL2;
-	else if (strcmp(pgrid->chr_type, "SLOW2") == 0)
-		pgrid->type = GRID_SLOW2;
-	else if (strcmp(pgrid->chr_type, "SLOW2_METERS") == 0)
-		pgrid->type = GRID_SLOW2_METERS;
-
-	else if (strcmp(pgrid->chr_type, "TIME") == 0)
-		pgrid->type = GRID_TIME;
-	else if (strcmp(pgrid->chr_type, "TIME2D") == 0)
-		pgrid->type = GRID_TIME_2D;
-
-	else if (strcmp(pgrid->chr_type, "ANGLE") == 0)
-		pgrid->type = GRID_ANGLE;
-	else if (strcmp(pgrid->chr_type, "ANGLE2D") == 0)
-		pgrid->type = GRID_ANGLE_2D;
-
-	else if (strcmp(pgrid->chr_type, "PROB_DENSITY") == 0)
-		pgrid->type = GRID_PROB_DENSITY;
-	else if (strcmp(pgrid->chr_type, "MISFIT") == 0)
-		pgrid->type = GRID_MISFIT;
-
-	else if (strcmp(pgrid->chr_type, "DEPTH") == 0)
-		pgrid->type = GRID_DEPTH;
-
-	else if (strcmp(pgrid->chr_type, "COULOMB") == 0)
-		pgrid->type = GRID_COULOMB;
-
-	else {
+	
+	if (char2numeric) {
+		for (i = 0; i < ntypes; i++) {
+			if (strcmp(pgrid->chr_type, char_types[i]) == 0) {
+				pgrid->type = types[i];
+				return(pgrid->type);
+			}
+		}
 		pgrid->type = GRID_UNDEF;
 		puterr2("WARNING: unrecognized grid type", pgrid->chr_type);
+		return(pgrid->type);
+
+	} else {
+		for (i = 0; i < ntypes; i++) {
+			if (pgrid->type == types[i]) {
+				strcpy(pgrid->chr_type, char_types[i]);
+				return(pgrid->type);
+			}
+		}
+		puterr("WARNING: unrecognized grid type code");
+		return(pgrid->type);
 	}
 
-
-
-	return(pgrid->type);
 }
 
 
@@ -753,7 +756,7 @@ void DuplicateGrid(GridDesc* pnew_grid, GridDesc* pold_grid, char *new_chr_type)
 
 	/* set grid type */
 	strcpy(pnew_grid->chr_type, new_chr_type);
-	convert_grid_type(pnew_grid);
+	convert_grid_type(pnew_grid, 1);
 
 
 	/* allocate grid */
@@ -1084,6 +1087,7 @@ INLINE double GetEpiDist(SourceDesc* psrce, double xval, double yval)
 
 	if (GeometryMode == MODE_GLOBAL) {
 		return(GCDistance(yval, xval, psrce->y, psrce->x));
+		//return(EllipsoidDistance(yval, xval, psrce->y, psrce->x));
 	} else {
 		xtmp = xval - psrce->x;
 		ytmp = yval - psrce->y;
@@ -1102,6 +1106,7 @@ INLINE double GetEpiDistSta(StationDesc* psta, double xval, double yval)
 
 	if (GeometryMode == MODE_GLOBAL) {
 		return(GCDistance(yval, xval, psta->y, psta->x));
+		//return(EllipsoidDistance(yval, xval, psta->y, psta->x));
 	} else {
 		xtmp = xval - psta->x;
 		ytmp = yval - psta->y;
@@ -1170,8 +1175,7 @@ INLINE double Dist3D(double x1, double x2, double y1, double y2,
 
 /*** function to write grid buffer and header to disk ***/
 
-int WriteGrid3dBuf(GridDesc* pgrid, SourceDesc* psrce,
-			char* filename, char* file_type)
+int WriteGrid3dBuf(GridDesc* pgrid, SourceDesc* psrce, char* filename, char* file_type)
 {
 
 	int istat;
@@ -1250,6 +1254,82 @@ int WriteGrid3dHdr(GridDesc* pgrid, SourceDesc* psrce,
 
 	return(0);
 }
+
+
+
+
+/** function to generate a grid from an OctTree structure */
+
+int ConvertOctTree2Grid(Tree3D* tree, double dx, double dy, double dz, char *grid_type, GridDesc *pgrid_out)
+{
+
+	int ix, iy, iz;
+	Vect3D coords;
+	OctNode* node;
+	float value;
+	
+	pgrid_out->numx = 1 + (int) ((double) tree->numx * tree->ds.x / dx);
+	pgrid_out->numy = 1 + (int) ((double) tree->numy * tree->ds.y / dy);
+	pgrid_out->numz = 1 + (int) ((double) tree->numz * tree->ds.z / dz);
+	pgrid_out->origx = tree->orig.x;
+	pgrid_out->origy = tree->orig.y;	
+	pgrid_out->origz = tree->orig.z;
+	pgrid_out->dx = dx;
+	pgrid_out->dy = dy;
+	pgrid_out->dz = dz;
+	if (grid_type != NULL) {
+		strcpy(pgrid_out->chr_type, grid_type);
+		convert_grid_type(pgrid_out, 1);
+	} else {
+		pgrid_out->type = tree->data_code;
+		convert_grid_type(pgrid_out, 0);
+	}
+
+	/* allocate grid buffer */
+
+display_grid_param(pgrid_out);
+	pgrid_out->buffer = AllocateGrid(pgrid_out);
+	if (pgrid_out->buffer == NULL) {
+		puterr("ERROR: allocating memory for 3D PDF grid buffer.");
+		exit(EXIT_ERROR_MEMORY);
+	}
+
+	/* create grid array access pointers */
+
+	pgrid_out->array = CreateGridArray(pgrid_out);
+	if (pgrid_out->array == NULL) {
+		puterr("ERROR: creating array for accessing 3D PDF grid buffer.");
+		exit(EXIT_ERROR_MEMORY);
+	}
+
+
+	coords.x = pgrid_out->origx;
+	for (ix = 0; ix < pgrid_out->numx; ix++) {
+		if (ix == pgrid_out->numx - 1)
+			coords.x -= dx / 1000.0;
+		coords.y = pgrid_out->origy;
+		for (iy = 0; iy < pgrid_out->numy; iy++) {
+			if (iy == pgrid_out->numy - 1)
+				coords.y -= dy / 1000.0;
+			coords.z = pgrid_out->origz;
+			for (iz = 0; iz < pgrid_out->numz; iz++) {
+				if (iz == pgrid_out->numz - 1)
+					coords.z -= dz / 1000.0;
+				node = getLeafNodeContaining(tree, coords);
+				value = (float) node->value;
+        			pgrid_out->array[ix][iy][iz] = value;
+					
+				coords.z += dz;
+			}
+			coords.y += dy;
+		}
+		coords.x += dx;
+	}
+	
+	return(0);
+
+}
+
 
 
 
@@ -1459,7 +1539,7 @@ int OpenGrid3dFile(char *fname, FILE **fp_grid, FILE **fp_hdr,
 		pgrid->dx = 1.0;
 
 
-	convert_grid_type(pgrid);
+	convert_grid_type(pgrid, 1);
 	if (message_flag >= 4)
 		display_grid_param(pgrid);
 
@@ -2524,8 +2604,8 @@ int ReadArrival(char* line, ArrivalDesc* parr, int iReadType)
 		if (istat < 11)
 			return(-1);
 
-		/* convert ray aziumuth to grid coords direction */
-
+		/* convert aziumuths to grid coords direction */
+		parr->azim = latlon2rectAngle(0, parr->azim);
 		parr->ray_azim = latlon2rectAngle(0, parr->ray_azim);
 	}
 
@@ -3039,13 +3119,12 @@ char* CurrTimeStr(void)
 /** function to check for and expand wild card characters in filenames
 	and to return a list of equivalent files */
 
-int ExpandWildCards(char* fileName, char fileList[][FILENAME_MAX_SMALL],
-	int maxNumFiles)
+int ExpandWildCards(char* fileName, char fileList[][FILENAME_MAX], int maxNumFiles)
 {
 	int istat;
 	int nfiles = 0;
 	char system_str[MAXLINE];
-	char list_file[] = "filelist.tmp";
+	char list_file[FILENAME_MAX] = "filelist.tmp";
 	char *pchr;
 	FILE* fpio;
 
@@ -3066,7 +3145,7 @@ int ExpandWildCards(char* fileName, char fileList[][FILENAME_MAX_SMALL],
 	system(system_str);
 
 	if ((fpio = fopen(list_file, "r")) == NULL) {
-		puterr("ERROR: opening fileList:  temporary file.");
+		puterr2("ERROR: opening fileList temporary file: ", list_file);
 		return(-1);
 	}
 	NumFilesOpen++;

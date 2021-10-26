@@ -35,8 +35,8 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 #define PACKAGE  "NonLinLoc"
-#define PVER  "4.00.0"
-#define PDATE "02MAY2005"
+#define PVER  "4.10.6"
+#define PDATE "31MAY2006"
 /*#define PCOPYRIGHT "\nCopyright (C) 1999-2005 Anthony Lomax\n"*/
 #define PCOPYRIGHT "\0"
 
@@ -64,6 +64,7 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 #include "geo.h"
 #include "ran1.h"
 #include "map_project.h"
+#include "octtree.h"
 
 #ifndef INLINE
 #define INLINE inline
@@ -132,7 +133,7 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 // DD
 /* program mode */
-#define MODE_ABSOLUTE  		0
+#define MODE_ABSOLUTE  			0
 #define MODE_DIFFERENTIAL  		1
 EXTERN_TXT int nll_mode;
 
@@ -162,8 +163,9 @@ EXTERN_TXT int nll_mode;
 #define GRID_TIME		1000		/* time (sec) 3D grid */
 #define GRID_TIME_2D		1001		/* time (sec)
 							2D grid / 1D model */
-#define GRID_PROB_DENSITY	2001		/* probability density */
+#define GRID_PROB_DENSITY	2001		/* probability density (may be confidence levels) */
 #define GRID_MISFIT		2002		/* misfit (sec) */
+#define GRID_LIKELIHOOD		2003		/* relative likelihood normalised 0-1 (may be same as probability density) */
 
 #define GRID_ANGLE		3000		/* take-off angles 3D grid */
 #define GRID_ANGLE_2D		3001		/* take-off angles
@@ -630,7 +632,7 @@ void SetConstants(void);
 
 int get_control(char* );
 int get_grid(char* );
-int convert_grid_type(GridDesc* );
+int convert_grid_type(GridDesc* , int );
 int display_grid_param(GridDesc* );
 int get_mcsyn(char* );
 int get_path_method(char* );
@@ -735,7 +737,7 @@ int Month2Int(char* cmonth);
 char* CurrTimeStr(void);
 
 /* file list functions */
-int ExpandWildCards(char* , char[][FILENAME_MAX_SMALL] , int );
+int ExpandWildCards(char* , char[][FILENAME_MAX] , int );
 
 /* string / char functions */
 int TrimString(char* );
@@ -771,6 +773,9 @@ int ReadFortranString(char* , int , int , char* );
 int ReadFortranInt(char* , int , int , int*);
 int ReadFortranReal(char* , int , int , double*);
 
+
+/* OctTree support */
+int ConvertOctTree2Grid(Tree3D* tree, double dx, double dy, double dz, char *grid_type, GridDesc *pgrid_out);
 
 /* misc functions */
 int ReadFpfitSum(FILE *fp_in, HypoDesc *phypo);

@@ -379,6 +379,8 @@ int get_vg_type(char* line1)
 
 */
 
+#define DUMP_LAT_LON_TO_FILE 1
+
 int VelModToGrid3d(GridDesc* grid, char *waveType)
 {
 
@@ -387,6 +389,9 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 	char cWaveType;
 	double xval, yval, xloc, yloc, zdepth;
 	double vel, den, vel1;
+	
+	double dlat, dlon;
+	FILE *fpfile;
 
 
 	/* check wavetype */
@@ -399,6 +404,11 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 		puterr2( "ERROR: unrecognized wave type", waveType);
 		return(-1);
 	}
+	
+	
+	if (DUMP_LAT_LON_TO_FILE) {
+		fpfile = fopen("lon_lat.txt", "w");
+	}
 
 
 	/* generate grid values */
@@ -406,8 +416,10 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 
 	xval = grid->origx + grid->dx / 2.0;
 	for (ix = 0; ix <  grid->numx; ix++) {
+		
 		yval = grid->origy + grid->dy / 2.0;
 		for (iy = 0; iy <  grid->numy; iy++) {
+			
 			if (ModelCoordsMode == COORDS_LATLON) {
 				rect2latlon(0, xval, yval, &yloc, &xloc);
 /*printf("rect2latlon(0, xval %lf yval %lf yloc %lf xloc %lf\n", xval, yval, yloc, xloc);*/
@@ -415,8 +427,18 @@ int VelModToGrid3d(GridDesc* grid, char *waveType)
 				xloc = xval;
 				yloc = yval;
 			}
+			
 			zdepth = grid->origz + grid->dz / 2.0;
 			for (iz = 0; iz <  grid->numz; iz++) {
+				
+				if (DUMP_LAT_LON_TO_FILE) {
+					rect2latlon(0, xval, yval, &dlat, &dlon);
+					if (zdepth >= grid->dz / 2.0)
+						fprintf(fpfile, "%f %f %f\n", dlon, dlat, -zdepth * 1000.0);
+					else
+						fprintf(fpfile, "%f %f %f\n", dlon, dlat, -1000.0 * grid->dz / 2.0);
+				}
+
 
 				/* check for non-lat/lon and non-layer 
 							vel mod element */
@@ -469,6 +491,10 @@ printf("xloc %lf yloc %lf zdepth %lf cWaveType %c imodel %d vel %lg\n", xloc, yl
 			yval += grid->dy;
 		}
 		xval += grid->dx; 
+	}
+
+	if (DUMP_LAT_LON_TO_FILE) {
+		fclose(fpfile);
 	}
 
 

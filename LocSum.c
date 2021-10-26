@@ -36,6 +36,11 @@
 
 	ver 01    04Nov1997  AJL  Original version
 
+		    Unregistered bug fixes
+		    Jan 2006 Frederik Tilmann   
+		     MAX_NUM_INPUT_FILES reduced to 32000 (larger values result in segmentation violation on jumping into subroutine Sum_Locations)
++ 
+		   13Feb2006 AJL MAX_NUM_INPUT_FILES reduced to 5000
 
 .........1.........2.........3.........4.........5.........6.........7.........8
 
@@ -48,7 +53,11 @@
 
 /* defines */
 
-#define MAX_NUM_INPUT_FILES 50000
+//#define MAX_NUM_INPUT_FILES 50000
+/* MAX_NUM_INPUT_FILES values of > 215 give a segemtation violation when jumping into the subroutine
+    (gcc (GCC) 3.2 20020903 (Red Hat Linux 8.0 3.2-7) Frederik Tilmann */
+// reduce array sizes to see if this is cause of segmentation error on some systems.
+#define MAX_NUM_INPUT_FILES 5000
 
 
 /* globals */
@@ -129,7 +138,7 @@ int SumLocations(int argc, char** argv)
 	float fdata[4], probmax = -VERY_LARGE_FLOAT;
 
 	int nFile, numFiles, nLocWritten, nLocAccepted;
-	char fn_hyp_in_list[MAX_NUM_INPUT_FILES][FILENAME_MAX_SMALL];
+	char fn_hyp_in_list[MAX_NUM_INPUT_FILES][FILENAME_MAX];
 	char test_str[10];
 
 	double xmin, xmax, ymin, ymax, zmin, zmax;

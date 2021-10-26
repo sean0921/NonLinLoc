@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2000 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
+ * Copyright (C) 1999-2006 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -26,13 +26,13 @@
 /*-----------------------------------------------------------------------
 Anthony Lomax
 Anthony Lomax Scientific Software
-161 All� du Micocoulier, 06370 Mouans-Sartoux, France
+161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
 tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 -------------------------------------------------------------------------*/
 
 
 /*
-	history:
+	history:	(see also http://alomax.net/nlloc -> Updates)
 
 	ver 01    26SEP1997  AJL  Original version
 	ver 02    08JUN1998  AJL  Metropolis added
@@ -95,7 +95,6 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 #include "GridLib.h"
 #include "ran1.h"
-#include "octtree.h"
 #include "velmod.h"
 #include "NLLocLib.h"
 #include "GridMemLib.h"
@@ -124,6 +123,7 @@ int main(int argc, char *argv[])
 	int numArrivalsIgnore, numSArrivalsLocation;
 	int numArrivalsReject;
 	int maxArrExceeded = 0;
+	int n_file_root_count = 0;
 	char fn_root_out[FILENAME_MAX], fname[FILENAME_MAX], fn_root_out_last[FILENAME_MAX];
 	char sys_command[MAXLINE_LONG];
 	char *chr;
@@ -171,6 +171,7 @@ int main(int argc, char *argv[])
 	MinDistCrustElevCorr = 2.0;   // deg
 	ApplyElevCorrFlag = 0;
 	NumTimeDelaySurface = 0;
+	iRejectDuplicateArrivals = 1;
 	
 	// station distance weighting 
 	iSetStationDistributionWeights = 0;
@@ -184,6 +185,8 @@ int main(int argc, char *argv[])
 
 	// GLOBAL
 	NumSources = 0;
+	NumStations = 0;
+
 
 	/* open control file */
 
@@ -330,8 +333,8 @@ int main(int argc, char *argv[])
 
 		putmsg(2, "");
 		// AJL 20040720 SetOutName(Arrival + 0, fn_path_output, fn_root_out, fn_root_out_last, 1);
-                SetOutName(Arrival + 0, fn_path_output, fn_root_out, fn_root_out_last, iSaveDecSec);
-		strcpy(fn_root_out_last, fn_root_out); /* save filename */
+                SetOutName(Arrival + 0, fn_path_output, fn_root_out, fn_root_out_last, iSaveDecSec, n_file_root_count);
+		//strcpy(fn_root_out_last, fn_root_out); /* save filename */
 		sprintf(MsgStr,
 "... %d observations read, %d will be used for location (%s).",
 			NumArrivals + numArrivalsReject, NumArrivalsLocation, fn_root_out);
@@ -379,6 +382,7 @@ int main(int argc, char *argv[])
 		/* add stations to station list */
 
 		if (iSetStationDistributionWeights || iSaveNLLocSum) {
+printf(">>>>>>>>>>> NumStations %d, NumArrivals %d, numArrivalsReject %d\n", NumStations, NumArrivals, numArrivalsReject);
 			NumStations = addToStationList(StationList, NumStations, Arrival, NumArrivals + numArrivalsReject);
 			if (iSetStationDistributionWeights)
 				setStationDistributionWeights(StationList, NumStations, Arrival, NumArrivals);
@@ -444,7 +448,7 @@ int main(int argc, char *argv[])
 		cleanup: ;
 
 		NumEvents++;
-
+		n_file_root_count++;
 
 		/* release grid buffer or sheet storage */
 
@@ -502,16 +506,16 @@ int main(int argc, char *argv[])
 			}
 			WriteStaStatTable(ngrid, fpio,
 				RMS_Max, NRdgs_Min, Gap_Max,
-				P_ResidualMax, S_ResidualMax, WRITE_RESIDUALS);
+				P_ResidualMax, S_ResidualMax, Ell_Len3_Max, Hypo_Depth_Min, Hypo_Depth_Max, WRITE_RESIDUALS);
 			WriteStaStatTable(ngrid, fpio,
 				RMS_Max, NRdgs_Min, Gap_Max,
-				P_ResidualMax, S_ResidualMax, WRITE_RES_DELAYS);
+				P_ResidualMax, S_ResidualMax, Ell_Len3_Max, Hypo_Depth_Min, Hypo_Depth_Max, WRITE_RES_DELAYS);
 			WriteStaStatTable(ngrid, fpio,
 				RMS_Max, NRdgs_Min, Gap_Max,
-				P_ResidualMax, S_ResidualMax, WRITE_PDF_RESIDUALS);
+				P_ResidualMax, S_ResidualMax, Ell_Len3_Max, Hypo_Depth_Min, Hypo_Depth_Max, WRITE_PDF_RESIDUALS);
 			WriteStaStatTable(ngrid, fpio,
 				RMS_Max, NRdgs_Min, Gap_Max,
-				P_ResidualMax, S_ResidualMax, WRITE_PDF_DELAYS);
+				P_ResidualMax, S_ResidualMax, Ell_Len3_Max, Hypo_Depth_Min, Hypo_Depth_Max, WRITE_PDF_DELAYS);
 			fclose(fpio);
 			// save to last
 			sprintf(sys_command, "cp %s %slast.stat", fname, f_outpath);
@@ -527,7 +531,7 @@ int main(int argc, char *argv[])
 			}
 			WriteStaStatTable(ngrid, fpio,
 				RMS_Max, NRdgs_Min, Gap_Max,
-				P_ResidualMax, S_ResidualMax, WRITE_RES_DELAYS);
+				P_ResidualMax, S_ResidualMax, Ell_Len3_Max, Hypo_Depth_Min, Hypo_Depth_Max, WRITE_RES_DELAYS);
 			fclose(fpio);
 			// save to last
 			sprintf(sys_command, "cp %s %slast.stat_totcorr", fname, f_outpath);
@@ -575,7 +579,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 	float ftemp;
 	int iSizeOfFdata;
 	double alpha_2;
-	double oct_node_value_max;
+	double oct_node_value_max, oct_tree_integral = 0.0;
 
 
 
@@ -660,18 +664,19 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 
 		/* allocate scatter array for saved samples */
 		iSizeOfFdata = (1 + MetUse / MetSkip) * 4 * sizeof(float);
-		if ((fdata = (float *)
-				malloc(iSizeOfFdata)) == NULL)
+		if ((fdata = (float *) malloc(iSizeOfFdata)) == NULL)
 			return(EXIT_ERROR_LOCATE);
 		NumAllocations++;
 
 	} else if (SearchType == SEARCH_OCTTREE) {
-
-		octTree = InitializeOcttree(LocGrid + ngrid ,
-			Arrival, NumArrivalsLocation, &octtreeParams);
+		
+		// initialize memory/arrays for regular, initial oct-tree search grid
+		// this is and x, y, z array of octtree root nodes, 
+		// a true oct-tree is created at each of these roots
+		octTree = InitializeOcttree(LocGrid + ngrid, Arrival, NumArrivalsLocation, &octtreeParams);
 		NumAllocations++;
 
-		/* allocate scatter array for saved samples */
+		// allocate scatter array for saved samples
 		iSizeOfFdata = octtreeParams.num_scatter * 4 * sizeof(float);
 		iSizeOfFdata = (12 * iSizeOfFdata) / 10; // sample may be slightly larger than requested
 		if ((fdata = (float *) malloc(iSizeOfFdata)) == NULL)
@@ -723,7 +728,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 
 	} else if (SearchType == SEARCH_OCTTREE) {
 
-		/* Octree location (importance sampling) */
+		/* do Octree location (importance sampling) */
 		if ((nScatterSaved =
 			LocOctree(ngrid, NumArrivals, NumArrivalsLocation,
 				Arrival, LocGrid + ngrid,
@@ -737,7 +742,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 
 
 
-	/* clean up dates */
+	/* clean up dates, caclulate rms */
 	StdDateTime(Arrival, NumArrivals, &Hypocenter);
 
 	/* determine azimuth gap */
@@ -792,9 +797,18 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 
 	} else if ((SearchType == SEARCH_MET || SearchType == SEARCH_OCTTREE ) && LocGridSave[ngrid]) {
 
-		if (SearchType == SEARCH_OCTTREE && nScatterSaved == 0) // not saved during search
-			nScatterSaved = GenEventScatterOcttree(
-				&octtreeParams, oct_node_value_max, fdata);
+		if (SearchType == SEARCH_OCTTREE) {
+		
+			// determine integral of all oct-tree leaf node pdf values
+			oct_tree_integral = integrateResultTree(resultTreeRoot, 0.0, oct_node_value_max);
+			sprintf(MsgStr, "Octree oct_node_value_max= %le oct_tree_integral= %le", oct_node_value_max, oct_tree_integral);
+			putmsg(1, MsgStr);
+		
+			// generate scatter sample
+			if (nScatterSaved == 0) // not saved during search
+			nScatterSaved = GenEventScatterOcttree(&octtreeParams, oct_node_value_max, fdata, oct_tree_integral);
+			
+		}
 
 		/* write scatter file */
 		sprintf(fname, "%s.loc.scat", fnout);
@@ -812,6 +826,34 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 		} else {
 			puterr("ERROR: opening scatter output file.");
 			return(EXIT_ERROR_IO);
+		}
+
+		if (SearchType == SEARCH_OCTTREE && iSaveNLLocOctree) {
+		
+			if (LocGrid[ngrid].type == GRID_PROB_DENSITY)  {
+				// convert oct tree values to likelihood
+				convertOcttreeValuesToProb(resultTreeRoot, 0.0, oct_node_value_max);
+				octTree->data_code = GRID_LIKELIHOOD;
+				// create new result tree sorted by node values only, without multiplication by volume
+//				resultTreeLikelihoodRoot = NULL;
+//				resultTreeLikelihoodRoot = createResultTree(resultTreeRoot, resultTreeLikelihoodRoot);
+				sprintf(MsgStr, "Oct tree structure converted to probability.");
+				putmsg(1, MsgStr);
+				// convert oct tree values to confidence
+				//convertOcttreeValuesToConfidence(resultTreeRoot, 0.0);			
+			}
+				
+			// write oct tree structure to file 
+			sprintf(fname, "%s.loc.octree", fnout);
+			if ((fpio = fopen(fname, "w")) != NULL) {
+				istat = writeTree3D(fpio, octTree);
+				fclose(fpio);
+				sprintf(MsgStr, "Oct tree structure written to file : %d nodes", istat);
+				putmsg(1, MsgStr);
+			} else {
+				puterr("ERROR: opening oct tree structure output file.");
+				return(EXIT_ERROR_IO);
+			}
 		}
 
 		/* calculate "traditional" statistics */
@@ -848,10 +890,8 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 		/* save location grid header to disk */
 
 		if (LocGridSave[ngrid])
-			if ((istat = WriteGrid3dHdr(LocGrid + ngrid, NULL,
-					fnout, "loc")) < 0) {
-				puterr(
-				"ERROR: writing grid header to disk.");
+			if ((istat = WriteGrid3dHdr(LocGrid + ngrid, NULL, fnout, "loc")) < 0) {
+				puterr("ERROR: writing grid header to disk.");
 				return(EXIT_ERROR_IO);
 			}
 	}
@@ -876,11 +916,18 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 			return(istat);
 		/* update station statistics table */
 		if (strncmp(Hypocenter.locStat, "LOCATED", 7) == 0
-				&& Hypocenter.rms <= RMS_Max
-				&& Hypocenter.nreadings >= NRdgs_Min
-				&& Hypocenter.gap <= Gap_Max)
-			UpdateStaStat(ngrid, Arrival, NumArrivals,
-				P_ResidualMax, S_ResidualMax);
+			&& Hypocenter.rms <= RMS_Max
+			&& Hypocenter.nreadings >= NRdgs_Min
+			&& Hypocenter.gap <= Gap_Max
+			&& Hypocenter.ellipsoid.len3 <= Ell_Len3_Max
+			&& Hypocenter.z >= Hypo_Depth_Min
+				  && Hypocenter.z <= Hypo_Depth_Max) {
+				UpdateStaStat(ngrid, Arrival, NumArrivals, P_ResidualMax, S_ResidualMax);
+//printf("INSTALLED in Stat Table: ");
+				  } else {
+//printf("NOT INSTALLED in Stat Table: ");
+				  }
+//printf("Hypo: %s %f %d %d %f %f\n", Hypocenter.locStat, Hypocenter.rms, Hypocenter.nreadings, Hypocenter.gap, Hypocenter.ellipsoid.len3, Hypocenter.z);
 	}
 
 
@@ -928,7 +975,7 @@ int Locate(int ngrid, char* fn_root_out, int numArrivalsReject)
 		freeResultTree(resultTreeRoot);
 
 		/* free octree memory */
-		freeTree3D(octTree);
+		freeTree3D(octTree, 1);
 		NumAllocations--;
 
 		/* free saved samples memory */

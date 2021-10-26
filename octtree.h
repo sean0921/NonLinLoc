@@ -1,5 +1,5 @@
-/* 
- * Copyright (C) 1999-2000 Anthony Lomax <lomax@geoazur.unice.fr>
+/*
+ * Copyright (C) 1999-2005 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -25,12 +25,12 @@
 
 
 
-/*------------------------------------------------------------/ */
-/* Anthony Lomax           | email: lomax@geoazur.unice.fr     / */
-/* UMR Geosciences Azur    | web: www-geoazur.unice.fr/~lomax / */
-/* 250 Rue Albert Einstein | tel: 33 (0) 4 93 95 43 25        / */
-/* 06560 Valbonne, FRANCE  | fax: 33 (0) 4 93 65 27 17        / */
-/*------------------------------------------------------------/ */
+/*-----------------------------------------------------------------------
+Anthony Lomax
+Anthony Lomax Scientific Software
+161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
+tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
+-------------------------------------------------------------------------*/
 
 
 #include <stdlib.h>
@@ -77,7 +77,8 @@ typedef struct octnode
 	Vect3D ds;			/* length of sides */
 	double value;			/* node value */
 	OctNodePtr child[2][2][2];	/* child nodes */
-	int isLeaf;			/* leaf flag, 1=leaf */
+	char isLeaf;			/* leaf flag, 1=leaf */
+	void *pdata;		/* additional data */
 } OctNode;
 
 
@@ -87,6 +88,7 @@ typedef struct octnode
 typedef struct
 {
 	OctNode**** nodeArray;		/* parent nodes */
+	int data_code;		/* data type code, application dependent */
 	int numx, numy, numz;		/* grid size */
  	Vect3D orig; 	/* orig (km) */
 	Vect3D ds;		/* len side (km) */
@@ -100,7 +102,8 @@ typedef struct resultTreeNode* ResultTreeNodePtr;
 typedef struct resultTreeNode {
 	ResultTreeNodePtr left;		/* address of left node */
 	ResultTreeNodePtr right;	/* address of right node */
-	double value;			/* prob * volume */
+	double value;			/* sort value */
+	double volume;		/* volume, node volume depends on geometry in physical space, may not be dx*dy*dz */
 	OctNode* pnode;			/* correspnding octree node */
 } ResultTreeNode;
 
@@ -127,20 +130,29 @@ typedef struct resultTreeNode {
 /* function declarations */
 /*------------------------------------------------------------/ */
 
-Tree3D* newTree3D(int numx, int numy, int numz, 
+Tree3D* newTree3D(int data_code, int numx, int numy, int numz, 
 	double origx, double origy, double origz,
-	double dx,  double dy,  double dz, double value);
-OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value);
-void subdivide(OctNode* parent, double value);
-void freeTree3D(Tree3D* tree);
-void freeNode(OctNode* parent);
+	double dx,  double dy,  double dz, double value, void *pdata);
+OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value, void *pdata);
+void subdivide(OctNode* parent, double value, void *pdata);
+void freeTree3D(Tree3D* tree, int freeDataPointer);
+void freeNode(OctNode* node, int freeDataPointer);
 OctNode* getLeafNodeContaining(Tree3D* tree, Vect3D coords);
 OctNode* getLeafContaining(OctNode* node, double x, double y, double z);
 
-ResultTreeNode* addResult(ResultTreeNode* prtn, double value, OctNode* pnode);
+ResultTreeNode* addResult(ResultTreeNode* prtn, double value, double volume, OctNode* pnode);
 void freeResultTree(ResultTreeNode* prtn);
 ResultTreeNode*  getHighestValue(ResultTreeNode* prtn);
 ResultTreeNode* getHighestLeafValue(ResultTreeNode* prtree);
+ResultTreeNode* getHighestLeafValueMinSize(ResultTreeNode* prtree, double sizeMinX, double sizeMinY, double sizeMinZ);
+
+Tree3D* readTree3D(FILE *fpio);
+int readNode(FILE *fpio, OctNode* node);
+int writeTree3D(FILE *fpio, Tree3D* tree);
+int writeNode(FILE *fpio, OctNode* node);
+
+int nodeContains(OctNode* node, double x, double y, double z);
+int extendedNodeContains(OctNode* node, double x, double y, double z, int checkZ);
 
 
 /* */

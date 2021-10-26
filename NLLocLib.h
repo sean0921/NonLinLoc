@@ -107,6 +107,7 @@ typedef struct
  	char phase[ARRIVAL_LABEL_LEN];
 	int n_residuals;
 	double delay;	/* time delay (sec) */
+	double std_dev;	/* std dev of time delay (sec) */
 }
 TimeDelayDesc;
 
@@ -145,6 +146,8 @@ typedef struct
 	double min_node_size;	// size of smallest side of smallest allowed node
 	int max_num_nodes;	// maximum number of nodes to evaluate
 	int num_scatter;	// number of scatter points to output
+	int use_stations_density;	// if 1, weight oct node order in result tree by station density in node
+	int stop_on_min_node_size;	// if 1, stop search when first min_node_size reached, if 0 stop subdividing a given cell when min_node_size reached
 }
 OcttreeParams;
 
@@ -206,7 +209,7 @@ EXTERN_TXT int NumObsFiles;
 EXTERN_TXT int NumArrivalsLocation;
 
 /* observations filenames */
-EXTERN_TXT char fn_loc_obs[MAX_NUM_OBS_FILES][FILENAME_MAX_SMALL];
+EXTERN_TXT char fn_loc_obs[MAX_NUM_OBS_FILES][FILENAME_MAX];
 /* filetype */
 EXTERN_TXT char ftype_obs[MAXLINE];
 
@@ -228,6 +231,8 @@ EXTERN_TXT int SearchType;
 #define METH_EDT  		3
 #define METH_EDT_BOX  		4
 EXTERN_TXT int LocMethod;
+EXTERN_TXT int EDT_use_otime_weight;
+EXTERN_TXT int EDT_otime_weight_active;
 EXTERN_TXT double DistStaGridMin;
 EXTERN_TXT double DistStaGridMax;
 EXTERN_TXT int MinNumArrLoc;
@@ -258,7 +263,7 @@ EXTERN_TXT int iWriteHypHeader[MAX_NUM_LOCATION_GRIDS];
 /* hypocenter filetype saving flags */
 /* SH 02/26/2004  added iSaveSnapSum for output to be read
     by SNAP */
-EXTERN_TXT int iSaveNLLocEvent, iSaveNLLocSum,
+EXTERN_TXT int iSaveNLLocEvent, iSaveNLLocSum, iSaveNLLocOctree,
 		iSaveHypo71Event, iSaveHypo71Sum,
 		iSaveHypoEllEvent, iSaveHypoEllSum,
 		iSaveHypoInvSum, iSaveAlberto4Sum,
@@ -269,6 +274,7 @@ EXTERN_TXT int iSaveNLLocEvent, iSaveNLLocSum,
 EXTERN_TXT int iSetStationDistributionWeights;
 EXTERN_TXT double stationDistributionWeightCutoff;
 
+EXTERN_TXT int iRejectDuplicateArrivals;
 
 /* phase identification */
 #define MAX_NUM_PHASE_ID 50
@@ -349,9 +355,10 @@ EXTERN_TXT int MetUse;		/* number of samples to use
 
 
 /* Octtree */
-EXTERN_TXT OcttreeParams octtreeParams;	/* Octtree parameters */
-EXTERN_TXT Tree3D* octTree;		/* Octtree */
-EXTERN_TXT ResultTreeNode* resultTreeRoot;	/* Octtree results tree root node*/
+EXTERN_TXT OcttreeParams octtreeParams;		/* Octtree parameters */
+EXTERN_TXT Tree3D* octTree;			/* Octtree */
+EXTERN_TXT ResultTreeNode* resultTreeRoot;	/* Octtree likelihood*volume results tree root node */
+//EXTERN_TXT ResultTreeNode* resultTreeLikelihoodRoot;	/* Octtree likelihood results tree root node */
 
 
 /* take-off angles */
@@ -397,6 +404,9 @@ EXTERN_TXT int NRdgs_Min;
 EXTERN_TXT double RMS_Max, Gap_Max;
 EXTERN_TXT double P_ResidualMax;
 EXTERN_TXT double S_ResidualMax;
+EXTERN_TXT double Ell_Len3_Max;
+EXTERN_TXT double Hypo_Depth_Min;
+EXTERN_TXT double Hypo_Depth_Max;
 
 /* hashtable function declarations */
 unsigned hash(char* , char* );
@@ -404,7 +414,7 @@ StaStatNode *lookup(int , char* , char* );
 StaStatNode *InstallStaStatInTable(int, char* , char* , int , double ,
 				double , double , double , double);
 int WriteStaStatTable(int , FILE *, double , int , double ,
-			double , double , int);
+			double , double , double , double , double , int);
 void UpdateStaStat(int , ArrivalDesc *, int , double , double );
 
 /** end of hashtable routines */
@@ -439,7 +449,7 @@ int IsGoodDate(int , int , int );
 int EvalPhaseID(char *, char *);
 int ReadArrivalSheets(int , ArrivalDesc* , double );
 int IsSameArrival(ArrivalDesc *, int , int , char *);
-int IsDuplicateArrival(ArrivalDesc *, int , int);
+int IsDuplicateArrival(ArrivalDesc *, int , int, int );
 int FindDuplicateTimeGrid(ArrivalDesc *arrival, int num_arrivals, int ntest);
 
 int WriteHypo71(FILE *, HypoDesc* , ArrivalDesc* , char* , int , int );
@@ -475,7 +485,7 @@ int CalcConfidenceIntrvl(GridDesc* , HypoDesc* , char* );
 int HomogDateTime(ArrivalDesc* , int , HypoDesc* );
 int CheckAbsoluteTiming(ArrivalDesc *arrival, int num_arrivals);
 int StdDateTime(ArrivalDesc* , int , HypoDesc* );
-int SetOutName(ArrivalDesc *arrival, char* out_file_root, char* out_file, char lastfile[FILENAME_MAX], int isec);
+int SetOutName(ArrivalDesc *arrival, char* out_file_root, char* out_file, char lastfile[FILENAME_MAX], int isec, int ncount);
 int SaveLocation(HypoDesc* , int , char *, int , char *, int );
 int GenEventScatterGrid(GridDesc* , HypoDesc* , ScatterParams* , char* );
 void InitializeArrivalFields(ArrivalDesc *);
@@ -515,8 +525,11 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 		ArrivalDesc *arrival,
 		GridDesc* ptgrid, GaussLocParams* gauss_par, HypoDesc* phypo,
 		OcttreeParams* pParams, Tree3D* pOctTree, float* fdata, double* poct_node_value_max);
-int GenEventScatterOcttree(OcttreeParams* pParams, double oct_node_value_max, float* fscatterdata);
+double getOctTreeStationDensityWeight(OctNode* poct_node, SourceDesc *stations, int numStations, GridDesc *pgrid);
+int GenEventScatterOcttree(OcttreeParams* pParams, double oct_node_value_max, float* fscatterdata, double integral);
+double convertOcttreeValuesToProb(ResultTreeNode* prtree, double sum, double oct_node_value_max);
 double integrateResultTree(ResultTreeNode* prtree, double sum, double oct_node_value_max);
+ResultTreeNode* createResultTree(ResultTreeNode* prtree, ResultTreeNode* pnew_rtree);
 int getScatterSampleResultTree(ResultTreeNode* prtree, OcttreeParams* pParams,
 		double integral, float* fdata, int npoints, int* pfdata_index,
 		double oct_node_value_max);

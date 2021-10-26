@@ -17,8 +17,8 @@ TIME3D_CCFLAGS=
 CUSTOM=
 #CUSTOM=ETH
 
-all : NLLoc Vel2Grid Grid2Time Grid2GMT LocSum Time2EQ PhsAssoc hypoe2hyp fpfit2hyp
-distrib : NLLoc Vel2Grid Grid2Time Grid2GMT LocSum Time2EQ PhsAssoc hypoe2hyp fpfit2hyp
+all : NLLoc Vel2Grid Grid2Time Grid2GMT LocSum Time2EQ PhsAssoc hypoe2hyp fpfit2hyp oct2grid
+distrib : NLLoc Vel2Grid Grid2Time Grid2GMT LocSum Time2EQ PhsAssoc hypoe2hyp fpfit2hyp oct2grid
 
 
 # --------------------------------------------------------------------------
@@ -51,7 +51,7 @@ OBJS100=NLLocLib.o GridLib.o GridMemLib.o geo.o octtree.o util.o nrutil.o nrmatr
 NLDiffLoc : ${BINDIR}/NLDiffLoc
 ${BINDIR}/NLDiffLoc : NLDiffLoc.o ${OBJS100}
 	gcc NLDiffLoc.o ${OBJS100} ${CCFLAGS} -o ${BINDIR}/NLDiffLoc -lm
-NLDiffLoc.o : NLDiffLoc.c NLLocLib.h GridLib.h GridMemLib.h ${INCLUDE_DIR}nrutil.h
+NLDiffLoc.o : NLDiffLoc.c NLDiffLoc.h NLLocLib.h GridLib.h GridMemLib.h ${INCLUDE_DIR}nrutil.h
 	gcc -c ${CCFLAGS}  NLDiffLoc.c  $(OPTIONS)
 # --------------------------------------------------------------------------
 
@@ -60,7 +60,7 @@ NLDiffLoc.o : NLDiffLoc.c NLLocLib.h GridLib.h GridMemLib.h ${INCLUDE_DIR}nrutil
 # --------------------------------------------------------------------------
 # Vel2Grid
 #
-OBJS2=GridLib.o geo.o util.o nrutil.o nrmatrix.o velmod.o map_project.o ran1.o 
+OBJS2=GridLib.o geo.o octtree.o util.o nrutil.o nrmatrix.o velmod.o map_project.o ran1.o 
 PVER=1
 Vel2Grid : ${BINDIR}/Vel2Grid
 ${BINDIR}/Vel2Grid : Vel2Grid${PVER}.o ${OBJS2}
@@ -76,7 +76,7 @@ velmod.o : ${INCLUDE_DIR}velmod.c
 # --------------------------------------------------------------------------
 # Grid2Time
 #
-OBJS3=GridLib.o geo.o util.o nrutil.o nrmatrix.o ran1.o \
+OBJS3=GridLib.o geo.o octtree.o util.o nrutil.o nrmatrix.o ran1.o \
 		map_project.o Time_3d.o
 PVER=1
 Grid2Time : ${BINDIR}/Grid2Time
@@ -95,7 +95,7 @@ Time_3d.o : Time_3d.c
 # --------------------------------------------------------------------------
 # Grid2GMT
 #
-OBJS4=Grid2GMT.o geo.o GridLib.o GridGraphLib.o vector.o util.o nrutil.o ran1.o \
+OBJS4=Grid2GMT.o geo.o GridLib.o octtree.o GridGraphLib.o vector.o util.o nrutil.o ran1.o \
 	nrmatrix.o map_project.o
 Grid2GMT : ${BINDIR}/Grid2GMT
 ${BINDIR}/Grid2GMT : ${OBJS4}
@@ -112,7 +112,7 @@ GridGraphLib.o : GridGraphLib.c GridLib.h GridGraphLib.h
 # --------------------------------------------------------------------------
 # LocSum
 #
-OBJS5=LocSum.o GridLib.o geo.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
+OBJS5=LocSum.o GridLib.o geo.o octtree.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
 LocSum : ${BINDIR}/LocSum
 ${BINDIR}/LocSum : ${OBJS5}
 	gcc ${OBJS5} ${CCFLAGS} -o ${BINDIR}/LocSum -lm
@@ -125,7 +125,7 @@ LocSum.o : LocSum.c GridLib.h
 # --------------------------------------------------------------------------
 # Time2EQ
 #
-OBJS6=GridLib.o geo.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
+OBJS6=GridLib.o geo.o util.o octtree.o nrutil.o nrmatrix.o ran1.o map_project.o
 PVER=1
 Time2EQ : ${BINDIR}/Time2EQ
 ${BINDIR}/Time2EQ : Time2EQ${PVER}.o ${OBJS6}
@@ -140,7 +140,7 @@ Time2EQ${PVER}.o : Time2EQ${PVER}.c GridLib.h ${IN!=CLUDE_DIR}ran1.h
 # --------------------------------------------------------------------------
 # hypoe2hyp
 #
-OBJS7=hypoe2hyp.o GridLib.o geo.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
+OBJS7=hypoe2hyp.o GridLib.o geo.o octtree.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
 hypoe2hyp : ${BINDIR}/hypoe2hyp
 ${BINDIR}/hypoe2hyp : ${OBJS7}
 	gcc ${OBJS7} ${CCFLAGS} -o ${BINDIR}/hypoe2hyp -lm
@@ -153,7 +153,7 @@ hypoe2hyp.o : hypoe2hyp.c GridLib.h
 # --------------------------------------------------------------------------
 # fpfit2hyp
 #
-OBJS8=fpfit2hyp.o GridLib.o geo.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
+OBJS8=fpfit2hyp.o GridLib.o geo.o octtree.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
 fpfit2hyp : ${BINDIR}/fpfit2hyp
 ${BINDIR}/fpfit2hyp : ${OBJS8}
 	gcc ${OBJS8} ${CCFLAGS} -o ${BINDIR}/fpfit2hyp -lm
@@ -166,13 +166,27 @@ fpfit2hyp.o : fpfit2hyp.c GridLib.h
 # --------------------------------------------------------------------------
 # PhsAssoc
 #
-OBJS9=PhsAssoc.o GridLib.o geo.o util.o nrutil.o nrmatrix.o ran1.o map_project.o calc_crust_corr.o
+OBJS9=PhsAssoc.o GridLib.o geo.o octtree.o util.o nrutil.o nrmatrix.o ran1.o map_project.o calc_crust_corr.o
 PhsAssoc : ${BINDIR}/PhsAssoc
 ${BINDIR}/PhsAssoc : ${OBJS9}
 	gcc ${OBJS9} ${CCFLAGS} -o ${BINDIR}/PhsAssoc -lm
 PhsAssoc.o : PhsAssoc.c GridLib.h
 	gcc -c PhsAssoc.c
 # --------------------------------------------------------------------------
+
+
+
+# --------------------------------------------------------------------------
+# oct2grid
+#
+OBJS10=oct2grid.o GridLib.o geo.o octtree.o util.o nrutil.o nrmatrix.o ran1.o map_project.o
+oct2grid : ${BINDIR}/oct2grid
+${BINDIR}/oct2grid : ${OBJS10}
+	gcc ${OBJS10} ${CCFLAGS} -o ${BINDIR}/oct2grid -lm
+oct2grid.o : oct2grid.c GridLib.h
+	gcc -c oct2grid.c
+# --------------------------------------------------------------------------
+
 
 
 
@@ -184,7 +198,7 @@ PhsAssoc.o : PhsAssoc.c GridLib.h
 NLLocLib.o : NLLocLib.c NLLocLib.h GridLib.h
 	gcc -c ${CCFLAGS}  NLLocLib.c
 
-GridLib.o : GridLib.c GridLib.h  geometry.h nrutil.h util.h geo.h
+GridLib.o : GridLib.c GridLib.h  geometry.h nrutil.h util.h geo.h ${INCLUDE_DIR}octtree.h
 	gcc -c ${CCFLAGS}  GridLib.c
 
 GridMemLib.o : GridMemLib.c GridMemLib.h  GridLib.h

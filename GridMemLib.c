@@ -51,7 +51,7 @@ float* NLL_AllocateGrid(GridDesc* pgrid)
 {
 	int index, nactive, ngrid_read, n;
 	float* fptr = NULL;
-	GridMemStruct* pGridMemStruct;
+	GridMemStruct* pGridMemStruct = NULL;
 
 //printf("IN: NLL_AllocateGrid\n");
 

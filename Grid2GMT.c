@@ -88,7 +88,7 @@
 /* globals */
 char fninput[FILENAME_MAX], fnoutput[FILENAME_MAX];
 #define MAX_NUM_INPUT_FILES 500
-char fnroot_input_list[MAX_NUM_INPUT_FILES][FILENAME_MAX_SMALL];
+char fnroot_input_list[MAX_NUM_INPUT_FILES][FILENAME_MAX];
 char fnroot_input[FILENAME_MAX];
 char fngrid_control[FILENAME_MAX], fn_root_output[FILENAME_MAX], fn_ps_output[FILENAME_MAX];
 char fn_gmt[FILENAME_MAX], fn_gmtgrd[FILENAME_MAX], fn_cont[FILENAME_MAX];
@@ -274,8 +274,7 @@ int main(int argc, char *argv[])
 
 	/* check for wildcards in input file name */
 	strcat(fninput, test_str);
-	NumFiles = ExpandWildCards(fninput,
-			fnroot_input_list, MAX_NUM_INPUT_FILES);
+	NumFiles = ExpandWildCards(fninput, fnroot_input_list, MAX_NUM_INPUT_FILES);
 
 
 	for (nFile = 0; nFile < NumFiles; nFile++) {
@@ -679,6 +678,9 @@ printf("arg_elements[1] <%s>  RES SCALE: %lf\n", arg_elements[1], res_scale);
 		} else if (pgrid0->type == GRID_MISFIT) {
 			strcpy(cpt_str, "misfit.");
 			strcpy(scale_label_str, "RMS Misfit (sec)");
+		} else if (pgrid0->type == GRID_LIKELIHOOD) {	// relative likelihood normalised 0-1
+			strcpy(cpt_str, "");
+			strcpy(scale_label_str, "Relative Likelihood");
 		} else if (pgrid0->type == GRID_VELOCITY) {
 			strcpy(cpt_str, "");
 			strcpy(scale_label_str, "Velocity (km/sec)");
@@ -1380,8 +1382,7 @@ printf("GetContourInterval vtick_int G: ");
 				contour_int = MISFIT_CONTOUR_INTERVAL_XY;
 			else {
 printf("GetContourInterval contour_int GRID_MISFIT: ");
-				contour_int = GetContourInterval(0.0,
-					(double) grid_value_max, 11, &nstep);
+				contour_int = GetContourInterval(0.0, (double) grid_value_max, 11, &nstep);
 			}
 			MakeMisfitCPT(fn_root_output, misfit_max, contour_int);
 			iFirstPlot = 0;
@@ -1411,10 +1412,16 @@ printf("GetContourInterval contour_int iFirstPlot: ");
 		    fprintf(fp_gmt,
 			  "else\n");
 			if (GMT_VER_3_3_4) {
-				fprintf(fp_gmt,
-			  "   makecpt -T%.1le/%.1le/%.1le > %s.cpt\n",
-				grid_value_min - contour_int,
-				grid_value_max + contour_int, contour_int, fn_root_output);
+	    			if (pgrid->type == GRID_LIKELIHOOD) {	// likelihood color table
+					fprintf(fp_gmt,
+						"   makecpt -Chot -I -T0/1/0.1 > %s.cpt\n",
+						fn_root_output);
+				} else {	// rainbow
+					fprintf(fp_gmt,
+						"   makecpt -T%.1le/%.1le/%.1le > %s.cpt\n",
+						grid_value_min - contour_int,
+						grid_value_max + contour_int, contour_int, fn_root_output);
+				}
 			} else {
 				fprintf(fp_gmt,
 			  "   makecpt -C%.1le -S%dc -M%f > %s.cpt\n",
@@ -1699,8 +1706,7 @@ double CalcAngleValue(double avalue, int iAzAngle, int iDipAngle)
 
 /*** function to select a tick or contour interval */
 
-double GetContourInterval(double value_min, double value_max,
-					int nstep_min, int* pnstep)
+double GetContourInterval(double value_min, double value_max, int nstep_min, int* pnstep)
 {
 	double contour_int = 1.0e10;
 

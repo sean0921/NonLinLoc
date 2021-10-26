@@ -1,5 +1,5 @@
 /*
- * Copyright (C) 1999-2000 Anthony Lomax <lomax@geoazur.unice.fr>
+ * Copyright (C) 1999-2005 Anthony Lomax <anthony@alomax.net, http://www.alomax.net>
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -23,12 +23,12 @@
 
 */
 
-/*------------------------------------------------------------/ */
-/* Anthony Lomax           | email: lomax@faille.unice.fr     / */
-/* UMR Geosciences Azur    | web: www-geoazur.unice.fr/~lomax / */
-/* 250 Rue Albert Einstein | tel: 33 (0) 4 93 95 43 25        / */
-/* 06560 Valbonne, FRANCE  | fax: 33 (0) 4 93 65 27 17        / */
-/*------------------------------------------------------------/ */
+/*-----------------------------------------------------------------------
+Anthony Lomax
+Anthony Lomax Scientific Software
+161 Allee du Micocoulier, 06370 Mouans-Sartoux, France
+tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
+-------------------------------------------------------------------------*/
 
 
 /*
@@ -52,7 +52,7 @@
 
 /*** function to create a new OctNode */
 
-OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value)
+OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value, void *pdata)
 {
 
 	int l, m, n;
@@ -64,6 +64,7 @@ OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value)
 	node->center = center;
 	node->ds = ds;
 	node->value = value;
+	node->pdata = pdata;
 
 	for (l = 0; l < 2; l++)
 		for (m = 0; m < 2; m++)
@@ -79,9 +80,9 @@ OctNode* newOctNode(OctNode* parent, Vect3D center, Vect3D ds, double value)
 
 /*** function to create a new Tree3D - an x, y, z array of octtree root nodes ***/
 
-Tree3D* newTree3D(int numx, int numy, int numz, 
+Tree3D* newTree3D(int data_code, int numx, int numy, int numz, 
 	double origx, double origy, double origz,
-	double dx,  double dy,  double dz, double value)
+	double dx,  double dy,  double dz, double value, void *pdata)
 {
 
 	int ix, iy, iz;
@@ -110,7 +111,7 @@ Tree3D* newTree3D(int numx, int numy, int numz,
 				return(NULL);
 			for (iz = 0; iz < numz; iz++) {
 				center.z = origz + (double) iz * dz + dz / 2.0;
-				garray[ix][iy][iz] = newOctNode(NULL, center, ds, value); 
+				garray[ix][iy][iz] = newOctNode(NULL, center, ds, value, pdata); 
 			}
 		}
 	}
@@ -121,6 +122,7 @@ Tree3D* newTree3D(int numx, int numy, int numz,
 	tree = (Tree3D*) malloc(sizeof(Tree3D));
 
 	tree->nodeArray = garray;
+	tree->data_code = data_code;
 	tree->numx = numx;
 	tree->numy = numy;
 	tree->numz = numz;
@@ -136,7 +138,7 @@ Tree3D* newTree3D(int numx, int numy, int numz,
 
 /*** function to sudivide a node into child nodes ***/
 
-void subdivide(OctNode* parent, double value) {
+void subdivide(OctNode* parent, double value, void *pdata) {
 
 	int ix, iy, iz;
 	Vect3D center, ds;
@@ -155,7 +157,7 @@ void subdivide(OctNode* parent, double value) {
 				center.z = parent->center.z + 
 					(double) (2 * iz - 1) * ds.z / 2.0;
 				parent->child[ix][iy][iz] = 
-					newOctNode(parent, center, ds, value); 
+					newOctNode(parent, center, ds, value, pdata); 
 			}
 		}
 	}
@@ -168,7 +170,7 @@ void subdivide(OctNode* parent, double value) {
 
 /*** function to free a Tree3D ***/
 
-void freeTree3D(Tree3D* tree)
+void freeTree3D(Tree3D* tree, int freeDataPointer)
 {
 
 	int ix, iy, iz;
@@ -176,7 +178,7 @@ void freeTree3D(Tree3D* tree)
 	for (ix = 0; ix < tree->numx; ix++) {
 		for (iy = 0; iy < tree->numy; iy++) {
 			for (iz = 0; iz < tree->numz; iz++) {
-				freeNode(tree->nodeArray[ix][iy][iz]);
+				freeNode(tree->nodeArray[ix][iy][iz], freeDataPointer);
 			}
        			free(tree->nodeArray[ix][iy]);
 		}
@@ -191,18 +193,21 @@ void freeTree3D(Tree3D* tree)
 
 /*** function to free an OctNode and all its child nodes ***/
 
-void freeNode(OctNode* node) {
+void freeNode(OctNode* node, int freeDataPointer) {
 
 	int ix, iy, iz;
 	for (ix = 0; ix < 2; ix++) {
 		for (iy = 0; iy < 2; iy++) {
 			for (iz = 0; iz < 2; iz++) {
 				if (node->child[ix][iy][iz] != NULL)
-					freeNode(node->child[ix][iy][iz]); 
+					freeNode(node->child[ix][iy][iz], freeDataPointer); 
 			}
 		}
 	}
 
+	// try to free data
+	if (freeDataPointer)
+		free(node->pdata);
 	free(node);
 
 }
@@ -262,31 +267,87 @@ OctNode* getLeafContaining(OctNode* node, double x, double y, double z)
 }
 
 
+/*** function to check if node contains the given x, y, z coordinates ***/
+
+int nodeContains(OctNode* node, double x, double y, double z)
+{
+
+	Vect3D ds;
+	double dx2, dy2, dz2;
+
+	ds = node->ds;
+
+	dx2 = ds.x / 2.0;
+	if (x < node->center.x - dx2 || x > node->center.x + dx2)
+		return(0);
+
+	dy2 = ds.y / 2.0;
+	if (y < node->center.y - dy2 || y > node->center.y + dy2)
+		return(0);
+
+	dz2 = ds.z / 2.0;
+	if (z < node->center.z - dz2 || z > node->center.z + dz2)
+		return(0);
+
+	return(1);
+
+}
+
+
+/*** function to check if node or half-segments of adjacent equal-size nodes contains the given x, y, z coordinates ***/
+
+int extendedNodeContains(OctNode* node, double x, double y, double z, int checkZ)
+{
+
+	Vect3D ds;
+	double dx2, dy2, dz2;
+
+	ds = node->ds;
+
+	dx2 = ds.x;
+	if (x < node->center.x - dx2 || x > node->center.x + dx2)
+		return(0);
+
+	dy2 = ds.y;
+	if (y < node->center.y - dy2 || y > node->center.y + dy2)
+		return(0);
+
+	if (checkZ) {
+		dz2 = ds.z;
+		if (z < node->center.z - dz2 || z > node->center.z + dz2)
+			return(0);
+	}
+
+	return(1);
+
+}
+
+
 /*** function to put Octtree node in results tree in order of value */
 
-ResultTreeNode* addResult(ResultTreeNode* prtree, double value, OctNode* pnode)
+ResultTreeNode* addResult(ResultTreeNode* prtree, double value, double volume, OctNode* pnode)
 {
 	/* put address in result tree based on value */
 
 	if (prtree == NULL) {	/* at empty node */
 		if ((prtree = (ResultTreeNode* ) malloc(sizeof(ResultTreeNode))) == NULL)
-			fprintf(stderr,
-			    "ERROR allocating memory for result-tree node.\n");
+			fprintf(stderr, "ERROR allocating memory for result-tree node.\n");
 		prtree->value = value;
+		prtree->volume = volume;	// node volume depends on geometry in physical space, may not be dx*dy*dz
 		prtree->pnode = pnode;
 		prtree->left = prtree->right = NULL;
 
 	} else if (value == prtree->value)  {	// prevent assymetric tree if multiple identical values
 		if (get_rand_int(-10000, 9999) < 0)
-			prtree->left = addResult(prtree->left, value, pnode);
+			prtree->left = addResult(prtree->left, value, volume, pnode);
 		else
-			prtree->right = addResult(prtree->right, value, pnode);
+			prtree->right = addResult(prtree->right, value, volume, pnode);
 
 	} else if (value < prtree->value)  {
-		prtree->left = addResult(prtree->left, value, pnode);
+		prtree->left = addResult(prtree->left, value, volume, pnode);
 
 	} else  {
-		prtree->right = addResult(prtree->right, value, pnode);
+		prtree->right = addResult(prtree->right, value, volume, pnode);
 	}
 		
 	return (prtree);
@@ -338,6 +399,208 @@ ResultTreeNode* getHighestLeafValue(ResultTreeNode* prtree)
 
 	return(prtree_returned);
 }
+
+
+
+/*** function to get ResultTree Leaf Node with highest value */
+
+ResultTreeNode* getHighestLeafValueMinSize(ResultTreeNode* prtree, double sizeMinX, double sizeMinY, double sizeMinZ)
+{
+
+	ResultTreeNode* prtree_returned = NULL;
+
+	if (prtree->right != NULL)
+		prtree_returned = getHighestLeafValueMinSize(prtree->right, sizeMinX, sizeMinY, sizeMinZ);
+
+	if (prtree_returned != NULL)		// right leaf descendent
+		return(prtree_returned);	// thus highest value leaf
+	else {					// no right leaf descendents
+		if (prtree->pnode->isLeaf	// this is leaf
+			&& prtree->pnode->ds.x >= sizeMinX 
+			&& prtree->pnode->ds.y >= sizeMinY 
+			&& prtree->pnode->ds.z >= sizeMinZ) // not too small
+				return(prtree);	// thus highest value leaf that is not too small
+	}
+
+	if (prtree->left != NULL)	// look for left leaf descendents
+		prtree_returned = getHighestLeafValueMinSize(prtree->left, sizeMinX, sizeMinY, sizeMinZ);
+
+	return(prtree_returned);
+}
+
+
+
+
+
+
+/*** function to read a Tree3D ***/
+
+Tree3D* readTree3D(FILE *fpio)
+{
+
+	int istat;
+	int istat_cum;
+	int ix, iy, iz;
+	
+	Tree3D* tree = NULL;
+	int data_code;
+	int numx, numy, numz;
+	Vect3D orig;
+	Vect3D ds;
+	
+	
+	istat = fread(&data_code, sizeof(int), 1, fpio);
+	istat += fread(&numx, sizeof(int), 1, fpio);
+	istat += fread(&numy, sizeof(int), 1, fpio);
+	istat += fread(&numz, sizeof(int), 1, fpio);
+	istat += fread(&orig, sizeof(Vect3D), 1, fpio);
+	istat += fread(&ds, sizeof(Vect3D), 1, fpio);
+	
+	if (istat < 6)
+		return(NULL);
+		
+	tree = newTree3D(data_code, numx, numy, numz, orig.x, orig.y, orig.z, ds.x, ds.y, ds.z, -1.0, NULL);
+
+	istat_cum = 0;
+	for (ix = 0; ix < tree->numx; ix++) {
+		for (iy = 0; iy < tree->numy; iy++) {
+			for (iz = 0; iz < tree->numz; iz++) {
+				istat += readNode(fpio, tree->nodeArray[ix][iy][iz]);
+					if (istat < 0)
+						return(NULL);
+					istat_cum += istat;
+			}
+		}
+	}
+
+	return(tree);
+
+}
+
+
+
+/*** function to read an OctNode and all its child nodes ***/
+
+int readNode(FILE *fpio, OctNode* node) 
+{
+
+	int istat;
+	int istat_cum;
+	int ix, iy, iz;
+
+	float value;
+	
+	
+	istat = fread(&value, sizeof(float), 1, fpio);	/* node value */
+	node->value = (double) value;
+	istat += fread(&(node->isLeaf), sizeof(char), 1, fpio);		/* leaf flag, 1=leaf */
+
+	if (istat < 2)
+		return(-1);
+		
+	if (node->isLeaf)
+		return(1);
+		
+	subdivide(node, -1.0, NULL);
+		
+	istat_cum = 1;
+	
+	for (ix = 0; ix < 2; ix++) {
+		for (iy = 0; iy < 2; iy++) {
+			for (iz = 0; iz < 2; iz++) {
+				if (node->child[ix][iy][iz] != NULL) {
+					istat = readNode(fpio, node->child[ix][iy][iz]); 
+					if (istat < 0)
+						return(-1);
+					istat_cum += istat;
+				}
+			}
+		}
+	}
+
+	return(istat_cum);
+	
+}
+
+
+
+/*** function to write a Tree3D ***/
+
+int writeTree3D(FILE *fpio, Tree3D* tree)
+{
+
+	int istat;
+	int istat_cum;
+	int ix, iy, iz;
+	
+	istat = fwrite(&(tree->data_code), sizeof(int), 1, fpio);
+	istat += fwrite(&(tree->numx), sizeof(int), 1, fpio);
+	istat += fwrite(&(tree->numy), sizeof(int), 1, fpio);
+	istat += fwrite(&(tree->numz), sizeof(int), 1, fpio);
+	istat += fwrite(&(tree->orig), sizeof(Vect3D), 1, fpio);
+	istat += fwrite(&(tree->ds), sizeof(Vect3D), 1, fpio);
+	
+	if (istat < 6)
+		return(-1);
+
+	istat_cum = 0;
+	for (ix = 0; ix < tree->numx; ix++) {
+		for (iy = 0; iy < tree->numy; iy++) {
+			for (iz = 0; iz < tree->numz; iz++) {
+				istat = writeNode(fpio, tree->nodeArray[ix][iy][iz]);
+				if (istat < 0)
+					return(-1);
+				istat_cum += istat;
+			}
+		}
+	}
+
+	return(istat_cum);
+
+}
+
+
+
+/*** function to write an OctNode and all its child nodes ***/
+
+int writeNode(FILE *fpio, OctNode* node) 
+{
+
+	int istat;
+	int istat_cum;
+	int ix, iy, iz;
+	
+	float value;
+
+	value = (float) node->value;
+	istat = fwrite(&value, sizeof(float), 1, fpio);	/* node value */
+	istat += fwrite(&(node->isLeaf), sizeof(char), 1, fpio);		/* leaf flag, 1=leaf */
+
+	if (istat < 2)
+		return(-1);
+		
+	if (node->isLeaf)
+		return(1);
+		
+	istat_cum = 1;
+	for (ix = 0; ix < 2; ix++) {
+		for (iy = 0; iy < 2; iy++) {
+			for (iz = 0; iz < 2; iz++) {
+				if (node->child[ix][iy][iz] != NULL) {
+					istat = writeNode(fpio, node->child[ix][iy][iz]); 
+					if (istat < 0)
+						return(-1);
+					istat_cum += istat;
+				}
+			}
+		}
+	}
+
+	return(istat_cum);
+	
+}
+
+
 
 
 /*------------------------------------------------------------/ */

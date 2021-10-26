@@ -125,7 +125,7 @@ int AssociatePhases(int argc, char** argv)
 	char fn_loc_grids[FILENAME_MAX], fn_loc_grids1[FILENAME_MAX], fn_loc_grids2[FILENAME_MAX];
 	char fn_hyp_out[FILENAME_MAX];
 
-	char fn_loc_grids_list[MAX_NUM_INPUT_FILES][FILENAME_MAX_SMALL];
+	char fn_loc_grids_list[MAX_NUM_INPUT_FILES][FILENAME_MAX];
 
 	char *pchr0, *pchr1;
 	char tmp_str[FILENAME_MAX];

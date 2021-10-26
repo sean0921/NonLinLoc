@@ -23,6 +23,7 @@
 
 */
 
+
 /*-----------------------------------------------------------------------
 Anthony Lomax
 Anthony Lomax Scientific Software
@@ -32,7 +33,7 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 
 /*
-	history:
+	history:	(see also http://alomax.net/nlloc -> Updates)
 
 	ver 01    26SEP1997  AJL  Original version
 	ver 02    08JUN1998  AJL  Metropolis added
@@ -65,6 +66,17 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 		                    to convert lat/lon into Swiss coordinates in km and to find
 		                    region name for local earthquakes in Switzerland
 		    NOV2004  AJL   Split off NLLocLib and created NLDiffLoc (non-linear double-difference location)
+		    APR2005  AJL   Added LOCSTAWT, LOCELEVCORR, LOCDELAY_SURFACE
+		    JAN2006 Frederik Tilmann    Changes to SEISAN reader
+			- 5 character station names now permitted
+			- checks format line code in column 80 to only read phase lines.  
+				Previously some 'unlucky' lines
+				of other types got interpreted as phase lines
+			- can now read high precision phase times (accurate to 0.001 s) . 
+				Previously these high precision
+				picks drops 10s of seconds, resulting in completely wrong times
+			- now read instrument and component
+		    APR2006  AJL   Added  LOCMETH-EDT_OT_WT, LOCSEARCH-OCT:useStationsDensity, stopOnMinNodeSize
 
 
 .........1.........2.........3.........4.........5.........6.........7.........8
@@ -88,7 +100,6 @@ tel: +33(0)493752502  e-mail: anthony@alomax.net  web: http://www.alomax.net
 
 #include "GridLib.h"
 #include "ran1.h"
-#include "octtree.h"
 #include "velmod.h"
 #include "NLLocLib.h"
 #include "GridMemLib.h"
@@ -361,7 +372,7 @@ INGV*/
 		//if ( IsDuplicateArrival(arrival, nobs + 1, nobs, NULL) >= 0
 		//		|| IsDuplicateArrival(arrival, nobs + 1, nobs, arrival[nobs].phase) >= 0 )
 		//		) {
-		if ( IsDuplicateArrival(arrival, nobs + 1, nobs) >= 0 ) {
+		if ( IsDuplicateArrival(arrival, nobs + 1, nobs, !iRejectDuplicateArrivals) >= 0 ) {
 			sprintf(MsgStr,
 	"WARNING: duplicate arrival, rejecting observation: %s %s", arrival[nobs].label, arrival[nobs].phase);
 			putmsg(2, MsgStr);
@@ -515,7 +526,7 @@ int GetObservations(FILE* fp_obs, char* ftype_obs, char* fn_grids,
 		}
 
 		// make sure station location is null
-		arrival[nobs].station.x = arrival[nobs].station.y = arrival[nobs].station.z = 0.0;
+		arrival[nobs].station.x = arrival[nobs].station.y = arrival[nobs].station.z = -LARGE_DOUBLE;
 
 
 		// set some flags
@@ -1047,7 +1058,7 @@ double CalcSimpleElevCorr(ArrivalDesc *arrival, int narr, double pvel, double sv
 
 	// Switch debug messages from this function on/off (1/0).
 	diagnostic = message_flag >= 3;
-diagnostic = 1;
+//diagnostic = 1;
 
 	// check for companion
 	if ((n_compan = arrival[narr].n_companion) >= 0) {
@@ -1225,7 +1236,9 @@ int ApplyTimeDelays(ArrivalDesc *arrival)
 	int ifound = 0;
 	double tmp_delay;
 
+	double tmp_std_dev;
 
+	
 	sprintf(MsgStr, "Checking for time delay: %s %s",
 		arrival->label, arrival->phase);
 	putmsg(4, MsgStr);
@@ -1251,6 +1264,19 @@ int ApplyTimeDelays(ArrivalDesc *arrival)
 				tmp_delay);
 			putmsg(4, MsgStr);
 			ifound = 1;
+			// adjust error based on std-dev of delays
+			// AJL 20030826 added to test if pick error should be set based on residual statistics
+			if (0) {
+				tmp_std_dev = TimeDelay[nDelay].std_dev;
+				if (tmp_std_dev > arrival->error) {
+					sprintf(MsgStr, "   error set from %f to %f sec.", arrival->error, tmp_std_dev);
+					putmsg(4, MsgStr);
+					arrival->error = tmp_std_dev;
+				} else {
+					sprintf(MsgStr, "   error not changed from %f to %f sec.", arrival->error, tmp_std_dev);
+					putmsg(4, MsgStr);
+				}
+			}
 		    }
 		    break;
 		}
@@ -1377,7 +1403,7 @@ int GetNextObs(FILE* fp_obs, ArrivalDesc *arrival, char* ftype_obs, int nfirst)
 	
 	// ETH LOC format
 	char eth_line_key[MAXSTRING];
-	int eth_use_loc, eth_use_mag;
+	int eth_use_loc = 0, eth_use_mag = 0;
 	double  vpvs;
 
 	// NEIC format
@@ -1596,8 +1622,8 @@ printf("2 %s", line);
 
 
 	else if (strcmp(ftype_obs, "HYPO71") == 0 ||
-		strcmp(ftype_obs, "HYPO71_OV") == 0 ||
-		strcmp(ftype_obs, "HYPOELLIPSE") == 0)
+			strcmp(ftype_obs, "HYPO71_OV") == 0 ||
+			strcmp(ftype_obs, "HYPOELLIPSE") == 0)
 	{
 
 		if (check_for_S_arrival) {
@@ -1614,16 +1640,16 @@ printf("2 %s", line);
 			/* check for zero or blank S phase time */
 			istat = ReadFortranString(line, 32 + ioff, 5, chrtmp);
 			if (istat > 0
-				&& strncmp(chrtmp, "     ", 5) != 0
-				&& strncmp(chrtmp, "    0", 5) != 0)
+						 && strncmp(chrtmp, "     ", 5) != 0
+						 && strncmp(chrtmp, "    0", 5) != 0)
 			{
 				/* read S phase input in last input line read */
 				istat = ReadFortranString(line, 1, 4, arrival->label);
 				TrimString(arrival->label);
 				istat += ReadFortranInt(line, 10, 2, &arrival->year);
 		// temporary fix for HYPO71 Y2K problem
-		if (arrival->year < 20)
-			arrival->year += 100;
+				if (arrival->year < 20)
+					arrival->year += 100;
 				arrival->year += 1900;
 				istat += ReadFortranInt(line, 12, 2, &arrival->month);
 				istat += ReadFortranInt(line, 14, 2, &arrival->day);
@@ -1632,7 +1658,7 @@ printf("2 %s", line);
 				istat += ReadFortranReal(line, 32 + ioff, 5, &arrival->sec);
 				/* check for integer sec format */
 				if (arrival->sec > 99.999)
-				arrival->sec /= 100.0;
+					arrival->sec /= 100.0;
 				istat += ReadFortranReal(line, 20, 5, &psec);
 				/* check for P second >= 60.0 */
 				if (psec >= 60.0 && arrival->sec < 60.0)
@@ -1646,24 +1672,242 @@ printf("2 %s", line);
 
 		/* check for S arrival input found */
 		if (check_for_S_arrival && istat == 10
-				&& IsPhaseID(arrival->phase, "S")
-				&& IsGoodDate(arrival->year,
-						arrival->month, arrival->day)) {
+				  && IsPhaseID(arrival->phase, "S")
+				  && IsGoodDate(arrival->year,
+						  arrival->month, arrival->day)) {
 
 			//strcpy(arrival->phase, "S");
 
-			/* set error fields */
-			strcpy(arrival->error_type, "GAU");
-			if (arrival->quality >= 0 &&
-			    arrival->quality < NumQuality2ErrorLevels) {
-				arrival->error =
-					Quality2Error[arrival->quality];
-			} else {
-				arrival->error =
-				   Quality2Error[NumQuality2ErrorLevels - 1];
-				puterr("WARNING: invalid arrival weight.");
-			}
+							  /* set error fields */
+							  strcpy(arrival->error_type, "GAU");
+							  if (arrival->quality >= 0 &&
+										arrival->quality < NumQuality2ErrorLevels) {
+								  arrival->error =
+										Quality2Error[arrival->quality];
+										} else {
+										arrival->error =
+										Quality2Error[NumQuality2ErrorLevels - 1];
+										puterr("WARNING: invalid arrival weight.");
+										}
 
+										line[0] = '\0';
+										check_for_S_arrival = 0;
+										return(istat);
+						  } else if (check_for_S_arrival) {
+							  check_for_S_arrival = 0;
+							  return(OBS_FILE_SKIP_INPUT_LINE);
+						  }
+
+
+
+
+						  /* read next line */
+						  cstat = fgets(line, MAXLINE_LONG, fp_obs);
+						  if (cstat == NULL)
+							  return(OBS_FILE_END_OF_INPUT);
+
+						  /* read formatted P (or S) arrival input */
+						  istat = ReadFortranString(line, 1, 4, arrival->label);
+						  TrimString(arrival->label);
+						  istat += ReadFortranString(line, 5, 1, arrival->onset);
+						  TrimString(arrival->onset);
+						  istat += ReadFortranString(line, 6, 1, arrival->phase);
+						  TrimString(arrival->phase);
+						  istat += ReadFortranString(line, 7, 1, arrival->first_mot);
+						  TrimString(arrival->first_mot);
+						  istat += ReadFortranInt(line, 8, 1, &arrival->quality);
+						  istat += ReadFortranInt(line, 10, 2, &arrival->year);
+// temporary fix for HYPO71 Y2K problem
+						  if (arrival->year < 20)
+							  arrival->year += 100;
+						  arrival->year += 1900;
+						  istat += ReadFortranInt(line, 12, 2, &arrival->month);
+						  istat += ReadFortranInt(line, 14, 2, &arrival->day);
+						  istat += ReadFortranInt(line, 16, 2, &arrival->hour);
+						  istat += ReadFortranInt(line, 18, 2, &arrival->min);
+						  istat += ReadFortranReal(line, 20, 5, &arrival->sec);
+
+						  if (istat != 11) {
+							  line[0] = '\0';
+							  return(OBS_FILE_END_OF_EVENT);
+						  }
+
+						  /* read optional amplitude/period fields */
+						  istat += ReadFortranReal(line, 44, 4, &arrival->amplitude);
+//printf("AMPLITUDE: %lf (%s)\n", arrival->amplitude, line);
+						  istat += ReadFortranReal(line, 48, 3, &arrival->period);
+// 20030826 AJL coda_dur added
+						  istat += ReadFortranReal(line, 71, 5, &arrival->coda_dur);
+
+
+						  check_for_S_arrival = 1;
+						  /* check for valid phase code */
+//		if (IsPhaseID(arrival->phase, "P")) {
+			//strcpy(arrival->phase, "P");
+						  check_for_S_arrival = 1;
+
+//		} else if (IsPhaseID(arrival->phase, "S")) {
+			//strcpy(arrival->phase, "S");
+//			check_for_S_arrival = 0;
+//		} else
+//			return(OBS_FILE_END_OF_EVENT);
+
+						  if (!IsGoodDate(arrival->year, arrival->month, arrival->day))
+							  return(OBS_FILE_END_OF_EVENT);
+
+
+						  /* check for integer sec format */
+						  if (arrival->sec > 99.999)
+							  arrival->sec /= 100.0;
+
+						  /* convert quality to error */
+						  Qual2Err(arrival);
+
+						  return(istat);
+	}
+
+
+
+	else if (strcmp(ftype_obs, "HYPOINVERSE_Y2000_ARC") == 0)
+	{
+		
+/*
+Y2000 (station) archive format
+StartCol. Len. FortranFormat Data (* revised from pre-Y2000 format)
+1 5 A5 5-letter station site code, left justified. *
+6 2 A2 2-letter seismic network code. *
+100
+8 1 1X Blank *
+9 1 A1 One letter station component code.
+10 3 A3 3-letter station component code. *
+13 1 1X Blank *
+14 2 A2 P remark such as "IP".
+16 1 A1 P first motion.
+17 1 I1 Assigned P weight code.
+18 4 I4 Year. *
+22 8 4I2 Month, day, hour and minute.
+30 5 F5.2 Second of P arrival.
+35 4 F4.2 P travel time residual.
+39 3 F3.2 P weight actually used.
+42 5 F5.2 Second of S arrival.
+47 2 A2 S remark such as "ES".
+49 1 1X Blank
+50 1 I1 Assigned S weight code.
+51 4 F4.2 S travel time residual.
+55 7 F7.2 Amplitude (Normally peak-to-peak). *
+62 2 I2 Amp units code. 0=PP mm, 1=0 to peak mm (UCB), 2=digital counts. *
+64 3 F3.2 S weight actually used.
+67 4 F4.2 P delay time.
+71 4 F4.2 S delay time.
+75 4 F4.1 Epicentral distance (km).
+79 3 F3.0 Emergence angle at source.
+82 1 I1 Amplitude magnitude weight code.
+83 1 I1 Duration magnitude weight code.
+84 3 F3.2 Period at which the amplitude was measured for this station.
+87 1 A1 1-letter station remark.
+88 4 F4.0 Coda duration in seconds.
+92 3 F3.0 Azimuth to station in degrees E of N.
+95 3 F3.2 Duration magnitude for this station. *
+98 3 F3.2 Amplitude magnitude for this station. *
+101 4 F4.3 Importance of P arrival.
+105 4 F4.3 Importance of S arrival.
+109 1 A1 Data source code.
+110 1 A1 Label code for duration magnitude from FC1 or FC2 command.
+111 1 A1 Label code for amplitude magnitude from XC1 or XC2 command.
+112 2 A2 2-letter station location code (component extension).
+113 is the last filled column.
+		
+Example HYPOINVERSE doc
+			:
+19991201 0 8 64735 5775120 3094 355 0 160
+PST NC VVHZ IPD0199912010008 7.56 00 0 4 0 0
+PMM NC VVHZ EPU2199912010008 7.71 700 0 4 19M 0 0
+PVC NC VVHZ IPD1199912010008 7.81 8.98ESD2 00 0 0 6 0
+PPC NC VVHZ IPU0199912010008 8.13 9.19ESU2 1600 0 4 7M 0 0
+PHP NC VVHZ EPU2199912010008 8.39 00 0 4 0 0
+PSM NC VVHZ EPU2199912010008 9.98 00 0 4 0 0
+BMS NC VVHZ P 419991201000899.99 00 0 4 22 0
+21069577
+		
+Example INGV:
+		
+200512132009226042 4387 12E4874   90  0 15137 24 11620767 507 7814 311298    203    0 301 469 12   0 120  0 15Ita WW   16    0  0   0  0    141429 298 120   0   01 
+$1                                                                                            
+LNSS IV EBHE P U0200512132009 2792  62181    0   0   0      0 0  0   0   0 235 9200  0   59127315  0 498   0W     0
+$   6 5.20 1.80 6.40 2.65 0.06 NSR0  -47 PHP0  820 151886 19 943 23 497 31 329 39 159 47  91           
+LNSS IV EBHE P U2200512132009 2794  64 90    0   0   0      0 0  0   0   0 235 9200  0   72127334  0 124   0W     0
+$   6 5.18 1.80 5.50 2.05 0.04 NSR0  -47 PHP0  954 151220 19 636 23 531 31 289 39 172 47 105           
+MNS  IV EBHE P  3200512132009 2982 -75 36    0   0   0      0 0  0   0   0 399 9100  0   49196299  0  40   0W     0
+$   6 4.91 1.80 5.38 2.18 0.07 NSR0  -43 PHP0   38 15 525 19 483 23 258 31 168 39  80 43  66           
+
+*/
+		
+		if (check_for_S_arrival) {
+			/* check for S phase input in last input line read */
+
+			// check for zero or blank S phase time and remark
+			// 42 5 F5.2 Second of S arrival.
+			// 47 2 A2 S remark such as "ES".
+			istat = ReadFortranString(line, 42, 7, chrtmp);
+//printf("chrtmp <%s>\n", chrtmp);
+			if (istat > 0
+				&& strncmp(chrtmp, "     ", 5) != 0
+				&& strncmp(chrtmp, "    0", 5) != 0
+				&& strncmp(chrtmp + 5, "  ", 2) != 0)
+			{
+//printf("ACCEPT chrtmp <%s>\n", chrtmp);
+				// read S phase input in last input line read 
+				istat = ReadFortranString(line, 1, 5, arrival->label);
+				TrimString(arrival->label);
+				// network code ignored
+				istat += ReadFortranString(line, 10, 3, arrival->inst);
+				TrimString(arrival->inst);
+				istat += ReadFortranString(line, 9, 1, arrival->comp);
+				TrimString(arrival->comp);
+				// try and decode S remark
+				arrival->onset[0] = ARRIVAL_NULL_CHR;
+				istat += ReadFortranString(line, 47, 2, chrtmp);
+				if (chrtmp[0] == 'S' || chrtmp[0] == 's') {
+					strcpy(arrival->phase, chrtmp);
+					TrimString(arrival->phase);
+				} else if (chrtmp[1] == 'S' || chrtmp[1] == 's') {
+					arrival->onset[0] = chrtmp[0];
+					arrival->phase[0] = chrtmp[1];
+				} else {
+					arrival->phase[0] = 'S';
+				}
+				//istat += ReadFortranString(line, 49, 1, arrival->first_mot);
+				//TrimString(arrival->first_mot);
+				istat += ReadFortranInt(line, 18, 4, &arrival->year);
+				istat += ReadFortranInt(line, 22, 2, &arrival->month);
+				istat += ReadFortranInt(line, 24, 2, &arrival->day);
+				istat += ReadFortranInt(line, 26, 2, &arrival->hour);
+				istat += ReadFortranInt(line, 28, 2, &arrival->min);
+				istat += ReadFortranReal(line, 42, 5, &arrival->sec);
+				// check for integer sec format
+				if (arrival->sec > 99.999)
+					arrival->sec /= 100.0;
+				istat += ReadFortranReal(line, 30, 5, &psec);
+				// check for integer sec format
+				if (psec > 99.999)
+					psec /= 100.0;
+				// check for P second >= 60.0 - not needed (?)
+				if (psec >= 60.0 && arrival->sec < 60.0)
+					arrival->sec += 60.0;
+				istat += ReadFortranInt(line, 50, 1, &arrival->quality);
+				// read optional amplitude/period fields - read with P
+				//istat += ReadFortranReal(line, 55, 7, &arrival->amplitude);
+				//istat += ReadFortranReal(line, 84, 3, &arrival->period);
+				//istat += ReadFortranReal(line, 88, 4, &arrival->coda_dur);
+			}
+		}
+
+		// check for valid S arrival input found
+		if (check_for_S_arrival && istat == 12
+				  && IsPhaseID(arrival->phase, "S")
+				  && IsGoodDate(arrival->year, arrival->month, arrival->day)) {
+			// convert quality to error
+			Qual2Err(arrival);
 			line[0] = '\0';
 			check_for_S_arrival = 0;
 			return(istat);
@@ -1673,52 +1917,64 @@ printf("2 %s", line);
 		}
 
 
-
-
-		/* read next line */
+		// read next line
 		cstat = fgets(line, MAXLINE_LONG, fp_obs);
 		if (cstat == NULL)
 			return(OBS_FILE_END_OF_INPUT);
+		
+		// check for shawdow card - line starting with $
+		if (strncmp(line, "$", 1) == 0)
+			return(OBS_FILE_SKIP_INPUT_LINE);
 
-		/* read formatted P (or S) arrival input */
-		istat = ReadFortranString(line, 1, 4, arrival->label);
+		// read formatted P arrival input
+		istat = ReadFortranString(line, 1, 5, arrival->label);
 		TrimString(arrival->label);
-		istat += ReadFortranString(line, 5, 1, arrival->onset);
-		TrimString(arrival->onset);
-		istat += ReadFortranString(line, 6, 1, arrival->phase);
+		// network code ignored
+		istat += ReadFortranString(line, 10, 3, arrival->inst);
+		TrimString(arrival->inst);
+		istat += ReadFortranString(line, 9, 1, arrival->comp);
+		TrimString(arrival->comp);
+		// try and decode P remark
+		arrival->onset[0] = ARRIVAL_NULL_CHR;
+		istat += ReadFortranString(line, 14, 2, chrtmp);
+		if (chrtmp[0] == 'P' || chrtmp[0] == 'p') {
+			strcpy(arrival->phase, chrtmp);
+			TrimString(arrival->phase);
+		} else if (chrtmp[1] == 'P' || chrtmp[1] == 'p') {
+			arrival->onset[0] = chrtmp[0];
+			arrival->phase[0] = chrtmp[1];
+		} else {
+			arrival->phase[0] = 'P';
+		}
 		TrimString(arrival->phase);
-		istat += ReadFortranString(line, 7, 1, arrival->first_mot);
+		istat += ReadFortranString(line, 16, 1, arrival->first_mot);
 		TrimString(arrival->first_mot);
-		istat += ReadFortranInt(line, 8, 1, &arrival->quality);
-		istat += ReadFortranInt(line, 10, 2, &arrival->year);
-// temporary fix for HYPO71 Y2K problem
-if (arrival->year < 20)
-	arrival->year += 100;
-		arrival->year += 1900;
-		istat += ReadFortranInt(line, 12, 2, &arrival->month);
-		istat += ReadFortranInt(line, 14, 2, &arrival->day);
-		istat += ReadFortranInt(line, 16, 2, &arrival->hour);
-		istat += ReadFortranInt(line, 18, 2, &arrival->min);
-		istat += ReadFortranReal(line, 20, 5, &arrival->sec);
-
-		if (istat != 11) {
+		istat += ReadFortranInt(line, 18, 4, &arrival->year);
+		istat += ReadFortranInt(line, 22, 2, &arrival->month);
+		istat += ReadFortranInt(line, 24, 2, &arrival->day);
+		istat += ReadFortranInt(line, 26, 2, &arrival->hour);
+		istat += ReadFortranInt(line, 28, 2, &arrival->min);
+		istat += ReadFortranReal(line, 30, 5, &arrival->sec);
+		// check for integer sec format
+		if (arrival->sec > 99.999)
+			arrival->sec /= 100.0;
+		istat += ReadFortranInt(line, 17, 1, &arrival->quality);
+		
+		if (istat != 12) {
 			line[0] = '\0';
 			return(OBS_FILE_END_OF_EVENT);
 		}
 
-		/* read optional amplitude/period fields */
-		istat += ReadFortranReal(line, 44, 4, &arrival->amplitude);
-//printf("AMPLITUDE: %lf (%s)\n", arrival->amplitude, line);
-		istat += ReadFortranReal(line, 48, 3, &arrival->period);
-// 20030826 AJL coda_dur added
-		istat += ReadFortranReal(line, 71, 5, &arrival->coda_dur);
+		// read optional amplitude/period fields
+		istat += ReadFortranReal(line, 55, 7, &arrival->amplitude);
+		istat += ReadFortranReal(line, 84, 3, &arrival->period);
+		istat += ReadFortranReal(line, 88, 4, &arrival->coda_dur);
 
 
-		check_for_S_arrival = 1;
 		/* check for valid phase code */
 //		if (IsPhaseID(arrival->phase, "P")) {
 			//strcpy(arrival->phase, "P");
-			check_for_S_arrival = 1;
+		check_for_S_arrival = 1;
 
 //		} else if (IsPhaseID(arrival->phase, "S")) {
 			//strcpy(arrival->phase, "S");
@@ -1729,12 +1985,7 @@ if (arrival->year < 20)
 		if (!IsGoodDate(arrival->year, arrival->month, arrival->day))
 			return(OBS_FILE_END_OF_EVENT);
 
-
-		/* check for integer sec format */
-		if (arrival->sec > 99.999)
-			arrival->sec /= 100.0;
-
-		/* convert quality to error */
+		// convert quality to error
 		Qual2Err(arrival);
 
 		return(istat);
@@ -2256,6 +2507,207 @@ observed travel times (six sets per line)
 
 
 	else if (strcmp(ftype_obs, "SED_LOC") == 0)
+	{
+
+/* example:
+   SH 06/11/2005 LOC format has been extended to include uncertainty interval for picking
+   SH 23/11/2005 LOC format has been extended to include observation weight (quality) in last column
+   
+ 1 1   200.0   300.0    1.71 1                        INST
+   0.000     0.000  10.00 0000 00 00 00 00  0.00 0    TRIAL
+nico                                                  AUTOR
+2002/01/04 00:01                                      Local            20020015
+FUSIO   P       ID  27.454 1 0.21      186 NWA       0 Pick HHN  29.626  -0.050   0.050 0
+FUSIO   S       E   29.474 1 0.21      186 NWA       0 Pick HHN  29.626  -0.250   0.250 1
+VDL     P       ID  33.578 1 0.24       16 NWA       0 Pick HHN  41.014  -0.050   0.050 1
+VDL     S       Q   39.651 1 0.24       16 NWA       0 Pick HHN  41.014  -0.500   0.500 3
+LLS     P       IU  34.752 1 0.36       14 NWA       0 Pick HHE  43.193  -0.050   0.050 2
+LLS     S       I   41.622 1 0.36       14 NWA       0 Pick HHE  43.193  -0.050   0.050 1
+BNALP   P       Q   35.959 1 0.59        8 NWA       0 Pick HHE  47.417  -0.500   0.500 3
+BNALP   S       E   43.504 1 0.59        8 NWA       0 Pick HHE  47.417  -0.250   0.250 2
+HASLI   P       E   36.250 1 0.36       32 NWA       0 Pick HHE  44.465  -0.250   0.250 2
+HASLI   S       E   44.209 1 0.36       32 NWA       0 Pick HHE  44.465  -0.250   0.250 2
+MMK     P       E   36.365 1 0.22       32 NWA       0 Pick HHN  46.943  -0.250   0.250 2
+LKBD    P       E   39.858 1 1.77       18 NWA       0 Pick HHN  53.318  -0.250   0.250 2
+BERNI   P       E   40.349 1 0.58       10 NWA       0 Pick HHN  56.013  -0.250   0.250 2
+CHDAW   P       E   40.741 1 0.29       14 NWA       0 Pick HHN  59.776  -0.250   0.250 2
+FUORN   P       IU  44.069 1 0.25       10 NWA       0 Pick HHE  65.863  -0.050   0.050 0
+                                                      SKIP
+20020104000124246358N008807E00515Ml1272705135008005022SEDN023156015414         A
+KP200201040001                                        ARCHIVE
+*/
+
+		// read line
+		cstat = fgets(line, MAXLINE_LONG, fp_obs);
+		if (cstat == NULL)
+			return(OBS_FILE_END_OF_INPUT);
+
+		// check for end of event (assumes empty lines between event)
+		if (LineIsBlank(line)) {
+			// end of event
+			return(OBS_FILE_END_OF_EVENT);
+		}
+
+
+		// read event hypocenter line
+		if (!in_hypocenter_event) {
+			// find origin time line
+			ifound = 0;
+			while((istat = ReadFortranString(line, 55, 4, eth_line_key)) > 0) {
+	          /* SH 03/05/2003
+	          read control parameters, which are specified in first line of SED_LOC format
+	          so far only VpVSRatio is of use
+	          the value of VpVsRatio specified in NLLoc control file will be overwritten!  
+			     SH 11/25/2004
+			  VpVsRatio should only be read from LOCfile if NLLoc is used within SNAP */
+#ifdef CUSTOM_ETH
+	       		if (strcmp(eth_line_key, "INST") == 0) {
+	       		     istat = ReadFortranReal(line, 23, 6, &vpvs);
+	       		     if (istat != 1) {
+	       		       puterr(
+	       		       "WARNING: could not read VpVsRatio! Use value of control file\n");
+	       		     } else {
+	       		       VpVsRatio = vpvs;
+	       		     }
+	       		}
+#endif
+/* SH 07/26/2004
+   other identiers for SED_LOC are Tele and Unkn  */
+				if ((strcmp(eth_line_key, "Loca") == 0) ||
+				    (strcmp(eth_line_key, "Tele") == 0) ||
+				    (strcmp(eth_line_key, "Unkn") == 0) ) {
+					ifound = 1;
+					break;
+				}
+				// read next line
+				cstat = fgets(line, MAXLINE_LONG, fp_obs);
+				if (cstat == NULL)
+					return(OBS_FILE_END_OF_INPUT);
+			}
+			if (!ifound)
+				return(OBS_FILE_END_OF_EVENT);
+
+			// read hypocenter time
+			//2001/12/04 01:29                                      Local           20010748
+			istat = ReadFortranInt(line, 1, 4, &EventTime.year);
+			istat += ReadFortranInt(line, 6, 2, &EventTime.month);
+			istat += ReadFortranInt(line, 9, 2, &EventTime.day);
+			istat += ReadFortranInt(line, 12, 2, &EventTime.hour);
+			istat += ReadFortranInt(line, 15, 2, &EventTime.min);
+/* SH 03/05/2004  added event number  */
+			istat += ReadFortranInt(line, 71, 8, &EventTime.ev_nr);
+/* SH 23/11/2004  event number is undertermined when reading GSE2 files */
+			if (istat == 4 || istat == 6) {
+			    if (istat == 4) 
+				 EventTime.ev_nr = 0;  /* no event number */
+				in_hypocenter_event = 1;
+				// read until phase line reached
+				while((istat = ReadFortranString(line, 55, 4, eth_line_key)) > 0
+						&& strcmp(line, "    ") != 0 
+/* SH 06/11/2005  change to deal with extended LOC format */
+						&& strcmp(eth_line_key," Pic") != 0 ) {
+					cstat = fgets(line, MAXLINE_LONG, fp_obs);
+					if (cstat == NULL)
+						return(OBS_FILE_END_OF_INPUT);
+				}
+			} else {
+				return(OBS_FILE_END_OF_EVENT);
+			}
+		}
+
+		// check if valid phase line: key is blank or strlen < 55
+		if ((istat = ReadFortranString(line, 55, 4, eth_line_key)) > 0
+				&& strcmp(line, "    ") != 0
+/* SH 06/11/2005  change to deal with extended LOC format */
+				&& strcmp(eth_line_key," Pic") != 0 ) {
+			return(OBS_FILE_SKIP_INPUT_LINE);
+		}
+
+		/* read phase arrival input
+		SH 06/11/2005 LOC format has been extended to include uncertainty interval for picking
+		SH 23/11/2005 LOC format has been extended to include obs weight in the last coluumn
+		FUSIO   P       ID  27.454 1 0.21      186 NWA       0 Pick HHN  29.626  -0.050   0.050 1
+        FUSIO   S       E   29.474 1 0.21      186 NWA       0 Pick HHN  29.626  -0.250   0.250 3
+        */
+		istat = ReadFortranString(line, 1, 5, arrival->label);
+		istat += ReadFortranString(line, 9, 6, arrival->phase);
+		istat += ReadFortranString(line, 17, 1, arrival->onset);
+		istat += ReadFortranString(line, 18, 1, arrival->first_mot);
+		istat += ReadFortranReal(line, 20, 7, &arrival->sec);
+//		istat += ReadFortranReal(line, 21, 6, &arrival->sec);
+		istat += ReadFortranInt(line, 28, 1, &eth_use_loc);
+		istat += ReadFortranReal(line, 29, 5, &arrival->period);
+		istat += ReadFortranReal(line, 34, 9, &arrival->amplitude);
+/* SH 02/25/2004 bug fix
+     arrival->inst is only of type char[5] and not char[9]!
+		istat += ReadFortranString(line, 44,9, arrival->inst);  */
+		istat += ReadFortranString(line, 44,4, arrival->inst);
+		istat += ReadFortranInt(line, 54, 1, &arrival->clipped);
+/* SH 23/11/2005 read arrival quality from last column (for extended LOC format) */
+		if (strcmp(eth_line_key," Pic") == 0) 
+		  if ( (ReadFortranInt(line, 89, 1, &arrival->quality)) > 0 ) istat++;
+
+
+		if (istat < 10) {
+			return(OBS_FILE_END_OF_EVENT);
+		}
+
+		/* remove blanks/whitespace */
+		removeSpace(arrival->label);
+		removeSpace(arrival->phase);
+		removeSpace(arrival->inst);
+		
+/* AJL EvalPhaseID not used here anymore, used later */
+/*		if (EvalPhaseID(arrival->phase) < 0) {
+			puterr2("WARNING: phase ID not found", arrival->phase);
+			return(OBS_FILE_INVALID_PHASE);
+		}
+*/
+
+		arrival->year = EventTime.year;
+		arrival->month = EventTime.month;
+		arrival->day = EventTime.day;
+		arrival->hour = EventTime.hour;
+		arrival->min = EventTime.min;
+
+		/* convert onset to error */
+//Uncertainties of phase readings:
+//                              I             E            Q
+//for Key 'Loca':            < +/- 0.05   < +/- 0.2     > +/- 0.2
+//for Key 'Regi' or 'Tele'   < +/- 0.20   < +/- 1.0     > +/- 1.0
+	
+/* SH 23/11/2005 for extended LOC format arrival quality is now in the last column;
+                 arrival onset should no longer be used to estimate arrival error */
+				 
+		if (istat == 11) {  /* extended LOC format */
+		  if (eth_use_loc == 0) {
+			arrival->error = 9999.9;
+		   }  else {
+		    Qual2Err(arrival); }  /* convert quality to uncertainty in s */
+		} else {  /* old LOC format */
+		  strcpy(arrival->error_type, "GAU");
+		  if (eth_use_loc == 0) {
+			arrival->error = 9999.9;
+		  } else if (strcmp(arrival->onset, "I") == 0) {
+			arrival->error = 0.05;
+		  } else if (strcmp(arrival->onset, "E") == 0) {
+			arrival->error = 0.2;
+		  } else if (strcmp(arrival->onset, "Q") == 0) {
+			arrival->error = 0.2;
+		  } else {
+			arrival->error = 9999.9;
+		  }
+		  arrival->quality = 0;
+		}
+
+		return(istat);
+	}
+
+
+
+
+
+	else if (strcmp(ftype_obs, "SED_LOC_OLD") == 0)
 	{
 
 /* example:
@@ -2814,14 +3266,17 @@ LVI     2.19 258.8                                                       ___    
 		while (ReadFortranString(line, 35, 3, isc_time_str) != 1
 				|| strncmp(isc_time_str, "   ", 3) == 0) {
 			// not a time, check if end
-			if (cstat == NULL || strncmp(line, "Event", 5) == 0
-					|| strncmp(line, "STOP", 4) == 0)
+			if (cstat == NULL)
+				return(OBS_FILE_END_OF_INPUT);
+			if (strncmp(line, "Event", 5) == 0  || strncmp(line, "STOP", 4) == 0)
 				return(OBS_FILE_END_OF_EVENT);
 			// not a time, not end, read next line
 			cstat = fgets(line, MAXLINE_LONG, fp_obs);
 //printf("6 %s", line);
 			if (cstat == NULL)
 				return(OBS_FILE_END_OF_INPUT);
+			if (strncmp(line, "Event", 5) == 0  || strncmp(line, "STOP", 4) == 0)
+				return(OBS_FILE_END_OF_EVENT);
 		}
 
 		// read phase time reading
@@ -3085,6 +3540,57 @@ UZH   m i P     2004/02/11 08:19:33.0   1.1    19.64 333    LVV
 		istat += ReadFortranReal(line, 34, 5, &arrival->sec);
 
 		if (istat != 10) {
+			return(OBS_FILE_END_OF_EVENT);
+		}
+
+
+		/* convert quality to error */
+		Qual2Err(arrival);
+
+		return(istat);
+	}
+
+
+
+	else if (strcmp(ftype_obs, "INGV_AUTOPICKS") == 0)
+	{
+
+/* example:
+...
+FUORNHHE 2005/04/30 23:22:15.29
+FUORNHHZ 2005/04/30 23:23:50.97
+FUORNHHE 2005/04/30 23:27:59.99
+FUORNHHE 2005/04/30 23:27:59.99  4715 63.21 238.72
+TOLF HHE 2005/04/30 23:38:48.56
+TOLF HHE 2005/04/30 23:38:48.56  1770 0.06 26.75
+...
+*/
+			
+		/* read line */
+		cstat = fgets(line, MAXLINE_LONG, fp_obs);
+		if (cstat == NULL)
+			return(OBS_FILE_END_OF_INPUT);
+		/* check for end of event (assumes empty lines between event) */
+		if (LineIsBlank(line)) {
+			/* end of event */
+			return(OBS_FILE_END_OF_EVENT);
+		}
+
+		/* read phase arrival input */
+		istat = ReadFortranString(line, 1, 5, arrival->label);
+		TrimString(arrival->label);
+		istat += ReadFortranString(line, 6, 2, arrival->inst);
+		istat += ReadFortranString(line, 8, 1, arrival->comp);
+		strcpy(arrival->phase, "P");
+		arrival->quality = 0;
+		istat += ReadFortranInt(line, 10, 4, &arrival->year);
+		istat += ReadFortranInt(line, 15, 2, &arrival->month);
+		istat += ReadFortranInt(line, 18, 2, &arrival->day);
+		istat += ReadFortranInt(line, 21, 2, &arrival->hour);
+		istat += ReadFortranInt(line, 24, 2, &arrival->min);
+		istat += ReadFortranReal(line, 27, 5, &arrival->sec);
+
+		if (istat != 9) {
 			return(OBS_FILE_END_OF_EVENT);
 		}
 
@@ -3563,11 +4069,19 @@ NCCAI     3.440   3.420 1.0000 P
 		if (LineIsBlank(line))
 			return(OBS_FILE_END_OF_EVENT);
 
-		/* check for date info */
+		
+		
+		// check for date info
 		if (!date_saved) {
-			istat = ReadFortranInt(line, 2, 4, &year_save);
-			if (year_save < 500)
-				year_save += 1900;
+		        /* Check whether it is a hypocenter line */
+			        if (line[79]!='1') {
+					puterr2("ERROR: bad SEISAN hypocentre line",line);
+					return(OBS_FILE_FORMAT_ERROR);
+				}
+				istat = ReadFortranInt(line, 2, 4, &year_save);
+			/* in SEISAN data the year is always fully specified. The correction below is susceptiple to millenium bug */
+			/* if (year_save < 500) */
+			/* 	year_save += 1900; */
 			istat += ReadFortranInt(line, 7, 2, &month_save);
 			istat += ReadFortranInt(line, 9, 2, &day_save);
 /*printf(
@@ -3580,10 +4094,18 @@ istat, year_save, month_save, day_save);*/
 			}
 		}
 
-
+		
+		/* ignore all lines which are not phase observation lines */
+ 		if (line[79]!=' ' && line[79]!='4') 
+			return(OBS_FILE_SKIP_INPUT_LINE);
+  
 		/* read formatted P arrival input */
-		istat = ReadFortranString(line, 2, 4, arrival->label);
+		istat = ReadFortranString(line, 2, 5, arrival->label);
 		TrimString(arrival->label);
+		istat += ReadFortranString(line, 7, 1, arrival->inst);
+		TrimString(arrival->inst);
+		istat += ReadFortranString(line, 8, 1, arrival->comp);
+		TrimString(arrival->comp);
 		istat += ReadFortranString(line, 10, 1, arrival->onset);
 		TrimString(arrival->onset);
 		istat += ReadFortranString(line, 11, 4, arrival->phase);
@@ -3593,7 +4115,7 @@ istat, year_save, month_save, day_save);*/
 		TrimString(arrival->first_mot);
 		istat += ReadFortranInt(line, 19, 2, &arrival->hour);
 		istat += ReadFortranInt(line, 21, 2, &arrival->min);
-		istat += ReadFortranReal(line, 24, 5, &arrival->sec);
+		istat += ReadFortranReal(line, 23, 6, &arrival->sec);
 		istat += ReadFortranReal(line, 30, 4, &arrival->coda_dur);
 		istat += ReadFortranReal(line, 34, 7, &arrival->amplitude);
 		istat += ReadFortranReal(line, 42, 4, &arrival->period);
@@ -3607,15 +4129,19 @@ istat, year_save, month_save, day_save);*/
 			arrival->day = 01;
 		}
 
-/*printf(
+		/*printf(
 "SEISAN Read: istat %d   -  %s %s %s %d %s %d %d %d %d %d %lf %lf\n",
 istat, arrival->label, arrival->onset, arrival->phase, arrival->quality, arrival->first_mot, arrival->year, arrival->month, arrival->day, arrival->hour, arrival->min, arrival->sec, arrival->coda_dur);*/
-
-		if (istat != 11)
-			return(OBS_FILE_SKIP_INPUT_LINE);
-
+  
+		if (istat != 13) {
+			   puterr2("ERROR: bad SEISAN phase line:",line);
+			   return(OBS_FILE_FORMAT_ERROR);
+		}
+  
 		/* convert quality to error */
 		Qual2Err(arrival);
+		
+		
 
 		return(istat);
 	}
@@ -3815,7 +4341,7 @@ int CheckAbsoluteTiming(ArrivalDesc *arrival, int num_arrivals)
 
 
 
-/*** function to standardize date / time of arrivals */
+/*** function to standardize date / time of arrivals, caclulate rms */
 
 int StdDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo)
 {
@@ -3825,8 +4351,10 @@ int StdDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo)
 
 
 	for (narr = 0; narr < num_arrivals; narr++) {
-		/* calc obs travel time and residual */
-		if (arrival[narr].abs_time) {
+		// calc obs travel time and residual for arrivals with finite travel time and abs timing
+		// AJL 20050926 bug fix - do not update rms with arrivals with no travel time!
+		// if (arrival[narr].abs_time) {
+		if (arrival[narr].abs_time && arrival[narr].pred_travel_time > 0.0) {
 			arrival[narr].obs_travel_time =
 				arrival[narr].obs_time - phypo->time;
 			arrival[narr].residual = arrival[narr].obs_travel_time -
@@ -3872,8 +4400,10 @@ int StdDateTime(ArrivalDesc *arrival, int num_arrivals, HypoDesc* phypo)
 /*** function to set output file root name using arrival time */
 
 int SetOutName(ArrivalDesc *arrival, char* out_file_root, char* out_file,
-	char lastfile[FILENAME_MAX], int isec)
+	char* lastfile, int isec, int ncount)
 {
+
+	char filename_ctr[10];
 
   /*	if (isec)
 		sprintf(out_file, "%s.%4.4d%2.2d%2.2d.%2.2d%2.2d%2.2d",
@@ -3895,25 +4425,44 @@ int SetOutName(ArrivalDesc *arrival, char* out_file_root, char* out_file,
   /* SH 04/08/02 check if same filename as previous event;
         if so append 'b' to filename;
         identical filenames can happen with swarm data */
-        if (strcmp(out_file, lastfile) == 0)
-		strcat(out_file, "b");
-
+printf(">>>>>>%s<>%s<\n", out_file, lastfile);
+        if (ncount++ > 0 || strcmp(out_file, lastfile) == 0) {
+		strcpy(lastfile, out_file); /* save filename */
+		sprintf(filename_ctr, "_%3.3d", ncount - 1);
+		strcat(out_file, filename_ctr);
+	} else {
+		strcpy(lastfile, out_file); /* save filename */
+	}
 	return(0);
 
 }
 
 
-/*** function to check for duplicate label and phase in arrival */
+/*** function to check for duplicate label and phase (and time) in arrival */
 
-int IsDuplicateArrival(ArrivalDesc *arrival, int num_arrivals, int ntest)
+int IsDuplicateArrival(ArrivalDesc *arrival, int num_arrivals, int ntest, int rejectOnlyForExactTimeMatch)
 {
 	int narr;
 
 	for (narr = 0; narr < num_arrivals; narr++) {
 		if (narr != ntest
 				&& !strcmp(arrival[narr].time_grid_label, arrival[ntest].time_grid_label)
-				&& !strcmp(arrival[narr].phase, arrival[ntest].phase))
-			return(narr);
+				&& !strcmp(arrival[narr].phase, arrival[ntest].phase)) {
+			if (rejectOnlyForExactTimeMatch) {
+				if (fabs(arrival[narr].sec - arrival[ntest].sec) <= 
+						((arrival[narr].error + arrival[ntest].error) / 2.0)) {
+					if (arrival[narr].min == arrival[ntest].min &&
+						arrival[narr].hour == arrival[ntest].hour && 
+						arrival[narr].day == arrival[ntest].day && 
+						arrival[narr].month == arrival[ntest].month && 
+						arrival[narr].year == arrival[ntest].year
+					)
+						return(narr);
+				}
+			} else {
+				return(narr);
+			}
+		}
 	}
 
 	return(-1);
@@ -4560,8 +5109,7 @@ int SaveBestLocation(int num_arr_total, int num_arr_loc, ArrivalDesc *arrival,
 				&(arrival[narr].station), phypo->x, phypo->y);
 		if (GeometryMode == MODE_GLOBAL)
 			arrival[narr].dist *= KM2DEG;
-		arrival[narr].azim = GetEpiAzim(
-				&(arrival[narr].station), phypo->x, phypo->y);
+		arrival[narr].azim = GetEpiAzim(&(arrival[narr].station), phypo->x, phypo->y);
 
 		/* get best travel time */
 
@@ -4623,7 +5171,8 @@ int SaveBestLocation(int num_arr_total, int num_arr_loc, ArrivalDesc *arrival,
 						applyCrustElevCorrection(arrival + narr, phypo->x, phypo->y, phypo->z);
 			}
 			else if (ApplyElevCorrFlag) {
-				arrival[narr].pred_travel_time += arrival[narr].elev_corr;
+				if (arrival[narr].pred_travel_time > 0.0)	// ignore arrivals with no pred tt
+					arrival[narr].pred_travel_time += arrival[narr].elev_corr;
 			}
 			CloseGrid3dFile(&(arrival[narr].fpgrid), &(arrival[narr].fphdr));
 
@@ -4802,6 +5351,7 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival,
 {
 	int istat, nrow, ncol;
 	double sigmaT2, corr_len2;
+	int corr_len_nonzero = 1;
 	double dx, dy, dz, dist2;
 	double weight_sum;
 	double sta_wt;
@@ -4819,8 +5369,9 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival,
 
 	sigmaT2 = gauss_par->SigmaT * gauss_par->SigmaT;
 	corr_len2 = gauss_par->CorrLen * gauss_par->CorrLen;
-	if (corr_len2 < VERY_SMALL_DOUBLE)
-		corr_len2 = 1.0;
+	// AJL 20041201 - corr_len_nonzero flag added, before corr_len2 was set to 1.0 (was bug?)
+	if (corr_len2 < VERY_SMALL_DOUBLE || gauss_par->CorrLen < 0.0)
+		corr_len_nonzero = 0;
 
 
 	/* load covariances */
@@ -4830,33 +5381,45 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival,
 		for (ncol = 0; ncol <= nrow; ncol++) {
 		    sta2 = &(arrival[ncol].station);
 
-		/* travel time error (TV82, eq. 10-14; MEN92, eq. 22) */
-		if (strcmp(arrival[nrow].phase, arrival[ncol].phase) == 0) {
-		// same phase types, include spatial correlation  
-			dx = sta1->x - sta2->x;
-			dy = sta1->y - sta2->y;
-			dz = sta1->z - sta2->z;
-			dist2 = dx * dx + dy * dy + dz * dz;
-			if (GeometryMode == MODE_GLOBAL)
-				dist2 *= DEG2KM * DEG2KM;
-			// EDT
-			if (ncol == nrow)	// diagonal of EDT gets gaussian model time error
-				edt_matrix[nrow][ncol] = sigmaT2 * exp(-0.5 * dist2 / corr_len2);
-			else			// off-diagonal of EDT gets gaussian model weight
-				edt_matrix[nrow][ncol] = edt_matrix[ncol][nrow] = exp(-0.5 * dist2 / corr_len2);
-			// LS/L2 gaussian model time error
-			wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] = sigmaT2 * exp(-0.5 * dist2 / corr_len2);
-		} else { 
-		// different phase types, assumed no spatial correlation  
-			edt_matrix[nrow][ncol] = edt_matrix[ncol][nrow] = 0.0;
-			wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] = 0.0;
-		}
-
-		/* obs time error */
-		if (ncol == nrow) {
-			edt_matrix[nrow][ncol] += arrival[nrow].error * arrival[nrow].error;
-			wt_matrix[nrow][ncol] += arrival[nrow].error * arrival[nrow].error;
-		}
+			/* travel time error (TV82, eq. 10-14; MEN92, eq. 22) */
+			if (strcmp(arrival[nrow].phase, arrival[ncol].phase) == 0) {
+			// same phase types, include spatial correlation  
+				dx = sta1->x - sta2->x;
+				dy = sta1->y - sta2->y;
+				dz = sta1->z - sta2->z;
+				dist2 = dx * dx + dy * dy + dz * dz;
+				if (GeometryMode == MODE_GLOBAL)
+					dist2 *= DEG2KM * DEG2KM;
+				// EDT
+				if (ncol == nrow) {	// diagonal of EDT gets gaussian model time error
+					edt_matrix[nrow][ncol] = sigmaT2;
+				} else {		// off-diagonal of EDT gets gaussian model weight
+					if (corr_len_nonzero)
+						edt_matrix[nrow][ncol] = edt_matrix[ncol][nrow] = exp(-0.5 * dist2 / corr_len2);
+					else
+						edt_matrix[nrow][ncol] = edt_matrix[ncol][nrow] = 0.0;
+				}
+				// LS/L2 gaussian model time error
+			// AJL 20050914 - bug?  added ncol == nrow case so error is non-zero 
+			if (ncol == nrow) {	// diagonal gets gaussian model time error
+				wt_matrix[nrow][ncol] = sigmaT2;
+			} else {		// off-diagonal 
+				if (corr_len_nonzero)
+					wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] = sigmaT2 * exp(-0.5 * dist2 / corr_len2);
+				else
+					wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] = 0.0;
+			}
+			} else { 
+			// different phase types, assumed no spatial correlation  
+				edt_matrix[nrow][ncol] = edt_matrix[ncol][nrow] = 0.0;
+				wt_matrix[nrow][ncol] = wt_matrix[ncol][nrow] = 0.0;
+			}
+	
+			/* obs time error */
+			if (ncol == nrow) {
+				edt_matrix[nrow][ncol] += arrival[nrow].error * arrival[nrow].error;
+				wt_matrix[nrow][ncol] += arrival[nrow].error * arrival[nrow].error;
+			}
 
 		}
 	}
@@ -4879,6 +5442,8 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival,
 	// station distance weighting
 	
 	for (nrow = 0; nrow < num_arrivals; nrow++) {
+//printf("station weight: %s %s %s weight: %lf\n",
+//arrival[nrow].label, arrival[nrow].inst, arrival[nrow].comp, arrival[nrow].station_weight);
 		for (ncol = 0; ncol <= nrow; ncol++) {
 			sta_wt = (arrival[nrow].station_weight + arrival[ncol].station_weight) / 2.0;
 			wt_matrix[nrow][ncol] *= sta_wt;
@@ -4898,6 +5463,8 @@ int ConstWeightMatrix(int num_arrivals, ArrivalDesc *arrival,
 	}
 	for (nrow = 0; nrow < num_arrivals; nrow++) {
 		arrival[nrow].weight = (double) num_arrivals * arrival[nrow].weight / weight_sum;
+//printf("observation weight: %s %s %s weight: %lf\n",
+//arrival[nrow].label, arrival[nrow].inst, arrival[nrow].comp, arrival[nrow].weight);
 		if (arrival[nrow].weight < 0.0) {
 			sprintf(MsgStr,
 "ERROR: negative observation weight: %s %s %s weight: %lf",
@@ -5092,17 +5659,18 @@ INLINE double CalcSolutionQuality(int num_arrivals, ArrivalDesc *arrival,
 		for all pairs of obs
 */
 
+#define EDT_OT_WT_FLOOR log(0.00001)
+
 INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
 	GaussLocParams* gauss_par, int itype, double* pmisfit, double* potime, int method_box)
 {
 
 	int nrow, ncol;
 
-	long double edt_sum, prob;
+	long double edt_sum, prob, edtSumMisfit;
 
 	double edt_misfit, edt_weight;
 	double weight, weight2;
-	double edtSumMisfit;
 	double ln_prob_density, rms_misfit;
 
 	DMatrix edtmtx;
@@ -5111,7 +5679,9 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
 
 	int no_abs_time_row;
 
-	long double ot_sum, ot_weight;
+	int num_otime_error;
+	long double ot_row, ot_col, ot_row_2, ot_error_2;
+	long double ot_sum, ot_weight, ot_var, ot_2_sum, ot_var_weight;	
 	int icalc_otime = 0;
 	
 	double error_row, amp_row, unc_limit;
@@ -5134,8 +5704,15 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
 
 	edt_sum = 0.0L;
 	edt_weight = 0.0;
+	ot_row = ot_col = 0.0L;
+	ot_row_2 = 0.0L;
 	ot_sum = 0.0L;
+	ot_2_sum = 0.0L;
+	ot_var = 0.0L;
+	ot_var_weight = 0.0L;
 	ot_weight = 0.0L;
+	ot_error_2 = 0.0L;
+	num_otime_error = 0;
 	for (nrow = 1; nrow < num_arrivals; nrow++) {
 		// AJL 20041115 bug fix!
 		if (arrival[nrow].pred_travel_time <= 0.0)
@@ -5146,6 +5723,12 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
 		amp_row = arrival[nrow].amplitude;
 		obs_minus_pred = arrival[nrow].obs_centered - arrival[nrow].pred_centered;
 		no_abs_time_row = !arrival[nrow].abs_time;
+		if (EDT_use_otime_weight || icalc_otime) {
+			ot_row = arrival[nrow].obs_time - (long double) arrival[nrow].pred_travel_time;
+			ot_row_2 = ot_row * ot_row;
+			ot_error_2 += sigma2_row;
+			num_otime_error++;
+		}
 		for (ncol = 0; ncol < nrow; ncol++) {
 			// AJL 20041115 bug fix!
 			if (arrival[ncol].pred_travel_time <= 0.0)
@@ -5181,22 +5764,41 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
 			edt_sum += prob;
 			edt_weight += weight;
 			// otime
-			if (icalc_otime) {
-				ot_sum += prob * (
-					arrival[nrow].obs_time - (long double) arrival[nrow].pred_travel_time
-						+ arrival[ncol].obs_time - (long double) arrival[ncol].pred_travel_time);
+			if (EDT_use_otime_weight || icalc_otime) {
+				ot_col = arrival[ncol].obs_time - (long double) arrival[ncol].pred_travel_time;
+				ot_sum += prob * (ot_row + ot_col);
+				ot_2_sum += prob * (ot_row_2 + ot_col * ot_col);
 				ot_weight += 2.0L * prob;
 			}
 		}
 	}
-
+			
+	if (EDT_use_otime_weight && num_otime_error > 0) {
+		ot_var = ot_2_sum / ot_weight - (ot_sum / ot_weight) * (ot_sum / ot_weight);
+		ot_var_weight = -ot_var / (ot_error_2 / (long double) num_otime_error);
+			if (ot_var_weight > EDT_OT_WT_FLOOR) {
+				if (!EDT_otime_weight_active) {
+					EDT_otime_weight_active = 1;
+					sprintf(MsgStr, "EDT_otime_weight activated, OT_WT exceeds EDT_OT_WT_FLOOR.");
+					putmsg(2, MsgStr);
+				}
+			} else {
+				ot_var_weight = EDT_OT_WT_FLOOR;
+			}
+		//edt_sum *= ot_var_weight;
+		//edt_weight *= ot_var_weight;
+	}
+			
 	if (edt_sum < SMALL_DOUBLE)
 		edt_sum = SMALL_DOUBLE;
 
 	if (edt_weight > 0.0 && num_arrivals > 0) {
-		edtSumMisfit = -log(edt_sum / edt_weight);
+		// AJL 20051115 bug fix!
+		//edtSumMisfit = -log(edt_sum / edt_weight);
+		edtSumMisfit = -log(edt_sum);	// non-normalized sum of edt probs - favors solutions with more readings
+		// END
 		//edtSumMisfit *= 2.0;
-		edtSumMisfit *= num_arrivals;
+		//edtSumMisfit *= num_arrivals;	// best, give power of N
 		//edtSumMisfit *= sqrt(num_arrivals);	// works much better for INGV Italy region scale
 		if (icalc_otime)
 			*potime = ot_sum / ot_weight;
@@ -5211,13 +5813,15 @@ INLINE double CalcSolutionQuality_EDT(int num_arrivals, ArrivalDesc *arrival,
 
 	if (itype == GRID_MISFIT) {
 		/* convert misfit to rms misfit */
-		rms_misfit = sqrt(edtSumMisfit / num_arrivals);
+		rms_misfit = sqrt(edtSumMisfit + edt_weight);	// edt_weight term similar to divide by num readings in rms
 		*pmisfit = rms_misfit;
 		return(rms_misfit);
 	} else if (itype == GRID_PROB_DENSITY) {
-		ln_prob_density = -edtSumMisfit;
+		ln_prob_density = -edtSumMisfit * num_arrivals; 	// best, give power of N
+		//if (EDT_otime_weight_active)
+			ln_prob_density += ot_var_weight;
 		//ln_prob_density = -0.5 * edtSumMisfit;
-		rms_misfit = sqrt(edtSumMisfit / num_arrivals);
+		rms_misfit = sqrt(edtSumMisfit + edt_weight);	// edt_weight term similar to divide by num readings in rms
 		*pmisfit = rms_misfit;
 		return(ln_prob_density);
 	} else {
@@ -5512,8 +6116,7 @@ INLINE void UpdateProbabilisticResiduals(int num_arrivals,
 #define N_STEPS_SRCH	101
 #define N_STEPS_CONF	11
 
-int CalcConfidenceIntrvl(GridDesc* ptgrid, HypoDesc* phypo,
-				char* filename)
+int CalcConfidenceIntrvl(GridDesc* ptgrid, HypoDesc* phypo, char* filename)
 {
 	FILE *fpio;
 	char fname[FILENAME_MAX];
@@ -6108,6 +6711,9 @@ int ReadNLLoc_Input(FILE* fp_input)
 		Gap_Max = VERY_LARGE_DOUBLE;
 		P_ResidualMax = VERY_LARGE_DOUBLE;
 		S_ResidualMax = VERY_LARGE_DOUBLE;
+		Ell_Len3_Max = VERY_LARGE_DOUBLE;
+		Hypo_Depth_Min = -VERY_LARGE_DOUBLE;
+		Hypo_Depth_Max = VERY_LARGE_DOUBLE;
 	}
 	if (!flag_comp) {
 		sprintf(MsgStr, "INFO: no Component Descirption (LOCCMP) params read.");
@@ -6264,19 +6870,21 @@ int GetNLLoc_SearchType(char* line1)
 	} else if (strcmp(search_type, "OCT") == 0) {
 
 		SearchType = SEARCH_OCTTREE;
-		istat = sscanf(line1, "%s %d %d %d %lf %d %d",
+		istat = sscanf(line1, "%s %d %d %d %lf %d %d %d %d",
 			search_type, &octtreeParams.init_num_cells_x,
 			&octtreeParams.init_num_cells_y, &octtreeParams.init_num_cells_z,
 			&octtreeParams.min_node_size, &octtreeParams.max_num_nodes,
-			&octtreeParams.num_scatter);
+			&octtreeParams.num_scatter, &octtreeParams.use_stations_density,
+			&octtreeParams.stop_on_min_node_size);
 		ierr = 0;
 
 		sprintf(MsgStr,
-"LOCSEARCH:  Type: %s  init_num_cells_x %d  init_num_cells_y %d  init_num_cells_z %d  min_node_size %lf  max_num_nodes %d  num_scatter %d",
+"LOCSEARCH:  Type: %s  init_num_cells_x %d  init_num_cells_y %d  init_num_cells_z %d  min_node_size %lf  max_num_nodes %d  num_scatter %d  use_stations_density %d  stop_on_min_node_size %d",
 			search_type, octtreeParams.init_num_cells_x, octtreeParams.init_num_cells_y,
 			octtreeParams.init_num_cells_z,
 			octtreeParams.min_node_size, octtreeParams.max_num_nodes,
-			octtreeParams.num_scatter);
+			octtreeParams.num_scatter, octtreeParams.use_stations_density,
+			octtreeParams.stop_on_min_node_size);
 		putmsg(3, MsgStr);
 
 		if (checkRangeInt("LOCSEARCH", "init_num_cells_x",
@@ -6299,8 +6907,14 @@ int GetNLLoc_SearchType(char* line1)
 			ierr = -1;
 		if (ierr < 0)
 			return(-1);
-		if (istat != 7)
+		if (istat < 7)
 			return(-1);
+
+		if (istat < 8)
+			octtreeParams.use_stations_density = 0;
+
+		if (istat < 9)
+			octtreeParams.stop_on_min_node_size = 1;
 
 	}
 
@@ -6324,7 +6938,7 @@ int GetNLLoc_HypOutTypes(char* line1)
 
 	iSaveNLLocEvent = iSaveNLLocSum = iSaveHypo71Event = iSaveHypo71Sum
 		= iSaveHypoEllEvent = iSaveHypoEllSum = iSaveHypoInvSum
-		= iSaveAlberto4Sum = 0;
+		= iSaveAlberto4Sum = iSaveNLLocOctree = 0;
 
 	pchr = line1;
 	do {
@@ -6342,6 +6956,8 @@ int GetNLLoc_HypOutTypes(char* line1)
 			iSaveNLLocEvent = iSaveNLLocSum = 1;
 		else if (strcmp(hyp_type, "SAVE_NLLOC_SUM") == 0)
 			iSaveNLLocSum = 1;
+		else if (strcmp(hyp_type, "SAVE_NLLOC_OCTREE") == 0)
+			iSaveNLLocOctree = 1;
 		else if (strcmp(hyp_type, "SAVE_HYPO71_ALL") == 0)
 			iSaveHypo71Event = iSaveHypo71Sum = 1;
 		else if (strcmp(hyp_type, "SAVE_HYPO71_SUM") == 0)
@@ -6385,16 +7001,18 @@ int GetNLLoc_Method(char* line1)
 	char loc_method[MAXLINE];
 
 
-	istat = sscanf(line1, "%s %lf %d %d %d %lf %d %lf", loc_method,
+	istat = sscanf(line1, "%s %lf %d %d %d %lf %d %lf %d", loc_method,
 		&DistStaGridMax, &MinNumArrLoc, &MaxNumArrLoc, &MinNumSArrLoc,
-		&VpVsRatio, &MaxNum3DGridMemory, &DistStaGridMin);
+		&VpVsRatio, &MaxNum3DGridMemory, &DistStaGridMin, &iRejectDuplicateArrivals);
 	if (istat < 8)
 		DistStaGridMin = -1.0;
+	if (istat < 9)
+		iRejectDuplicateArrivals = 1;
 
 	sprintf(MsgStr,
-"LOCMETHOD:  method: %s  minDistStaGrid: %lf  maxDistStaGrid: %lf  minNumberPhases: %d  maxNumberPhases: %d  minNumberSphases: %d  VpVsRatio: %lf  max3DGridMemory: %d",
+"LOCMETHOD:  method: %s  minDistStaGrid: %lf  maxDistStaGrid: %lf  minNumberPhases: %d  maxNumberPhases: %d  minNumberSphases: %d  VpVsRatio: %lf  max3DGridMemory: %d  DistStaGridMin: %f  iRejectDuplicateArrivals: %d",
 		loc_method, DistStaGridMin, DistStaGridMax, MinNumArrLoc, MaxNumArrLoc,
-		MinNumSArrLoc, VpVsRatio, MaxNum3DGridMemory);
+		MinNumSArrLoc, VpVsRatio, MaxNum3DGridMemory, DistStaGridMin, iRejectDuplicateArrivals);
 	putmsg(3, MsgStr);
 
 	ierr = 0;
@@ -6402,13 +7020,18 @@ int GetNLLoc_Method(char* line1)
 	if (ierr < 0 || istat < 7)
 		return(-1);
 
+	EDT_use_otime_weight = 0;
+	
 	if (strcmp(loc_method, "GAU_ANALYTIC") == 0)
 		LocMethod = METH_GAU_ANALYTIC;
 	else if (strcmp(loc_method, "GAU_TEST") == 0)
 		LocMethod = METH_GAU_TEST;
 	else if (strcmp(loc_method, "EDT") == 0 || strcmp(loc_method, "EDT_TEST") == 0)
 		LocMethod = METH_EDT;
-	else if (strcmp(loc_method, "EDT_BOX") == 0)
+	else if (strcmp(loc_method, "EDT_OT_WT") == 0) {
+		LocMethod = METH_EDT;
+		EDT_use_otime_weight = 1;
+	} else if (strcmp(loc_method, "EDT_BOX") == 0)
 		LocMethod = METH_EDT_BOX;
 	else {
 		LocMethod = METH_UNDEF;
@@ -6469,7 +7092,7 @@ int GetNLLoc_Grid(char* input_line)
 		&(grid_in.dx), &(grid_in.dy), &(grid_in.dz), grid_in.chr_type,
 		str_save);
 
-	convert_grid_type(&grid_in);
+	convert_grid_type(&grid_in, 1);
 	if (message_flag >= 2)
 		display_grid_param(&grid_in);
 	sprintf(MsgStr, "LOCGRID: Save: %s", str_save);
@@ -6678,16 +7301,23 @@ int GetNLLoc_PhaseStats(char* line1)
 	int istat;
 
 
-	istat = sscanf(line1, "%lf %d %lf %lf %lf",
-		&RMS_Max, &NRdgs_Min, &Gap_Max, &P_ResidualMax, &S_ResidualMax);
+	istat = sscanf(line1, "%lf %d %lf %lf %lf %lf %lf %lf",
+		       &RMS_Max, &NRdgs_Min, &Gap_Max, &P_ResidualMax, &S_ResidualMax, &Ell_Len3_Max, &Hypo_Depth_Min, &Hypo_Depth_Max);
+		
+	if (istat < 6)
+		Ell_Len3_Max = VERY_LARGE_DOUBLE;
+	if (istat < 7)
+		Hypo_Depth_Min = -VERY_LARGE_DOUBLE;
+	if (istat < 8)
+		Hypo_Depth_Max = VERY_LARGE_DOUBLE;
 
 	sprintf(MsgStr,
-"LOCPHSTAT:  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_ResidualMax: %lf S_ResidualMax: %lf",
+		"LOCPHSTAT:  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_ResidualMax: %lf S_ResidualMax: %lf Ell_Len3_Max %lf Hypo_Depth_min %lf Hypo_Depth_max %lf",
 			RMS_Max, NRdgs_Min, Gap_Max,
-			P_ResidualMax, S_ResidualMax);
+			P_ResidualMax, S_ResidualMax, Ell_Len3_Max, Hypo_Depth_Min, Hypo_Depth_Max);
 	putmsg(3, MsgStr);
 
-	if (istat != 5)
+	if (istat < 5)
 		return(-1);
 
 	return(0);
@@ -6849,16 +7479,18 @@ int GetTimeDelays(char* line1)
 		return(-1);
 	}
 
-	sscanf(line1, "%s %s %d %lf",
+	sscanf(line1, "%s %s %d %lf %lf",
 		TimeDelay[NumTimeDelays].label, TimeDelay[NumTimeDelays].phase,
 		&(TimeDelay[NumTimeDelays].n_residuals),
-		&(TimeDelay[NumTimeDelays].delay));
+		&(TimeDelay[NumTimeDelays].delay),
+		&(TimeDelay[NumTimeDelays].std_dev));
 
 	sprintf(MsgStr,
-"LOCDELAY:  Label: %s  Phase: %s  NumResiduals: %d  TimeDelay: %lf",
+		"LOCDELAY:  Label: %s  Phase: %s  NumResiduals: %d  TimeDelay: %lf  StdDev: %lf",
 		TimeDelay[NumTimeDelays].label, TimeDelay[NumTimeDelays].phase,
 		TimeDelay[NumTimeDelays].n_residuals,
-		TimeDelay[NumTimeDelays].delay);
+		TimeDelay[NumTimeDelays].delay,
+		TimeDelay[NumTimeDelays].std_dev);
 	putmsg(3, MsgStr);
 
 	NumTimeDelays++;
@@ -8094,7 +8726,8 @@ StaStatNode *InstallStaStatInTable(int ntable, char* label, char* phase, int fla
 
 int WriteStaStatTable(int ntable, FILE *fpio,
 		double rms_max, int nRdgs_min, double gap_max,
-		double p_residual_max, double s_residual_max, int imode)
+		double p_residual_max, double s_residual_max, 
+		double ell_len3_max, double hypo_depth_min, double hypo_depth_max, int imode)
 {
 	int nnodes;
 	unsigned hashval;
@@ -8102,67 +8735,65 @@ int WriteStaStatTable(int ntable, FILE *fpio,
 	double res_temp, res_std_temp;
 	StaStatNode *np;
 
-	sprintf(frmt1, "LOCDELAY  %%-%ds %%-%ds %%-8d %%-12lf\n",
+	sprintf(frmt1, "LOCDELAY  %%-%ds %%-%ds %%-8d %%-12lf %%-12lf\n",
 			ARRIVAL_LABEL_LEN, ARRIVAL_LABEL_LEN);
 	sprintf(frmt2, "LOCDELAY  %%-%ds %%-%ds %%-8d %%-12lf %%-12lf %%-12lf %%-12lf %%d\n",
 			ARRIVAL_LABEL_LEN, ARRIVAL_LABEL_LEN);
 
 	if (imode == WRITE_RESIDUALS) {
 		fprintf(fpio,
-"\n#Average Phase Residuals (CalcResidual)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf\n",
+			"\n#Average Phase Residuals (CalcResidual)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf  Ell_Len3_Max: %lf  Hypo_Depth_Min: %lf  Hypo_Depth_Max: %lf\n",
 			rms_max, nRdgs_min, gap_max,
-			p_residual_max, s_residual_max);
+			p_residual_max, s_residual_max, ell_len3_max, hypo_depth_min, hypo_depth_max);
 		fprintf(fpio,
 "#         ID      Phase   Nres      AveRes       StdDev       ResMin       ResMax     ignored\n");
 	} else if (imode == WRITE_RES_DELAYS) {
 		fprintf(fpio,
-"\n#Total Phase Corrections (CalcResidual + InputDelay)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf\n",
+			"\n#Total Phase Corrections (CalcResidual + InputDelay)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf  Ell_Len3_Max: %lf  Hypo_Depth_Min: %lf  Hypo_Depth_Max: %lf\n",
 			rms_max, nRdgs_min, gap_max,
-			p_residual_max, s_residual_max);
+			p_residual_max, s_residual_max, ell_len3_max, hypo_depth_min, hypo_depth_max);
 		fprintf(fpio,
-			"#         ID      Phase   Nres      TotCorr\n");
+			"#         ID      Phase   Nres      TotCorr      StdDev\n");
 	} else if (imode == WRITE_PDF_RESIDUALS) {
 		fprintf(fpio,
-"\n#Average Phase Residuals PDF (CalcPDFResidual)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf\n",
+			"\n#Average Phase Residuals PDF (CalcPDFResidual)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf  Ell_Len3_Max: %lf  Hypo_Depth_Min: %lf  Hypo_Depth_Max: %lf\n",
 			rms_max, nRdgs_min, gap_max,
-			p_residual_max, s_residual_max);
+			p_residual_max, s_residual_max, ell_len3_max, hypo_depth_min, hypo_depth_max);
 		fprintf(fpio,
 "#         ID      Phase   Nres      AveRes       StdDev       ResMin       ResMax     ignored\n");
 	} else if (imode == WRITE_PDF_DELAYS) {
 		fprintf(fpio,
-"\n#Total Phase Corrections PDF (CalcPDFResidual + InputDelay)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf\n",
+			"\n#Total Phase Corrections PDF (CalcPDFResidual + InputDelay)  RMS_Max: %lf  NRdgs_Min: %d  Gap_Max: %lf  P_Res_Max: %lf  S_Res_Max: %lf  Ell_Len3_Max: %lf  Hypo_Depth_Min: %lf  Hypo_Depth_Max: %lf\n",
 			rms_max, nRdgs_min, gap_max,
-			p_residual_max, s_residual_max);
+			p_residual_max, s_residual_max, ell_len3_max, hypo_depth_min, hypo_depth_max);
 		fprintf(fpio,
-			"#         ID      Phase   Nres      TotCorr\n");
+			"#         ID      Phase   Nres      TotCorr      StdDev\n");
 	}
 
 	nnodes = 0;
 	for (hashval = 0; hashval < HASHSIZE; hashval++) {
 		for (np = hashtab[ntable][hashval]; np != NULL; np = np->next) {
-			if (imode == WRITE_RESIDUALS) {
+			if (imode == WRITE_RESIDUALS || imode == WRITE_RES_DELAYS) {
 				res_temp = np->residual_sum / np->weight_sum;
-				res_std_temp = np->residual_square_sum / np->weight_sum
-							- res_temp * res_temp;
+				res_std_temp = np->residual_square_sum / np->weight_sum - res_temp * res_temp;
 				if (np->num_residuals > 1)
 					res_std_temp = sqrt(np->residual_square_sum / np->weight_sum
 								- res_temp * res_temp);
 				else
 					res_std_temp = -1.0;
-				fprintf(fpio, frmt2, np->label, np->phase,
+				if (imode == WRITE_RESIDUALS) {
+					fprintf(fpio, frmt2, np->label, np->phase,
 					np->num_residuals, res_temp, res_std_temp,
 					np->residual_min, np->residual_max, np->flag_ignore);
-			} else if (imode == WRITE_RES_DELAYS) {
-				res_temp = np->delay +
-					np->residual_sum / np->weight_sum;
-				fprintf(fpio, frmt1, np->label, np->phase,
-					np->num_residuals, res_temp);
+				} else if (imode == WRITE_RES_DELAYS) {
+					fprintf(fpio, frmt1, np->label, np->phase,
+						np->num_residuals, res_temp + np->delay, res_std_temp);
+				}
 //printf("LOCDELAY  %s %s %d %f = %f + %f/%f\n", np->label, np->phase, np->num_residuals, res_temp,
 //np->delay, np->residual_sum, np->weight_sum);
-			} else if (imode == WRITE_PDF_RESIDUALS) {
+			} else if (imode == WRITE_PDF_RESIDUALS || imode == WRITE_PDF_DELAYS) {
 				if (np->num_pdf_residuals > 0) {
-					res_temp = np->pdf_residual_sum
-						/ (double) np->num_pdf_residuals;
+					res_temp = np->pdf_residual_sum / (double) np->num_pdf_residuals;
 				} else {
 					res_temp = 0.0;
 				}
@@ -8172,18 +8803,14 @@ int WriteStaStatTable(int ntable, FILE *fpio,
 							- res_temp * res_temp);
 				else
 					res_std_temp = -1.0;
-				fprintf(fpio, frmt2, np->label, np->phase,
-					np->num_pdf_residuals, res_temp, res_std_temp,
-					np->residual_min, np->residual_max, np->flag_ignore);
-			} else if (imode == WRITE_PDF_DELAYS) {
-				if (np->num_pdf_residuals > 0) {
-					res_temp = np->pdf_residual_sum
-					    / (double) np->num_pdf_residuals;
-				} else
-					res_temp = 0.0;
-				res_temp += np->delay;
-				fprintf(fpio, frmt1, np->label, np->phase,
-					np->num_pdf_residuals, res_temp);
+				if (imode == WRITE_PDF_RESIDUALS) {
+					fprintf(fpio, frmt2, np->label, np->phase,
+						np->num_pdf_residuals, res_temp, res_std_temp,
+						np->residual_min, np->residual_max, np->flag_ignore);
+				} else if (imode == WRITE_PDF_DELAYS) {
+					fprintf(fpio, frmt1, np->label, np->phase,
+						np->num_pdf_residuals, res_temp + np->delay, res_std_temp);
+				}
 			}
 			nnodes++;
 		}
@@ -8240,10 +8867,11 @@ int addToStationList(SourceDesc *stations, int numStations, ArrivalDesc *arrival
 	int i, n, nAdded = 0;;
 
 
-	// set default ignored flag
+	// set default ignored flag, weight and nullname
 	for (n = 0; n < MAX_NUM_ARRIVALS; n++) {
 		(stations + n)->ignored = 1;
 		(stations + n)->station_weight = 1.0;
+		//strcpy((stations + n)->label, "");
 	}
 
 			
@@ -8252,16 +8880,16 @@ int addToStationList(SourceDesc *stations, int numStations, ArrivalDesc *arrival
 		if (numStations >= MAX_NUM_ARRIVALS)
 			return(0);
 
-		for (n = 0; n < numStations; n++) {
-			if (strcmp((stations + n)->label, (arrival + i)->label) == 0)
+		n = 0;
+		for ( ; n < numStations; n++) {
+			if (strcmp((stations + n)->label, (arrival + i)->label) == 0) {
 				break;	// already in list
+			}
 		}
 
 		if (n == numStations) {
 			*(stations + n) = (arrival + i)->station;
 			strcpy((stations + n)->label, (arrival + i)->label);
-			if (!((arrival + i)->flag_ignore))
-				(stations + n)->ignored = 0;
 			nAdded++;
 			numStations++;
 			sprintf(MsgStr, "Added to station list: %s (%lf,%lf,%lf)",
@@ -8269,10 +8897,13 @@ int addToStationList(SourceDesc *stations, int numStations, ArrivalDesc *arrival
 				(stations + n)->z);
 			putmsg(4, MsgStr);
 		}
+		
+		if (!((arrival + i)->flag_ignore))
+			(stations + n)->ignored = 0;
 
 	}
 
-	return(nAdded);
+	return(numStations);
 
 
 }
@@ -8526,6 +9157,7 @@ Tree3D*  InitializeOcttree(GridDesc* ptgrid, ArrivalDesc* parrivals,
 
 	double dx, dy, dz;
 	Tree3D* newTree;
+	void *pdata = NULL;
 
 	// set up octree x, y, x grid
 	dx = ptgrid->dx * (double) (ptgrid->numx - 1)
@@ -8535,10 +9167,10 @@ Tree3D*  InitializeOcttree(GridDesc* ptgrid, ArrivalDesc* parrivals,
 	dz = ptgrid->dz * (double) (ptgrid->numz - 1)
 		/ (double) (pParams->init_num_cells_z);
 
-	newTree = newTree3D(pParams->init_num_cells_x,
+	newTree = newTree3D(ptgrid->type, pParams->init_num_cells_x,
 			pParams->init_num_cells_y, pParams->init_num_cells_z,
 		ptgrid->origx, ptgrid->origy, ptgrid->origz,
-		dx, dy, dz, OCTREE_UNDEF_VALUE);
+		dx, dy, dz, OCTREE_UNDEF_VALUE, pdata);
 
 	return(newTree);
 }
@@ -8588,6 +9220,9 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 	double smallest_node_size_y = -1.0;
 	double smallest_node_size_z = -1.0;
 
+	// reset EDT_otime_weight_active flag
+	EDT_otime_weight_active = 0;
+
 
 
 	iGridType = GRID_PROB_DENSITY;
@@ -8597,7 +9232,7 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 
 	logWtMtrxSum = log(gauss_par->WtMtrxSum);
 
-	// set min node size
+	// set min node size (in km)
 	min_node_size_x = min_node_size_y = min_node_size_z = pParams->min_node_size;
 	if (GeometryMode == MODE_GLOBAL)
 		min_node_size_x = min_node_size_y = pParams->min_node_size * KM2DEG;
@@ -8624,7 +9259,9 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 			puterr(MsgStr);
 		}
 		/* calc misfit and prob density */
+//EDT_use_otime_weight = 0;
 		value = CalcSolutionQuality(num_arr_loc, arrival, gauss_par, iGridType, &misfit, NULL);
+//EDT_use_otime_weight = 1;
 		// calculate cell volume * prob density and put cell in resultTree
 		volume = poct_node->ds.x * poct_node->ds.y * poct_node->ds.z;
 		if (GeometryMode == MODE_GLOBAL) {
@@ -8634,7 +9271,12 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 		}
 		log_value =  logWtMtrxSum + value + log(volume);
 		poct_node->value = logWtMtrxSum + value;
-		resultTreeRoot = addResult(resultTreeRoot, log_value, poct_node);
+		if (pParams->use_stations_density)
+			log_value += getOctTreeStationDensityWeight(poct_node, StationList, NumStations, LocGrid + ngrid);
+		// AJL 20060531 bug fix ? - changed *= to +=
+//		log_value *= getOctTreeStationDensityWeight(poct_node, StationList, NumStations, LocGrid + ngrid);
+
+		resultTreeRoot = addResult(resultTreeRoot, log_value, volume, poct_node);
 		nSamples++;
 // END - this block must be identical to block $$$ below
 
@@ -8662,7 +9304,19 @@ int LocOctree(int ngrid, int num_arr_total, int num_arr_loc,
 
 	while (nSamples < pParams->max_num_nodes) {
 
-		presult_node = getHighestLeafValue(resultTreeRoot);
+		if (pParams->stop_on_min_node_size)
+			presult_node = getHighestLeafValue(resultTreeRoot);
+		else
+			presult_node = getHighestLeafValueMinSize(resultTreeRoot, 
+				min_node_size_x, min_node_size_y, min_node_size_z);
+		// check if null node
+		if (presult_node == NULL) {
+			if (message_flag >= 1)
+				fprintf(stdout, "\nINFO: No more nodes larger than min_node_size, terminating Octree search.");
+			break;
+		}
+
+
 //if (nSamples % 100 == 0)
 //fprintf(stderr, "%d getHighestLeafValue %lf\n", nSamples, presult_node->value);
 
@@ -8720,7 +9374,7 @@ fprintf(stderr, "\npresult_node == NULL!!\n");
 
 
 			// subdivide node and evaluate solution at each child
-			subdivide(neighbor_node, OCTREE_UNDEF_VALUE);
+			subdivide(neighbor_node, OCTREE_UNDEF_VALUE, NULL);
 
 			for (ix = 0; ix < 2; ix++) {
 			  for (iy = 0; iy < 2; iy++) {
@@ -8741,31 +9395,37 @@ fprintf(stderr, "\npresult_node == NULL!!\n");
 
 // $$$ NOTE: this block must be identical to block $$$ above
 		// evaluate solution at node
-		xval = poct_node->center.x;
-		yval = poct_node->center.y;
-		zval = poct_node->center.z;
-		/* get travel times for observed arrivals */
-		nReject = getTravelTimes(arrival, num_arr_loc, xval, yval, zval);
-		if (nReject && GeometryMode != MODE_GLOBAL) {
-			sprintf(MsgStr,
-"ERROR: octree sample at (%lf,%lf,%lf) is outside of %d travel time grids.",
-				xval, yval, zval, nReject);
-			puterr(MsgStr);
-		}
-		/* calc misfit and prob density */
-		value = CalcSolutionQuality(num_arr_loc, arrival, gauss_par, iGridType, &misfit, NULL);
-
+				xval = poct_node->center.x;
+				yval = poct_node->center.y;
+				zval = poct_node->center.z;
+				/* get travel times for observed arrivals */
+				nReject = getTravelTimes(arrival, num_arr_loc, xval, yval, zval);
+				if (nReject && GeometryMode != MODE_GLOBAL) {
+					sprintf(MsgStr,
+							"ERROR: octree sample at (%lf,%lf,%lf) is outside of %d travel time grids.",
+							xval, yval, zval, nReject);
+					puterr(MsgStr);
+				}
+				/* calc misfit and prob density */
+//EDT_use_otime_weight = 0;
+				value = CalcSolutionQuality(num_arr_loc, arrival, gauss_par, iGridType, &misfit, NULL);
+//EDT_use_otime_weight = 1;
 		// calculate cell volume * prob density and put cell in resultTree
-		volume = poct_node->ds.x * poct_node->ds.y * poct_node->ds.z;
-		if (GeometryMode == MODE_GLOBAL) {
-			volume *= DEG2KM * DEG2KM;
-			volume *= (ERAD - poct_node->center.z) / ERAD;
-			volume *= cos(DE2RA * poct_node->center.y);
-		}
-		log_value =  logWtMtrxSum + value + log(volume);
-		poct_node->value = logWtMtrxSum + value;
-		resultTreeRoot = addResult(resultTreeRoot, log_value, poct_node);
-		nSamples++;
+				volume = poct_node->ds.x * poct_node->ds.y * poct_node->ds.z;
+				if (GeometryMode == MODE_GLOBAL) {
+					volume *= DEG2KM * DEG2KM;
+					volume *= (ERAD - poct_node->center.z) / ERAD;
+					volume *= cos(DE2RA * poct_node->center.y);
+				}
+				log_value =  logWtMtrxSum + value + log(volume);
+				poct_node->value = logWtMtrxSum + value;
+				if (pParams->use_stations_density)
+					log_value += getOctTreeStationDensityWeight(poct_node, StationList, NumStations, LocGrid + ngrid);
+		// AJL 20060531 bug fix ? - changed *= to +=
+//		log_value *= getOctTreeStationDensityWeight(poct_node, StationList, NumStations, LocGrid + ngrid);
+
+				resultTreeRoot = addResult(resultTreeRoot, log_value, volume, poct_node);
+				nSamples++;
 // END - this block must be identical to block $$$ above
 
 		if (message_flag >= 1 && nSamples % 1000 == 0) {
@@ -8774,23 +9434,23 @@ fprintf(stderr, "\npresult_node == NULL!!\n");
 			fflush(stdout);
 		}
 
-				/* check for maximum likelihood */
-				if (value > value_max) {
-					value_max = value;
-					misfit_min = misfit;
-					phypo->misfit = misfit;
-					phypo->x = xval;
-					phypo->y = yval;
-					phypo->z = zval;
-					hypo_dx = poct_node->ds.x;
-					hypo_dz = poct_node->ds.z;
-					for (narr = 0; narr < num_arr_loc; narr++)
-						arrival[narr].pred_travel_time_best =
-							arrival[narr].pred_travel_time;
-					*poct_node_value_max = poct_node->value;
-				}
-				if (misfit > misfit_max)
-					misfit_max = misfit;
+		/* check for maximum likelihood */
+		if (value > value_max) {
+			value_max = value;
+			misfit_min = misfit;
+			phypo->misfit = misfit;
+			phypo->x = xval;
+			phypo->y = yval;
+			phypo->z = zval;
+			hypo_dx = poct_node->ds.x;
+			hypo_dz = poct_node->ds.z;
+			for (narr = 0; narr < num_arr_loc; narr++)
+				arrival[narr].pred_travel_time_best = arrival[narr].pred_travel_time;
+			*poct_node_value_max = poct_node->value;
+		}
+		if (misfit > misfit_max)
+			misfit_max = misfit;
+			
 
 /* set to TRUE to save all samples
    REMEMBER to set OCT num_scatter high enough in control file */
@@ -8819,9 +9479,9 @@ if (0) {
 		}  // end loop over HighestLeafValue neighbors
 
 		// check if minimum node size reached
-		if (smallest_node_size_x < min_node_size_x
+		if (pParams->stop_on_min_node_size && (smallest_node_size_x < min_node_size_x
 				|| smallest_node_size_y < min_node_size_y
-				|| smallest_node_size_z < min_node_size_z) {
+				|| smallest_node_size_z < min_node_size_z)) {
 			if (message_flag >= 1)
 				fprintf(stdout, "\nINFO: Min node size reached, terminating Octree search.");
 			break;
@@ -8886,14 +9546,143 @@ if (0) {
 
 
 
+
+/*** function to calculate (logarithmic) station density weight value for an oct tree node */
+
+double getOctTreeStationDensityWeight_OLD(OctNode* poct_node, SourceDesc *stations, int numStations, GridDesc *ptgrid)
+{
+
+	int n, n_inside, numStations_this_event;
+	double staDensityWeight;
+	SourceDesc *station;
+
+	// check if parent node contains no stations
+	
+	if (poct_node->parent != NULL
+		   && poct_node->parent->pdata != NULL && *((int *) poct_node->parent->pdata) <= 1)
+		return(1.0);
+
+	// count number of stations inside this node
+	numStations_this_event = 0;
+	n_inside = 0;
+	for (n = 0; n < numStations; n++) {
+		station = stations + n;
+		// check if station has not-ignored reading for this event
+		if (station->ignored)
+			continue;
+		numStations_this_event++;
+		// check if station location is unknown
+		if (station->x <= -LARGE_DOUBLE)
+			continue;
+		// check if station is above top of grid
+		if (station->z < ptgrid->origz) {
+			if (extendedNodeContains(poct_node, station->x, station->y, ptgrid->origz, 0))
+				n_inside++;
+		} else {
+			if (extendedNodeContains(poct_node, station->x, station->y, station->z, 0))
+				n_inside++;
+		}
+//printf("n %d  node %f %f %f  stations %f %f %f  ptgrid->origz %f\n", n, poct_node->center.x, poct_node->center.y, poct_node->center.z, station->x, station->y, station->z, ptgrid->origz);
+	}
+
+	if (poct_node->pdata == NULL)
+		poct_node->pdata = (void *) malloc(sizeof(int));
+	if (poct_node->pdata != NULL)
+		*((int *) poct_node->pdata) = n_inside;
+	else
+		puterr("ERROR: allocating int storage for OctTree Station Density Weight count.");
+	
+	staDensityWeight = log((double) (n_inside + 1));
+
+//if (n_inside > 0) printf("OctTreeStationDensityWeight: node %f %f %f  n_inside %d  numStations_this_event %d\n", poct_node->center.x, poct_node->center.y, poct_node->center.z, n_inside, numStations_this_event);
+	
+	return(staDensityWeight);
+
+}
+
+
+
+/*** function to calculate (logarithmic) station density weight value for an oct tree node */
+
+double getOctTreeStationDensityWeight(OctNode* poct_node, SourceDesc *stations, int numStations, GridDesc *ptgrid)
+{
+
+	int n, n_inside, numStations_this_event;
+	double staDensityWeight;
+	SourceDesc *station;
+
+	
+	n_inside = 0;
+	
+	// check if parent node contains stations data
+	if (poct_node->parent != NULL) 
+	{
+		// this must be a child node, parent should have station count data
+		if (poct_node->parent->pdata == NULL) {	// should not get here
+			puterr("ERROR: parent node exists but has no OctTree Station Density Weight count!");
+		} 
+		else 
+		{
+			n_inside = *((int *) poct_node->parent->pdata);
+		}
+	} 
+	else 
+	{
+		// this must be a root node
+		// count number of stations inside this node
+		numStations_this_event = 0;
+		n_inside = 0;
+		for (n = 0; n < numStations; n++) {
+			station = stations + n;
+			// check if station has not-ignored reading for this event
+			if (station->ignored)
+				continue;
+			numStations_this_event++;
+			// check if station location is unknown
+			if (station->x <= -LARGE_DOUBLE)
+				continue;
+			// check if station is above top of grid
+			if (station->z < ptgrid->origz) {
+				if (extendedNodeContains(poct_node, station->x, station->y, ptgrid->origz, 0)) {
+					n_inside++;
+//printf("n %d  node %f %f %f  stations %f %f %f  ptgrid->origz %f\n", n, poct_node->center.x, poct_node->center.y, poct_node->center.z, station->x, station->y, station->z, ptgrid->origz);
+				}
+			} else {
+				if (extendedNodeContains(poct_node, station->x, station->y, station->z, 0)) {
+					n_inside++;
+//printf("n %d  node %f %f %f  stations %f %f %f  ptgrid->origz %f\n", n, poct_node->center.x, poct_node->center.y, poct_node->center.z, station->x, station->y, station->z, ptgrid->origz);
+				}
+			}
+		}
+//if (n_inside > 0) printf("OctTreeStationDensityWeight: node %f %f %f  n_inside %d  numStations_this_event %d\n", poct_node->center.x, poct_node->center.y, poct_node->center.z, n_inside, numStations_this_event);
+	}
+
+	if (poct_node->pdata == NULL)
+		poct_node->pdata = (void *) malloc(sizeof(int));
+	if (poct_node->pdata != NULL)
+		*((int *) poct_node->pdata) = n_inside;
+	else
+		puterr("ERROR: allocating int storage for OctTree Station Density Weight count.");
+	
+	staDensityWeight = log((double) (n_inside + 1));
+
+	// multiply by arbitrary constant... (seems to work!)
+	//staDensityWeight *= 10.0;
+	staDensityWeight *= 2.0;
+	
+	return(staDensityWeight);
+
+}
+
+
+
 /*** function to generate sample (scatter) of OctTree results */
 
-int GenEventScatterOcttree(OcttreeParams* pParams, double oct_node_value_max, float* fscatterdata)
+int GenEventScatterOcttree(OcttreeParams* pParams, double oct_node_value_max, float* fscatterdata, double integral)
 {
 
 	int tot_npoints;
 	int fdata_index;
-	double integral;
 
 
 	/* return if no scatter samples requested */
@@ -8903,11 +9692,6 @@ int GenEventScatterOcttree(OcttreeParams* pParams, double oct_node_value_max, fl
 	/* write message */
 	putmsg(3, "");
 	putmsg(3, "Generating event scatter file...");
-
-
-	integral = integrateResultTree(resultTreeRoot, 0.0, oct_node_value_max);
-	sprintf(MsgStr, "Octree oct_node_value_max= %le integral= %le", oct_node_value_max, integral);
-	putmsg(2, MsgStr);
 
 
 	/* generate scatter points at uniformly-randomly chosen locations in each leaf node */
@@ -8937,13 +9721,62 @@ double integrateResultTree(ResultTreeNode* prtree, double sum, double oct_node_v
                 sum = integrateResultTree(prtree->left, sum, oct_node_value_max);
 
         pnode = prtree->pnode;
-        if (pnode->isLeaf)
-                sum += exp(prtree->value - oct_node_value_max);
+        if (pnode->isLeaf) {
+                sum += exp(prtree->value - oct_node_value_max);			
+	}
 
         if (prtree->right != NULL)
                 sum = integrateResultTree(prtree->right, sum, oct_node_value_max);
 
         return(sum);
+}
+
+
+
+/*** function to normalize value of all leafs in results tree to range 0.0-1.0 */
+
+double convertOcttreeValuesToProb(ResultTreeNode* prtree, double sum, double oct_node_value_max)
+{
+        OctNode* pnode;
+	
+ 
+        if (prtree->left != NULL)
+                sum = convertOcttreeValuesToProb(prtree->left, sum, oct_node_value_max);
+
+	pnode = prtree->pnode;
+        if (pnode->isLeaf) {
+		pnode->value = exp(pnode->value - oct_node_value_max);	// replace leaf value with relative prob density
+		sum += pnode->value;
+	}
+
+        if (prtree->right != NULL)
+                sum = convertOcttreeValuesToProb(prtree->right, sum, oct_node_value_max);
+
+        return(sum);
+	
+}
+
+
+/*** function to create a new ResultTree using node values */
+
+ResultTreeNode* createResultTree(ResultTreeNode* prtree, ResultTreeNode* pnew_rtree)
+{
+        OctNode* pnode;
+	
+ 
+        if (prtree->left != NULL)
+                pnew_rtree = createResultTree(prtree->left, pnew_rtree);
+
+	pnode = prtree->pnode;
+        if (pnode->isLeaf) {
+		pnew_rtree = addResult(pnew_rtree, pnode->value, prtree->volume, pnode);
+	}
+
+        if (prtree->right != NULL)
+                pnew_rtree = createResultTree(prtree->right, pnew_rtree);
+
+        return(pnew_rtree);
+	
 }
 
 
