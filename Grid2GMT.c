@@ -1453,15 +1453,9 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         fprintf(fp_gmt, "# Rect x/y in km\n");
         if (doLatLong)
             fprintf(fp_gmt, "if (! $PLOT_LAT_LONG) then\n");
-        if (GMT_VER_3_3_4) {
-            fprintf(fp_gmt,
-                    "xyz2grd %s -G%sgmt -I%lf/%lf $RVAL -Dkm/km/=/0.0/0.0/%s/remark -V -Zf\n",
-                    fn_gmtgrd, fn_gmtgrd, horiz_dgrid, vert_dgrid, fn_root_output);
-        } else {
-            fprintf(fp_gmt,
-                    "xyz2grd %s -G%sgmt -I%lf/%lf $RVAL -Dkm/km/=/0.0/0.0/%s/remark -V -Z -b\n",
-                    fn_gmtgrd, fn_gmtgrd, horiz_dgrid, vert_dgrid, fn_root_output);
-        }
+        fprintf(fp_gmt,
+                "xyz2grd %s -G%sgmt -I%lf/%lf $RVAL -Dkm/km/=/0.0/0.0/%s/remark -V -Z -b\n",
+                fn_gmtgrd, fn_gmtgrd, horiz_dgrid, vert_dgrid, fn_root_output);
         if (doLatLong)
             fprintf(fp_gmt, "endif\n\n");
 
@@ -1469,15 +1463,9 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
         if (doLatLong) {
             fprintf(fp_gmt, "# Latitude/Longitude in degrees\n");
             fprintf(fp_gmt, "if ($PLOT_LAT_LONG) then\n");
-            if (GMT_VER_3_3_4) {
-                fprintf(fp_gmt,
-                        "xyz2grd %s -G%sgmt -I%lf/%lf ${RVAL} -Ddeg/deg/=/0.0/0.0/%s/remark -V -Zf\n",
-                        fn_gmtgrd, fn_gmtgrd, vdgridx, vdgridy, fn_root_output);
-            } else {
-                fprintf(fp_gmt,
-                        "xyz2grd %s -G%sgmt -I%lf/%lf ${RVAL} -Ddeg/deg/=/0.0/0.0/%s/remark -V -Z -b\n",
-                        fn_gmtgrd, fn_gmtgrd, vdgridx, vdgridy, fn_root_output);
-            }
+            fprintf(fp_gmt,
+                    "xyz2grd %s -G%sgmt -I%lf/%lf ${RVAL} -Ddeg/deg/=/0.0/0.0/%s/remark -V -Z -b\n",
+                    fn_gmtgrd, fn_gmtgrd, vdgridx, vdgridy, fn_root_output);
             fprintf(fp_gmt, "endif\n\n");
         }
 
@@ -1537,47 +1525,11 @@ int GenGridViewGMT(GridDesc* pgrid, char cviewmode, char cdatatype,
                         "   set SCALE_FLAG = \n");
                 fprintf(fp_gmt,
                         "else\n");
-                if (GMT_VER_3_3_4) {
-                    if (pgrid->type == GRID_LIKELIHOOD) { // likelihood color table
-                        fprintf(fp_gmt,
-                                "   makecpt -Z -Chot -I -T0/1/0.1 > %s.cpt\n",
-                                fn_root_output);
-                    } else { // rainbow
-                        double contour_int_cpt = contour_int;
-                        double value_min = contour_int * (floor(grid_value_min / contour_int) - 0.0);
-                        double value_max = contour_int * (0.0 + ceil(grid_value_max / contour_int));
-                        if (value_max - value_min < value_min / 1000.0) {
-                            value_min -= value_min / 100.0;
-                            value_max += value_max / 100.0;
-                            contour_int_cpt = (value_max - value_min) / 3.0;
-                        }
-                        char cpt_colortable[MAXLINE];
-                        //strcpy(cpt_colortable, "rainbow");
-                        if (value_min < -contour_int / 100.0 && value_max > contour_int / 100.0) {
-                            // value range straddles zero, set min/max for color table equal.
-                            strcpy(cpt_colortable, "seis");
-                            if (value_max < contour_int)
-                                value_max = contour_int;
-                            else if (value_min > -contour_int)
-                                value_min = -contour_int;
-                        } else {
-                            // value range positive
-                            strcpy(cpt_colortable, "rainbow");
-                        }
-                        char cpt_command[10 * MAXLINE];
-                        sprintf(cpt_command, "makecpt -Z -C%s -T%g/%g/%g > %s.cpt",
-                                cpt_colortable, value_min, value_max, contour_int_cpt, fn_root_output);
-                        fprintf(fp_gmt, "   %s\n", cpt_command);
-                        //if (message_flag > 0)
-                        nll_putmsg2(1, "INFO", cpt_command);
-                    }
-                } else {
-                    fprintf(fp_gmt,
-                            "   makecpt -C%.1le -S%dc -m%f > %s.cpt\n",
-                            contour_int, nstep + 2, contour_int * (double) ((int)
-                            ((grid_value_max + grid_value_min)
-                            / (2.0 * contour_int))), fn_root_output);
-                }
+                fprintf(fp_gmt,
+                        "   makecpt -C%.1le -S%dc -m%f > %s.cpt\n",
+                        contour_int, nstep + 2, contour_int * (double) ((int)
+                        ((grid_value_max + grid_value_min)
+                        / (2.0 * contour_int))), fn_root_output);
                 fprintf(fp_gmt,
                         "   set SCALE_FLAG = -L\n");
                 fprintf(fp_gmt,
