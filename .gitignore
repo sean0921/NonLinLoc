@@ -1,3 +1,4 @@
+*.o
 Grid2GMT
 Grid2Time
 GridCascadingDecimate
